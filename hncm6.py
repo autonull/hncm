@@ -707,7 +707,7 @@ def code_info(k, levels):
         q = p[p > 0]
         info += float(-(q * torch.log2(q)).sum())
         util += float((cnt > 0).float().mean())
-    return util / dc, info / dc
+    return util / dc, info * k.size(1)
 
 
 # %%
@@ -999,7 +999,7 @@ def eval_arm(cfg, corpus, model, cf, arm, lam, seed, starts, ons, bpe_ons):
     wall = (time.perf_counter() - t0) / B
     util, info = code_info(k, cfg.levels) if cfg.mode == "scalar" else (1.0, 0.0)
     if cfg.mode == "vq":
-        util, info = 1.0, math.log2(cfg.vq_codes)
+        util, info = 1.0, masks.size(1) * math.log2(cfg.vq_codes)
     if cfg.mode in ("constant", "noquant"):
         util, info = 0.0, 0.0
     return {

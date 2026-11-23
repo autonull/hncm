@@ -20,8 +20,8 @@ Replacing the router with an exact DP over a learned cost field, and RVQ with sc
   scalar quantization, low-rank prior, exact DP cost field, span-relative decoder,
   closed-loop generation, controls, baselines, staged training, resume, gates, and
   report.
-- Status: smoke/quick diagnostics only. G0 fails on code rate and `H(code)`; G4
-  passes but G5 fails on alignment; G1/G2 fail on shakespeare. **No claim is
+- Status: smoke/quick diagnostics only. G0 fails on total/code rate; G6 passes;
+  G4 passes but G5 fails on alignment; G1/G2 fail on shakespeare. **No claim is
   established.**
 - Run the smallest decisive phase first; scale only after G0 and G6 pass.
 - Commands:
