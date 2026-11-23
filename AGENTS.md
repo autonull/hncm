@@ -1,0 +1,61 @@
+# Code Guidelines
+
+- Elegant
+- Consolidated
+- Consistent
+- Organized
+- Deeply deduplicated: Don't repeat yourself (DRY)
+- Abstract
+- Modularized
+- Parameterized
+- Backwards compatibility: NONE
+- Few comments: rely on self-documenting code.
+- Purpose: professional, not explanatory/educational
+- Don't obsess over test coverage and other linty tediums: Working functionality is more important than coverage and cosmetic lint issues.
+- Prefer use of GPU over CPU where appropriate.
+- Be skeptical of low-performing experiments; this could indicate an implementation defect to fix. 
+
+## Toolchain
+*   Language: **Python 3.14+**
+*   **uv**: For dependency management, virtualenvs, and task running (`uv run`, `uv add`). Single lockfile (`uv.lock`); no `requirements.txt`.
+*   **Ruff**: For formatting, linting, and import sorting. All config in `pyproject.toml`. Format always (cheap). Lint **changed files only** during development — findings in legacy modules are queued work (Register C / hygiene pass), never commit blockers.
+*   **Pyright** (or mypy): **Strict on new/rewritten modules.** Repo-wide checking stays basic until the dedicated hygiene pass closes; type fixes in legacy modules ride that pass, not feature work.
+*   **pre-commit**: Runs ruff format + lint on changed files only. No test suite in the hook.
+*   **Line Length**: Ruff default (88). Relax per-line with `# noqa: <code>` and a reason, never globally.
+*   Rules are enforced by tooling — if a rule can be a config or pre-commit hook, it is one.
+
+## Type System
+*   **Modern Syntax**: Built-in generics (`list[str]`), PEP 604 unions (`X | None`). Never import `List`, `Dict`, `Optional`, or `Union`.
+*   **PEP 695**: Use `class Cache[T]: ...` and `type UserId = int` for generics and aliases.
+*   **Interfaces & Narrowing**: Prefer `Protocol` over ABCs. Use `Self` for fluent returns. Use **`TypeIs`** for custom type narrowing to preserve original type context on failure.
+*   **Value Sets**: Use `Literal` / `StrEnum` instead of bare strings.
+*   **Data Modeling**:
+    *   `@dataclass(frozen=True, slots=True)` for internal value objects.
+    *   `TypedDict` for unvalidated structured dicts.
+    *   **Pydantic v2** at I/O boundaries for runtime validation.
+*   **No `Any`**: Replace with `object`, generics, or `Protocol`. If unavoidable, isolate and document why.
+
+## Architecture & Control Flow
+*   **Pattern Matching**: Use `match`/`case` for complex state/data routing, favoring it over chained `if/elif`.
+*   **Complexity**: Let Ruff rules (`C901`, `PLR09xx`) enforce function size. Extract `_`-prefixed helpers rather than nesting deeper.
+*   **Control Flow**: Flatten with guard clauses (`if not condition: return`). 
+*   **Finally Blocks**: **Never** use `return`, `break`, or `continue` inside a `finally` block (PEP 765). This is a hard `SyntaxError` and silently swallows exceptions.
+*   **Composition over Inheritance**: Favor small pure functions. Isolate side effects so core logic stays testable.
+*   **One Source of Truth per Rule**: legality, pricing, measurement identity, dispatch and capability flags each live in exactly one place. A second table, filter or cache that re-derives one is a defect, not a fallback: feed the first or delete it, and count what the second one used to drop. Capability flags are declared (config field, `ClassVar`, registry row), never inferred by reflection or by shape.
+*   **Immutability**: Default to immutable structures (`tuple`, `frozenset`, frozen dataclasses) unless mutation is strictly required.
+
+## Async Concurrency & Thread Safety
+*   **Structured Concurrency**: Use `asyncio.TaskGroup` for concurrent tasks. Avoid `asyncio.gather` for complex flows.
+*   **Event Loop Hygiene**: Never mix blocking I/O/CPU tasks with `async` code. Use `asyncio.to_thread` for legacy blocking calls.
+*   **Thread Safety (PEP 703)**: With free-threaded CPython, **do not rely on the GIL**. Use explicit locks (`threading.Lock`), thread-local storage, or immutable data for shared mutable state.
+
+## Documentation & Modules
+*   **Docstrings**: **Google-style** on all public APIs. Type hints replace argument type documentation — focus on behavior, side effects, and invariants.
+*   **Comments**: Explain *why*, not *what*. Delete dead code; use `# TODO(name): ...` for deferred work.
+*   **Import Hygiene**: Avoid heavy computations or I/O at the module level. Prevent circular imports via local imports or dependency injection.
+
+## Errors, Logging & Resources
+*   **Safe Interpolation**: Use **t-strings** (PEP 750) for logging and templating to enable safe, deferred interpolation. Never use f-strings for database queries (use driver parameterization) or untrusted log inputs.
+*   **Logging**: Standard `logging` (or `structlog`). Never `print()`. Include context: `logger.error("msg", extra={"task_id": id})`.
+*   **Exceptions**: Define a small custom hierarchy per domain. Always chain: `raise DomainError("msg") from original_exception`. Use `except*` (PEP 654) for concurrent independent failures.
+*   **Resources**: Use context managers (`with` / `async with`) for all resource lifecycles.
