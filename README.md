@@ -1,4 +1,4 @@
- # H-NCM: Hierarchical Neural Concept Modeling (Preliminary Proof-of-Concept)
+ # H-NCM: Hierarchical Neural Concept Modeling
 
 ## Thesis
 **H-NCM** merges **Cartesia's H-Net** (learned, dynamic, end-to-end tokenization directly from bytes) with **HazyResearch's Neural Concept Model (NCM)** (residual vector quantization and coarse-to-fine parallel decoding). 
