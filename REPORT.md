@@ -1,129 +1,92 @@
-# H-NCM v5 report
+# H-NCM v6 report
 
-preset `smoke` phase `0` device `cuda` torch `2.15.0`
+Status: `hncm6.py` implements the v6 plan, but every run below is a smoke or quick
+diagnostic. **No P1/P2/P3 claim is established.** The controls are not decisive at
+these presets.
 
-started `2026-11-23T20:05:31.555152Z` finished `2026-11-23T20:05:46.835003Z`
+## Phase 0 - codec health (quick, synseg, seed 0, 300 steps)
 
-cfg fingerprint `5ce866f3f296346b`
-
-
-## Claims
-
-P1 absolute compression; P2 parallelism dividend; P3 boundary mechanism.
-All three are reported, including negative results. Thresholds come from `Cfg`.
-
-
-> Diagnostic only: preset != full. Controls are decisive only on the full preset.
-
-
-## synseg (sha effd9e48ece4, 1,200,028 bytes)
-
-unigram `4.638` bpb
-
-byte GPT `4.820` bpb
-
-
-| cell | bound bpb | recon | c1 | bnd | codes | rate | align |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| fixed+ar | incomplete | | | | | | |
-| fixed+cf | incomplete | | | | | | |
-| oracle+ar | incomplete | | | | | | |
-| oracle+cf | incomplete | | | | | | |
-| rate-only+ar | incomplete | | | | | | |
-| rate-only+cf | incomplete | | | | | | |
-
-### Codec health (arms stopped before priors)
-
-| chunker | util | RD | achieved | align |
-|---|---:|---|---:|---:|
-| fixed | [0.53, 0.31] | [4.848, 4.851, 4.85] | 1.075 | 0.146 |
-| oracle | [0.59, 0.12] | [4.854, 4.861, 4.862] | 1.574 | 0.579 |
-| rate-only | [0.53, 0.03] | [4.936, 4.934, 4.931] | 1.409 | 0.126 |
-
-Gates: E1 `False`, E2 `False`, E3 `False`, P2b `False` (mean +nan), G3 `False`, G4 `{'oracle': False, 'rate-only': False}`
-
-total(fixed+CF) `nan` bpb; unigram `4.638`; byte GPT `4.820`; AR sample `nan`
-
-
-### Interaction I (primary k = 1)
-
-| arm | I mean | SEM | CI low | CI high | n |
+| arm | total | recon | code | util | H(code) |
 |---|---:|---:|---:|---:|---:|
+| `rel-pos` | 7.632 | 4.206 | 3.426 | 1.000 | 1.362 |
+| `constant-code` | 4.641 | 4.641 | 0.000 | 0.000 | 0.000 |
+| `abs-pos` | 7.245 | 3.882 | 3.364 | 1.000 | 1.365 |
+| `no-quant` | 3.995 | 3.868 | 0.128 | - | - |
+| `unigram` | 4.637 | 4.637 | - | - | - |
 
-### Mechanism verdicts
+- **G0 fails**: `util=1.000` and `delta_recon=0.435` pass, but `H(code)=1.362 < 2`
+  and `total=7.632 > unigram=4.637`. The code carries information, but its entropy
+  model is worse than the empirical code entropy and its rate is too high.
+- **G6 passes**: `recon(abs-pos) - recon(rel-pos) = -0.325 <= 0.05`.
+- One seed only; G9 is a warning.
 
-E4 oracle: missing; mechanism cannot be evaluated.
-E4n rate-only: missing.
-E5 boundary: missing (run phase 2).
+## Phase 1 - structure (smoke, synseg, seed 0, 40 steps)
 
-### Utility Pareto (sample quality, sequential calls)
-
-| arm | calls | ref bpb | ratio |
+| arm | total | boundary | align |
 |---|---:|---:|---:|
+| `fixed` | 6.728 | 0.000 | 0.236 |
+| `DP` | 6.384 | 0.001 | 0.244 |
+| `oracle` | 6.494 | 0.000 | 1.000 |
+| `oracle-costed` | 7.117 | 0.624 | 1.000 |
+| `BPE` | 8.919 | 0.767 | 0.322 |
+| `IsoWarp` | 8.786 | 0.000 | 0.270 |
+| `random` | 7.682 | 0.861 | 0.241 |
 
-### Decision
+- **G4 passes**: `I_oracle=0.234`, bootstrap CI `[0.198, 0.276]`.
+- **G5 fails**: `I_DP=0.344` passes the effect size, but `align(DP)=0.244` is below
+  `align(fixed)+0.05=0.286`.
+- **G5b fails**: the oracle `6.494` is worse than the DP `6.384`, so
+  `oracle < DP < fixed` does not hold. The oracle tiling is not a ceiling here.
+- **G5c/G5d pass**: DP beats BPE and IsoWarp.
+- Smoke only; one seed; no P3 claim.
 
-Phase 0 oracle arm missing; mechanism claim cannot be evaluated. P2a calls ratio `False`; P2b dynamic vs fixed at equal calls `False` (mean +nan).
+## Phase 2 - compression and parallelism (smoke, shakespeare, seed 0, 40 steps)
 
-## syngrid (sha 24ae10a789f2, 1,200,128 bytes)
+| arm | total bpb |
+|---|---:|
+| `DP` | 6.713 |
+| `fixed` | 7.149 |
+| `byte GPT` | 5.009 |
+| `byte AR` | 5.584 |
+| `unigram` | 4.995 |
+| `gzip` | 3.218 |
 
-unigram `3.926` bpb
+- **G1 fails**: `DP=6.713` is not below `unigram-0.10=4.895`.
+- **G2 fails**: `DP=6.713` is not below `byte GPT+0.05=5.059`.
+- **G2b fails**: `DP=6.713` is not below `gzip+0.10=3.318`.
+- **G3 fails as unmatched**: the closest DP/AR pair differs by `1.129 > 0.05` bpb.
+- P1 and P2 are negative. P3 is independent and is also negative at the smoke gate.
 
-byte GPT `4.091` bpb
+## Decision
 
+G0 fails first. Per the decision tree, fix the codec before interpreting the DP:
+the conditional entropy model must beat the empirical code entropy, and the code rate
+must fall below the gain in reconstruction. Do not report the Phase 1 effects as P3
+evidence, and do not run the full Phase 1 before G0 passes.
 
-| cell | bound bpb | recon | c1 | bnd | codes | rate | align |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| fixed+ar | incomplete | | | | | | |
-| fixed+cf | incomplete | | | | | | |
-| oracle+ar | incomplete | | | | | | |
-| oracle+cf | incomplete | | | | | | |
-| rate-only+ar | incomplete | | | | | | |
-| rate-only+cf | incomplete | | | | | | |
+The result is a negative diagnostic with clean accounting: the tiling is paid for
+DP/BPE/IsoWarp, the fixed grid and oracle are free, the codec is shared, and the
+decoder is span-relative. That is the intended v6 protocol; the implementation is
+not yet healthy enough for a claim.
 
-### Codec health (arms stopped before priors)
+## Artifacts
 
-| chunker | util | RD | achieved | align |
-|---|---:|---|---:|---:|
-| fixed | [0.34, 0.09] | [4.124, 4.124, 4.124] | 0.984 | 1.000 |
-| oracle | [0.47, 0.09] | [4.128, 4.131, 4.13] | 0.960 | 1.000 |
-| rate-only | [0.03, 0.03] | [4.2, 4.18, 4.178] | 1.078 | 0.226 |
-
-Gates: E1 `False`, E2 `False`, E3 `False`, P2b `False` (mean +nan), G3 `False`, G4 `{'oracle': False, 'rate-only': False}`
-
-total(fixed+CF) `nan` bpb; unigram `3.926`; byte GPT `4.091`; AR sample `nan`
-
-
-### Interaction I (primary k = 1)
-
-| arm | I mean | SEM | CI low | CI high | n |
-|---|---:|---:|---:|---:|---:|
-
-### Mechanism verdicts
-
-Negative control has no arm.
-
-### Utility Pareto (sample quality, sequential calls)
-
-| arm | calls | ref bpb | ratio |
-|---|---:|---:|---:|
-
-### Decision
-
-Negative control has no arm. P2a calls ratio `False`; P2b dynamic vs fixed at equal calls `False` (mean +nan).
+- `runs/p0/quick-cd8d9e84/results.json` and `REPORT.md`
+- `runs/p1/smoke-37d2450a/results.json` and `REPORT.md`
+- `runs/p2/smoke-bad03cb9/results.json` and `REPORT.md`
+- `hncm6.py`, `_selftest` passes; `ruff format`/`ruff check` pass.
+- The v5 negative report remains at `runs/p0/quick-a6924fcff3/REPORT.md`.
 
 ## Provenance
 
 ```json
 {
-  "format": 5,
-  "preset": "smoke",
-  "phase": 0,
-  "device": "cuda",
+  "format": 6,
   "torch": "2.15.0",
+  "device": "cuda",
   "gpu": "NVIDIA GeForce RTX 3080",
-  "started": "2026-11-23T20:05:31.555152Z",
-  "finished": "2026-11-23T20:05:46.835003Z"
+  "seeds": [0],
+  "presets": ["smoke", "quick"],
+  "note": "diagnostic only; not P1/P2/P3 evidence"
 }
 ```
-

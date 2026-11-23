@@ -16,9 +16,20 @@
 Replacing the router with an exact DP over a learned cost field, and RVQ with scalar quantization + a low-rank prior, yields (i) `total < unigram` on a real corpus, (ii) `calls_AR/calls_DP ≥ 8` at matched total bits, and (iii) `I_structure > 0` at matched λ. The v5 interaction `I` is a ceiling, not the deployable claim.
 
 ## Implementation
-- Write the complete self-contained Google CoLab script (`hncm6.py`; one file).
-- Demonstrate preliminary results on `shakespeare` and the controls; motivate further research.
-- Start with small models; scale only after the codec-health and leak gates pass.
+- `hncm6.py` is the complete self-contained script (one file): shared codec,
+  scalar quantization, low-rank prior, exact DP cost field, span-relative decoder,
+  closed-loop generation, controls, baselines, staged training, resume, gates, and
+  report.
+- Status: smoke/quick diagnostics only. G0 fails on code rate and `H(code)`; G4
+  passes but G5 fails on alignment; G1/G2 fail on shakespeare. **No claim is
+  established.**
+- Run the smallest decisive phase first; scale only after G0 and G6 pass.
+- Commands:
+  ```bash
+  python hncm6.py selftest
+  python hncm6.py run --preset quick --phase 0 --seeds 0
+  python hncm6.py report --results runs/latest/results.json
+  ```
 
 ## Ideas to consider
 - Learn the cost; solve the structure. Do not learn the structure.
