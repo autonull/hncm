@@ -270,9 +270,31 @@ hncm6.py
   cli
 ```
 
-Rules: one file; no pydantic; no module-level I/O; one `ResultStore`; one `Gate`
-registry; seed/log; `uv` + `ruff`; tests only invariants that have broken (DP
-optimality, exact cover, entropy round-trip, resume, shared init).
+### 2.10 Interface contract and AGENTS.md conformance
+
+**Seams (`Protocol`).** `Tiling.boundaries(h, x) -> Boundary`,
+`Quantizer.encode/decode`, `Prior.rate/sample`, `ResultStore.save/load`. Names are
+`Literal`; `Cfg` is a frozen `dataclass(slots=True)`; only `Cfg`, `RESULT_FORMAT`,
+and the read-only registries are global constants. No mutable global state.
+
+**One source of truth.** `Cfg` owns every threshold (`g0_util`, `g0_code_info`,
+`g1_margin`, ...); the gate registry owns every endpoint; metrics are defined once; the
+capability table is read-only. No second table repeats a threshold.
+
+**AGENTS.md rules.** One file; no backwards compatibility; no pydantic (JSON at the
+boundary only); no import-time I/O; `main()` + CLI; atomic `results.json`; resume
+refuses a changed `cfg` or corpus sha; seed/log every run; `uv` + `ruff format`;
+`ruff check --fix` on changed files; tests only invariants that broke (DP optimality,
+exact cover, entropy round-trip, resume, shared init). Use context managers for files
+and GPU; catch specific exceptions; no bare `except`; guard clauses.
+
+**Efficiency contract.** DP is `O(L * |lengths|)`; cumsum pooling is `O(1)` per span;
+the decoder is parallel within spans; one codec per corpus; one shared prior. The
+minimal decisive run and the full budget are in S5.7.
+
+**Effectiveness contract.** Every claim has a gate and a stop rule; `total_bpb` is the
+only primary metric; `I_structure` is measured at matched `lambda`; the oracle is a
+ceiling; the controls are paid. Statistics are in S5.6.
 
 ---
 
@@ -296,6 +318,12 @@ optimality, exact cover, entropy round-trip, resume, shared init).
 
 The oracle is a ceiling, not a deployable arm. The BPE/IsoWarp are strong controls;
 if the DP loses to them, report it.
+
+**Cost accounting (one rule).** The fixed grid and the oracle are free (the decoder
+knows them); the DP, `oracle-costed`, BPE, IsoWarp, and random tilings are paid:
+`rate = -log p(tiling)`. The BPE transmits its token mask; IsoWarp transmits `rho`;
+the random tiling transmits its lengths; the DP transmits its span addresses/lengths.
+This is why the v5 comparison was invalid: all v5 arms had free boundaries.
 
 ---
 
@@ -343,7 +371,7 @@ if the DP loses to them, report it.
 
 ## 5. Experiments
 
-### 5.1 Phase 0 — codec health and leak (~40 min)
+### 5.1 Phase 0 — codec health and leak (~20-40 min)
 
 - Corpora: synseg, syngrid; seeds 0,1,2; 512 windows.
 - Arms: `fixed4`, `fixed8`, `fixed16`, `constant-code`, `no-quant`, `abs-pos`,
@@ -359,6 +387,7 @@ if the DP loses to them, report it.
 - Arms: `fixed`, `DP`, `BPE`, `IsoWarp`, `oracle`, `oracle-costed`, `random`.
 - `lambda` in {0, 1, 2, 4}; 400 steps; batch 32; L=128; **one shared codec**.
 - Train: staged (codec with random tilings; cost field with DP); ablation joint.
+- Successive halving: 300 steps for all arms; promote the top half to 1200. No HPO.
 - Measure: E4, E4n, E5-E5d, `align`, `calls`, `wall`, `NFE`, `params`.
 - Gates: G4, G4n, G5-G5d.
 - **Stop if G4 fails.** Report ceiling.
@@ -368,7 +397,8 @@ if the DP loses to them, report it.
 - Corpus: shakespeare; seeds 0,1,2; 2048 windows.
 - Arms: `DP`, `fixed`, `AR`, `byte GPT`, `unigram`, `gzip`; `lambda` sweep to match
   total.
-- Train: 1500 steps; L=256; d=192; matched params/steps for byte GPT.
+- Train: 1500 steps; L=256; d=192. Match the byte GPT at the same `d`, layers,
+  steps, batch, and bytes; log its params. An unmatched P1b is not evidence.
 - Measure: E1, E2, E2b, E3, E3b; total/recon/code/boundary; calls; wall.
 - Gates: G1, G2, G2b, G3, G3b.
 - **Report P1 and P2 independently.**
@@ -405,17 +435,43 @@ if the DP loses to them, report it.
 
 Measure the step time first; then plan. On the 3080:
 
-| Phase | Arms x seeds x corpora | Steps | Measured time |
-|---|---|---|---|
-| 0 | 7 x 3 x 2 | 400 | ~40 min |
-| 1 | 7 x 3 x 2 x 3 lambda | 400 | ~3 h |
-| 2 | 6 x 3 x 1 | 1500 | ~4 h |
-| 3 | 2 x 3 x 1 | 1500 | ~2 h |
-| Ablations | ~6 x 3 x 1 | 400 | ~1 h |
+| Phase | Minimal decisive | Full | Steps | Minimal time |
+|---|---|---|---|---|
+| 0 | 3 arms x 3 seeds x 2 corpora | 7 x 3 x 2 | 400 | ~20 min |
+| 1 | 3 arms x 3 seeds x 2 corpora x 2 lambda | 7 x 3 x 2 x 3 | 300 -> 1200 | ~2 h |
+| 2 | 4 arms x 3 seeds x 1 corpus x 2 lambda | 6 x 3 x 1 x 3 | 1200 | ~2.5 h |
+| 3 | 2 arms x 3 seeds | 2 x 3 | 1500 | ~1 h |
+| Ablations | 2 x 3 | ~6 x 3 | 400 | ~30 min |
 
-**Total ~11 h; minimal decisive run ~7 h** (Phase 0 + 1 with 2 lambda + 2 with 2 arms).
-Run the minimal first; expand only if the gates pass. If the measured time exceeds the
-budget, cut the search space; do not guess.
+**Minimal decisive ~6 h; full ~10 h.** Phase 1 uses successive halving: 300 steps for
+all arms, promote the top half to 1200; never HPO. Paired windows and 3 seeds reduce
+variance more cheaply than more arms. Run the minimal first; expand only when the gates
+pass. If the measured time exceeds the budget, cut an arm, not the seeds.
+
+A **toy diagnostic** is separate: 4 arms x 1 seed x synseg, L=64, d=64, 1 layer, 150
+steps; ~2-8 min measured. It answers one question only: does the code carry information
+(`util`, `code_info`)? It cannot test P1/P2/P3; do not report it as preliminary
+evidence. If the measured step time exceeds the budget, cut to 2 arms and 100 steps.
+
+### 5.8 Artifacts, resume, and CLI
+
+`results.json` schema (one `ResultStore`, atomic `os.replace`):
+
+```
+format, cfg_fingerprint, device, torch, corpus sha, started, finished,
+runs: [{claim, corpus, seed, arm, lambda, total_bpb, recon_bpb, code_bpb,
+        boundary_bpb, calls, wall_sec, NFE, align, util, params,
+        samples: [...], provenance: {...}}]
+```
+
+Resume refuses a changed `cfg` or corpus sha; checkpoints are `<corpus>_<arm>_<seed>.pt`.
+Plot/report reads only `results.json`; no hidden state. Data split: shakespeare 1.0 MB
+train / 0.1 MB val; synseg 1.2 MB; syngrid 1.2 MB; L=128 (Phase 0/1), 256 (Phase 2/3).
+
+```
+python hncm6.py run --preset quick --phase 0 --corpora synseg,syngrid --seeds 0,1,2
+python hncm6.py report --results runs/latest/results.json
+```
 
 ---
 
