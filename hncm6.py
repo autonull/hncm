@@ -142,7 +142,7 @@ class Cfg:
         assert s.lengths and s.lengths[0] == 1 and max(s.lengths) <= s.L
         assert s.L % s.fixed_len == 0 and s.fixed_len in (4, 8, 16)
         assert s.mode in ("scalar", "vq", "constant", "noquant")
-        assert s.pos in ("span", "abs")
+        assert s.pos in ("span", "rel", "abs")
         assert s.eval_windows >= 2 and s.bs >= 2 and s.sample_n >= 1
         assert s.seeds and all(x >= 0 for x in s.seeds)
         assert s.lam_values and all(x >= 0 for x in s.lam_values)
@@ -603,6 +603,8 @@ class Decoder(nn.Module):
                 + s.plen(plen.clamp(max=L).long())
                 + s.sidx(ids % L)
             )
+        elif s.cfg.pos == "rel":
+            p = s.rel(rel.clamp(max=L - 1))
             if train and s.cfg.pos_drop > 0:
                 keep = (
                     torch.rand(B, ids.size(1), device=bnd.device) > s.cfg.pos_drop
@@ -846,13 +848,13 @@ def apply_bpe(data, merges):
 # ---------------- training -------------------------------------------------------------------
 def codec_variant(cfg, arm):
     if arm == "constant-code":
-        return replace(cfg, mode="constant", rank=0), 4
+        return replace(cfg, mode="constant", rank=0, pos="rel"), 4
     if arm == "no-quant":
-        return replace(cfg, mode="noquant"), 4
+        return replace(cfg, mode="noquant", pos="rel"), 4
     if arm == "abs-pos":
         return replace(cfg, pos="abs"), 4
     if arm == "rel-pos":
-        return replace(cfg, pos="span"), 4
+        return replace(cfg, pos="rel"), 4
     if arm == "vq":
         return replace(cfg, mode="vq"), cfg.fixed_len
     if arm == "meanfield":
@@ -1469,7 +1471,7 @@ def gates(res):
             ab = agg(res, "health", name, "abs-pos")
             rel = agg(res, "health", name, "rel-pos")
             if ab and rel:
-                d = ab["recon"][0] - rel["recon"][0]
+                d = rel["recon"][0] - ab["recon"][0]
                 st = (
                     "pass"
                     if d <= res["cfg"]["g6_pass"]
@@ -1479,7 +1481,7 @@ def gates(res):
                     gate(
                         "G6",
                         f"leak {name}",
-                        f"delta_recon(abs-rel)={d:.3f}",
+                        f"delta_recon(rel-abs)={d:.3f}",
                         f"<={res['cfg']['g6_pass']}",
                         st,
                     )

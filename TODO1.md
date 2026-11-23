@@ -20,15 +20,15 @@ Diagnostics only (no claim is established):
 
 | run | result | gate |
 |---|---|---|
-| Phase 0 quick, synseg, seed 0 | `util=1.00`, `delta_recon=0.435`, `H(code)=1.36`, total `7.632` vs unigram `4.637` | G0 **fail** (`H<2`, total not below unigram); G6 **pass** (`abs-rel=-0.325`) |
+| Phase 0 minimal, 3 seeds | `util=1.00`, `delta_recon=0.894/0.982`, `H(code)=1.34`, total `6.443/5.874` vs unigram `4.637/3.908` | G0 **fail** (`H<2`, total not below unigram); G6 **pass** (`rel-abs=-0.331/-0.631`); G9 **pass** |
 | Phase 1 smoke, synseg, seed 0 | `I_oracle=0.234` CI `[0.198,0.276]`; `I_DP=0.344`; align `0.244` vs fixed `0.236` | G4 **pass**; G5 **fail** (align); G5b **fail** (oracle `6.494` > DP `6.384`); G5c/G5d **pass** |
 | Phase 2 smoke, shakespeare, seed 0 | DP `6.713`, unigram `4.995`, byte GPT `5.009`, gzip `3.218` | G1/G2/G2b **fail**; G3 **unmatched** (`|dTotal|=1.129`) |
 
-Artifacts: `runs/p0/quick-cd8d9e84/`, `runs/p1/smoke-37d2450a/`,
+Artifacts: `runs/p0/quick-dbe8d386/`, `runs/p1/smoke-37d2450a/`,
 `runs/p2/smoke-bad03cb9/`. These are smoke/quick diagnostics, not P1/P2/P3
 evidence. G0 fails first: the conditional entropy model is worse than the
 empirical code entropy (`CE > H`), and the code rate is too high. The next
-decisive step is a full Phase 0 with three seeds after fixing the entropy model;
+decisive step is to fix the entropy model, then run the full Phase 0 budget with three seeds;
 do not run Phase 1 before G0 passes.
 
 ---
@@ -547,8 +547,8 @@ python hncm6.py report --results runs/latest/results.json
 ## 8. Implementation order and deliverables
 
 1. **Implemented.** `ScalarQ` + `LowRankPrior` + span-relative decoder; fixed
-   grid; no DP. Phase 0 quick: G0 fails (`H` and total), G6 passes. Iterate on the
-   entropy model until the code is used; no claim.
+   grid; no DP. Phase 0 minimal, 3 seeds: G0 fails (`H` and total), G6/G9 pass.
+   Iterate on the entropy model until the code is used; no claim.
 2. **Implemented.** Cost field + `dp_tile`; staged training. Phase 1 smoke: G4
    passes; G5 fails on alignment; G5b fails; G5c/G5d pass. No claim.
 3. **Implemented.** Shakespeare P1/P2. Phase 2 smoke: G1/G2/G2b fail; G3 is

@@ -4,21 +4,24 @@ Status: `hncm6.py` implements the v6 plan, but every run below is a smoke or qui
 diagnostic. **No P1/P2/P3 claim is established.** The controls are not decisive at
 these presets.
 
-## Phase 0 - codec health (quick, synseg, seed 0, 300 steps)
+## Phase 0 - codec health (minimal, 3 seeds, 400 steps, 512 windows)
 
-| arm | total | recon | code | util | H(code) |
-|---|---:|---:|---:|---:|---:|
-| `rel-pos` | 7.632 | 4.206 | 3.426 | 1.000 | 1.362 |
-| `constant-code` | 4.641 | 4.641 | 0.000 | 0.000 | 0.000 |
-| `abs-pos` | 7.245 | 3.882 | 3.364 | 1.000 | 1.365 |
-| `no-quant` | 3.995 | 3.868 | 0.128 | - | - |
-| `unigram` | 4.637 | 4.637 | - | - | - |
+`L=128`, `d=96`, `d_c=4`, levels 4, rank 4. Means over seeds 0,1,2.
 
-- **G0 fails**: `util=1.000` and `delta_recon=0.435` pass, but `H(code)=1.362 < 2`
-  and `total=7.632 > unigram=4.637`. The code carries information, but its entropy
-  model is worse than the empirical code entropy and its rate is too high.
-- **G6 passes**: `recon(abs-pos) - recon(rel-pos) = -0.325 <= 0.05`.
-- One seed only; G9 is a warning.
+| corpus | `rel-pos` total | recon | code | H(code) | `constant-code` | unigram | G0 | G6 |
+|---|---:|---:|---:|---:|---:|---:|---|---|
+| synseg | 6.443 | 3.750 | 2.693 | 1.340 | 4.644 | 4.637 | **fail** | **pass** (`rel-abs=-0.331`) |
+| syngrid | 5.874 | 2.932 | 2.943 | 1.352 | 3.914 | 3.908 | **fail** | **pass** (`rel-abs=-0.631`) |
+
+- **G0 fails on both corpora**: `util=1.000`, `delta_recon=0.894` (synseg) and
+  `0.982` (syngrid) pass, but `H(code)=1.34-1.35 < 2` and the total is above
+  unigram. The code carries information, but the entropy model is worse than the
+  empirical code entropy (`CE > H`) and the code rate is too high.
+- **G6 passes**: removing the absolute-position decoder does not help; the
+  span-relative decoder is not worse than absolute.
+- Three seeds; G9 passes for Phase 0.
+- This is the minimal Phase 0, but it is still a negative codec-health result. No
+  Phase 1 structure claim is allowed.
 
 ## Phase 1 - structure (smoke, synseg, seed 0, 40 steps)
 
@@ -71,7 +74,7 @@ not yet healthy enough for a claim.
 
 ## Artifacts
 
-- `runs/p0/quick-cd8d9e84/results.json` and `REPORT.md`
+- `runs/p0/quick-dbe8d386/results.json` and `REPORT.md`
 - `runs/p1/smoke-37d2450a/results.json` and `REPORT.md`
 - `runs/p2/smoke-bad03cb9/results.json` and `REPORT.md`
 - `hncm6.py`, `_selftest` passes; `ruff format`/`ruff check` pass.
