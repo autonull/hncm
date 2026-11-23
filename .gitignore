@@ -1,2 +1,4 @@
 *_out/
 __pycache__
+.venv/
+runs/**/*.pt

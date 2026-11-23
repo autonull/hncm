@@ -1,0 +1,9 @@
+[project]
+name = "hncm5"
+version = "0.5.0"
+description = "H-NCM v5: content-adaptive chunking and budgeted parallel decoding"
+requires-python = ">=3.14"
+dependencies = ["torch>=2.0", "numpy>=2.0", "matplotlib>=3.7"]
+
+[project.optional-dependencies]
+hpo = ["optuna>=4.0"]
