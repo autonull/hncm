@@ -23,9 +23,12 @@ model amortizes; a *first-order concept LM* over the indices cuts the rate by
 affordable, so the charge decides: the index pays against zlib on the two
 structured corpora and against bz2/lzma there too, while on real text at 1 MB it
 beats zlib by at most 0.13 bpb (or ties it under the held-out rule) and loses
-0.45 to bz2. The tail (48% of the val, 80% of the bits) is predictable by
-0.16-0.29 bpb only if its boundary and its table both fall; and the model is
-paid *once*, so above eight 14 kB files the shared model beats bz2 on text.
+0.45 to bz2. The tail (48% of the val, 80% of the bits) now pays: a 16.4 kB
+*shared-parameter* model reaches 4.020 bpb there (1.03 below the byte unigram,
+0.43 below a 256 kB count table), the whole pipeline is 2.723 / 3.006 charged
+(2.677 / 2.960 with the space boundary, the tail side of a retokenization and
+so a bound) with 6.5x fewer calls, and the model is paid *once*, so above ~five 22 kB files
+the shared model beats bz2 on text.
 
 ## 1. Files, commits, artifacts
 
@@ -358,10 +361,10 @@ on shakespeare: the train tail is 0.29 bpb easier than the val, and at 1 MB the
 budget choice is worth more than the model. So the claim is scale- and
 source-conditioned, and it is a negative on real text at 1 MB.
 
-Next: M4 (does the neural bigram generalize the table at 1/10 MB?), M5 (the
-tail: 56% of the shakespeare val is uncovered, and the tail coder is the job
-that the charge leaves open), M7 (enwik8 at 10/100 MB, where the table's
-crossing at 1–2k entries says a bigger budget becomes affordable).
+Next: M4 (does the learned bigram generalize the concept table the way the
+tail's low-rank model generalizes the bytes?), M6 (the factorial `I_perf`), and
+M7 (enwik8 at 10/100 MB, where both models' charges fall below 0.02 bpb and the
+deploy convention stops binding).
 
 ## 9. Results: M5 (the tail) and the amortization
 
@@ -369,48 +372,55 @@ Artifacts: `runs/v7/tail.json`, `runs/v7/TAIL.md`, `runs/v7/transfer.json`,
 `runs/v7/TRANSFER.md`. Both `selftest` pass; `tail_coder.py run` is 1.6 min and
 `transfer.py run` is 1.4 min, on the budget envelope of §8.
 
-### M5: the tail is predictable; its boundary and its table are not free
+### M5: the tail pays with a shared-parameter model
 
 shakespeare's uncovered 53,746 B (8,263 spans, 6.50 B/span) cost the byte unigram
-5.048 bpb, against 0.943 bpb per covered byte: the tail is 48% of the val and
-~80% of its bits.
+5.048 bpb against 0.943 on the covered bytes: the tail is 48% of the val and
+~80% of its bits. The `svd@r` arm is the rank-r factorization of the train
+tail's 257x256 byte-context table (shared parameters); r is chosen on the
+held-out 10% of the train, never the val. The count arms are the same table,
+pruned.
 
 | arm (shakespeare) | byte bpb | boundary | tail bpb | rate | charged | model kB | calls |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| uni | 5.048 | - | 5.048 | 2.921 | **3.087** | 23.1 | 53,747 |
+| uni | 5.048 | - | 5.048 | 2.921 | 3.087 | 23.1 | 53,747 |
 | ar@256 | 4.724 | 0.616 | 5.340 | 3.062 | 3.503 | 61.6 | 8,264 |
-| ar@1024 | 4.601 | 0.616 | 5.218 | 3.003 | 3.783 | 108.7 | 8,264 |
-| ar@4096 | 4.480 | 0.616 | 5.096 | 2.944 | 4.201 | 175.3 | 8,264 |
 | ar@full | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
-| ceiling (no boundary) | 4.718 | - | 4.718 | **2.762** | 3.297 | 74.5 | 8,264 |
+| svd@8 | 4.642 | 0.616 | 5.258 | 3.022 | 3.247 | 31.3 | 8,264 |
+| **svd@16** | **4.020** | 0.616 | **4.636** | **2.723** | **3.006** | 39.5 | 8,264 |
+| svd@32 | 3.937 | 0.616 | 4.553 | 2.682 | 3.084 | 55.9 | 8,264 |
+| svd@16 + space | 4.542 | 0.000 | 4.542 | 2.677 | **2.960** | 39.5 | 8,264 |
+| ceiling (no boundary) | 4.020 | - | 4.020 | 2.426 | 2.709 | 39.5 | 8,264 |
 
-- **The letters are predictable.** A position-conditioned byte bigram cuts the
-  tail bytes by 0.32-0.60 bpb (`ar@full` 4.447 against 5.048), and 0.16 bpb on
-  the total at the best budget with the boundary removed.
-- **The boundary is not free.** The span length costs H(L) = 0.616 bpb (0.601
-  conditioned on the preceding concept class). At 6.50 B/span that exceeds the
-  smallest table's gain (0.324), so every span arm loses to the byte unigram.
-- **The table is not free either.** Even with the boundary removed, 74.5 kB is
-  0.53 bpb at 1.12 MB: 3.297 > 3.087. Both charges must fall, not one.
-- **The hard concept tier adds nothing on the tail.** `prev` (the concept class
-  before the span) is 4.795 against `ar` 4.480; `prev+ar` is 4.582 (worse than
-  `ar` alone); the k-means code is 4.974 plus H(concept) and its centroids.
-  That is a clean negative for a hard concept code on the tail at these counts.
-- **The calls dividend is real:** 53,747 calls (1 per byte) become 8,264 (1 per
-  span), 6.5x, at +0.03 bpb on the rate.
-- **Two pitfalls.** An add-alpha table is overconfident on sparse keys and costs
-  0.15 bpb (`ar` 5.203 against uni 5.048); the Good-Turing discount
-  `D = n1/(n1+2 n2)` fixes it (4.480). And `D = 0` on a key whose counts are all
-  2 puts all its mass on one byte (a zero probability): the discount must be
-  floored (0.25-0.95).
+- **The model generalizes, and that is the win.** At 16.4 kB of parameters the
+  rank-16 factorization reaches 4.020 bpb on the tail bytes: 1.03 bpb below the
+  byte unigram, and 0.43 below the *unbounded* count table (256.5 kB) at 1/16
+  the size. The unseen letter pairs of rare words are what a shared
+  parameterization carries and counts cannot.
+- **The tail now pays its charge:** 3.006 against 3.087 (a 0.08 win). With the
+  boundary coded as the trailing space it is 2.960 (0.13), but the covered token
+  that follows still pays its index, so that row is the *tail side* of a
+  space-suffixed tokenizer: a bound, not a finished codec. Against zlib: 0.21.
+- **The budget is measured, not tuned:** the held-out charge is U-shaped in r
+  (2.727, 2.503, 2.440, 2.389, **2.310** at r=16, 2.386 at r=32, 2.623 at
+  r=64). The val optimum agrees, but the rule is the sel minimum.
+- **The boundary** costs 0.616 bpb as a length and 0.522 as the trailing space
+  (a word ends at a space, which the byte model knows).
+- **Calls: 6.5x** (53,747 -> 8,264) at +0.03 bpb: the synergy's second currency.
+- **The hard k-means concept still adds nothing** (`prev` 4.795, k-means 4.974
+  against `ar` 4.480): a hard code with counts is a negative; the low-rank
+  *shared* model is the positive.
+- **Pitfalls:** an add-alpha table is overconfident on sparse keys (-0.15 bpb)
+  and `D = 0` gives a zero probability (Good-Turing, floored, fixes both);
+  factoring the *log* probabilities is worse than factoring the counts (rank 2 <
+  rank 1): the domain matters.
 - **Controls:** syngrid has no tail (coverage 1.000), so the tail coder is a
-  no-op there; synseg's tail is 493 B and the arms tie (1.297 against 1.323).
+  no-op; synseg's tail is 493 B and the arms tie.
 
-So M5 says the tail carries 0.16-0.29 bpb of predictable structure at a small
-table, and at 1.1 MB neither the boundary nor the table can be paid. The next
-step is a tail model with shared parameters (10-20 kB, not 60-250 kB of counts)
-and a boundary that comes from the dictionary's own structure (a word's trailing
-space) instead of a transmitted length.
+The whole pipeline at 1.12 MB: **rate 2.723, archive charge 3.006** (dict 23.1 +
+tail 16.4 kB) against zlib 3.218 and bz2 2.635; with the space bound it is
+2.677 / 2.960. bz2's per-file mean is 2.942 at K=4, so the shared model now
+crosses bz2 at K ~ 5 instead of K=8.
 
 ### The amortization: one model, K files; the curve is flat
 
@@ -435,3 +445,7 @@ table. `archive` charges the model over train + the K shards (the §8 convention
   111 kB of shards alone, it is 1.65 bpb and nothing pays; the model needs a
   stream ~10x its own size. That is M7's question (10/100 MB), not a defect of
   the code.
+
+Next: M4 (does the learned bigram generalize the concept table the way
+the tail's low-rank model generalizes the bytes?), M6 (the factorial `I_perf`),
+and M7 (enwik8 at 10/100 MB, where both models' charges fall below 0.02 bpb).

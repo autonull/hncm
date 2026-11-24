@@ -8,9 +8,11 @@ EM, and the tiling is *solved*. `concept_lm.py` charges the first-order model
 (0.19/0.06); on real text at 1.12 MB it is at parity with zlib under the
 held-out rule and 0.45 bpb behind bz2. At 1 MB only a 1-2k-entry table is
 affordable, so the table's own 0.4-0.7 bpb cut does not pay yet. The tail is 48%
-of the val and 80% of its bits: its letters are worth 0.32-0.60 bpb, but the
-span boundary (0.62) and the table (0.53) each eat that at 1 MB. The model is
-paid once, so above K=8 files the shared model beats bz2 on text.**
+of the val and 80% of its bits; a 16.4 kB *shared-parameter* tail model (the
+rank-16 factorization of the byte-context table) reaches 4.020 bpb there, 1.03
+below the byte unigram and 0.43 below a 256.5 kB count table, and the whole
+pipeline pays: rate 2.723, archive charge 3.006, at 6.5x fewer calls. The model
+is paid once, so above K~5 files the shared model beats bz2 on text.**
 
 ## The measured bottleneck (v6)
 
@@ -135,31 +137,41 @@ Read it literally:
 - **The tail is the remaining job:** 56% of the shakespeare val is uncovered, so
   the concept LM makes ~50k calls there. M5 measures it below.
 
-## The tail (M5, measured)
+## The tail pays (M5, measured)
 
 The dictionary covers a span exactly; the spans it lacks pay the byte unigram,
-one byte at a time. On shakespeare that tail is 48% of the val and ~80% of its
-bits (5.048 bpb against 0.943 on the covered bytes). `tail_coder.py` codes one
-call per span, with counts and a Good-Turing backoff, charged:
+one byte at a time: 48% of the shakespeare val and ~80% of its bits. The tail
+coder codes one call per span. The win is the *shared* model: the rank-16
+factorization of the 257x256 byte-context table (16.4 kB, r chosen on the
+held-out 10% of the train, never the val).
 
 | arm | byte bpb | boundary | tail bpb | rate | charged | model kB | calls |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| uni | 5.048 | - | 5.048 | 2.921 | **3.087** | 23.1 | 53,747 |
-| ar@256 | 4.724 | 0.616 | 5.340 | 3.062 | 3.503 | 61.6 | 8,264 |
-| ar@full | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
-| ceiling (no boundary) | 4.718 | - | 4.718 | **2.762** | 3.297 | 74.5 | 8,264 |
+| uni | 5.048 | - | 5.048 | 2.921 | 3.087 | 23.1 | 53,747 |
+| ar@full (counts) | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
+| svd@8 | 4.642 | 0.616 | 5.258 | 3.022 | 3.247 | 31.3 | 8,264 |
+| **svd@16** | **4.020** | 0.616 | **4.636** | **2.723** | **3.006** | 39.5 | 8,264 |
+| svd@16 + space | 4.542 | - | 4.542 | 2.677 | **2.960** | 39.5 | 8,264 |
+| ceiling (no boundary) | 4.020 | - | 4.020 | 2.426 | 2.709 | 39.5 | 8,264 |
 
-- The letters are predictable: a position-conditioned byte bigram cuts the tail
-  bytes by 0.32-0.60 bpb, and the total by 0.16 with the boundary removed.
-- The boundary is not free: H(L) = 0.616 bpb at 6.50 B/span, more than the
-  smallest table's gain. A dictionary-structured boundary (a word's trailing
-  space) is the next design.
-- The table is not free either: 74.5 kB is 0.53 bpb at 1.12 MB.
-- The hard concept tier adds nothing beyond the letters (`prev` 4.795 against
-  `ar` 4.480; k-means 4.974 plus H(concept)); the calls dividend is 6.5x at
-  +0.03 bpb.
-- Pitfall: an add-alpha table is overconfident on sparse keys (0.15 bpb
-  *worse*); Good-Turing fixes it, and `D = 0` gives a zero probability.
+- 16.4 kB of shared parameters reach 4.020 bpb on the tail bytes: **1.03 below
+  the byte unigram and 0.43 below the unbounded 256.5 kB count table**. The
+  low-rank structure carries the unseen letter pairs of rare words; the counts
+  cannot.
+- The tail now pays its charge: **3.006 against 3.087**, i.e. 0.21 below zlib at
+  1.12 MB. With the boundary coded as the trailing space: 2.960, the *tail side*
+  of a space-suffixed tokenizer (a bound: the covered token would lose its
+  space too).
+- The boundary is 0.616 bpb as a length, 0.522 as the trailing space.
+- Calls: **6.5x** (53,747 -> 8,264) at +0.03 bpb.
+- Budget chosen on the held-out split (U-shaped: 2.727, 2.503, 2.440, 2.389,
+  **2.310** at r=16, 2.386, 2.623); the val optimum agrees, but it is not the
+  rule.
+- The hard k-means concept adds nothing (`prev` 4.795, k-means 4.974 against
+  `ar` 4.480): a hard code with counts is a negative; the shared *low-rank*
+  model is the positive. Pitfalls: add-alpha is overconfident on sparse keys
+  (-0.15 bpb), `D = 0` gives a zero probability, and factorizing the log
+  probabilities is worse than the counts.
 
 ## One model, K files (measured)
 
@@ -174,10 +186,11 @@ model over train + the shards; `per-file` makes each shard pay it alone.
 | syngrid | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 |
 
 The shared model's curve is flat and every codec's curve rises, because a codec
-pays its model per file. So the K=1 comparison flatters bz2: on shakespeare the
-crossing is K=8, i.e. above eight 14 kB files the shared concept model is
-cheaper than bz2 per file. The deploy convention (the model paid by the 111 kB
-of shards alone) is 1.65 bpb: the model needs a stream ~10x its size (M7).
+pays its model per file. With the tail coder the whole pipeline is rate 2.723 /
+archive 3.006, so bz2's crossing moves to K ~ 5: above five 22 kB files the
+shared concept model is cheaper than bz2 per file. The deploy convention (the
+111 kB of shards paying a 39.5 kB model) is 2.84 bpb of charge: the model needs
+a stream ~10x its size (M7).
 
 ## Next
 

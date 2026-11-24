@@ -52,25 +52,29 @@ DIMS = BINS * CLASSES
 
 @dataclass(frozen=True)
 class Piece:
-    """One uncovered span: its bytes, the concept class before it, its code."""
+    """One uncovered span: its bytes, the concept class before it, its code, and
+    the first byte of the token that follows it (256 = end of stream)."""
 
     raw: bytes
     prev: int
     cid: int = 0
+    post: int = 256
 
 
 # %%
 def pieces(toks: list[bytes], rank: dict[bytes, int]) -> list[Piece]:
     """The maximal runs of single-byte tokens (the spans outside the dictionary),
-    each with the concept class of the token that precedes it. A run ends at a
-    dictionary token, which is also the predecessor of the next run."""
+    each with the concept class of the token that precedes it, and the first byte
+    of the token that follows it. A run ends at a dictionary token, which is also
+    the predecessor of the next run; `post` lets the boundary be a space instead
+    of a transmitted length."""
     out, cur, last = [], bytearray(), len(rank)
     for s in toks:
         if len(s) == 1:
             cur += s
         else:
             if cur:
-                out.append(Piece(bytes(cur), last))
+                out.append(Piece(bytes(cur), last, 0, s[0]))
                 cur = bytearray()
             last = rank.get(s, len(rank))
     if cur:
@@ -237,6 +241,51 @@ def prior_bits(counts: collections.Counter, key: int, n: int, k: int) -> float:
 
 
 # %%
+def byte_matrix(train: list[Piece], root: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The full byte-context table of the train tail.
+
+    Rows are the previous symbol (256 = start), columns the next byte. The counts
+    are the ceiling of a byte bigram; the log probabilities are the reference
+    model a shared-parameter one must approximate.
+    """
+    counts = np.zeros((257, 256))
+    for p in train:
+        prev = 256
+        for b in p.raw:
+            counts[prev, b] += 1
+            prev = b
+    rows = counts.sum(1)
+    prob = (counts + ALPHA * root[None, :]) / (rows[:, None] + ALPHA)
+    return counts, np.log2(prob)
+
+
+def count_model(counts: np.ndarray, root: np.ndarray, r: int) -> tuple[np.ndarray, int]:
+    """The rank-r factorization of the *count* table: shared parameters.
+
+    The low-rank co-occurrence structure is kept and the rows are renormalized
+    with the byte-unigram backoff. It generalizes to unseen pairs by
+    construction (the counts cannot), and its size is `(257 + 256) * r * 2` bytes
+    in float16: r = 16 is 16.4 kB for the whole alphabet. Factorizing the *log*
+    probabilities instead is worse: it is least squares in the wrong domain
+    (measured, rank 2 < rank 1).
+    """
+    u, sv, vt = np.linalg.svd(counts, full_matrices=False)
+    c = (u[:, :r] * sv[:r]) @ vt[:r]
+    c = np.clip(c, 0.0, None)
+    rows = c.sum(1)
+    prob = (c + ALPHA * root[None, :]) / (rows[:, None] + ALPHA)
+    return np.log2(prob), (257 + 256) * r * 2
+
+
+def svd_bits(p: Piece, logp: np.ndarray) -> tuple[float, float]:
+    """The span's bits under the rank-r model, and the cost of the next byte."""
+    bits, prev = 0.0, 256
+    for b in p.raw:
+        bits -= logp[prev, b]
+        prev = b
+    return bits, -logp[prev, p.post] if p.post < 256 else 0.0
+
+
 def measure(name: str, rect: dict) -> dict:
     b = build(name, rect)
     s, d, bc = b["s"], b["d"], b["s"]["bc"]
@@ -254,7 +303,7 @@ def measure(name: str, rect: dict) -> dict:
     if b["val_raw"]:
         xv = np.array([profile(p.raw, b["cls"]) for p in b["val_raw"]])
         cid = nearest(xv, b["cen"])
-        val = [Piece(p.raw, p.prev, int(i)) for p, i in zip(b["val_raw"], cid)]
+        val = [Piece(p.raw, p.prev, int(i), p.post) for p, i in zip(b["val_raw"], cid)]
     else:
         val = []
     lens_cond: dict[int, collections.Counter] = collections.defaultdict(
@@ -312,7 +361,56 @@ def measure(name: str, rect: dict) -> dict:
             size += 2 * DIMS * len(b["cen"])
         row(arm, bits, size, 1 + (tail_bytes if arm == "uni" else len(val)), lb)
 
-    best = None
+    if tail_bytes > 1000:
+        counts, _ = byte_matrix(b["train"], root)
+        rank = {tok: i for i, tok in enumerate(s["top"][:64])}
+        sel = pieces(c.viterbi(s["sel"], d, b["bg"], b["uni"])[0], rank)
+        chosen = None
+        for r in (1, 2, 4, 8, 16, 32, 64):
+            q, size = count_model(counts, root, r)
+            bits = lb = 0.0
+            follows = []
+            for piece in val:
+                one, follow = svd_bits(piece, q)
+                h = prior_bits(lens, len(piece.raw), n_train, CAP)
+                lb += h
+                bits += one + h
+                if piece.post == 32:
+                    follows.append(follow)
+            sb = 0.0
+            for piece in sel:
+                one, _ = svd_bits(piece, q)
+                sb += one + prior_bits(lens, len(piece.raw), n_train, CAP)
+            # the budget is chosen on the held-out 10% of the train, not the val
+            sel_charged = (
+                sb / len(s["sel"])
+                + 8 * (d.model_bytes + table + size + 2 * (CAP + 1)) / stream
+            )
+            row(f"svd@{r}", bits, size + 2 * (CAP + 1), 1 + len(val), lb)
+            rows[-1]["sel_charged"] = sel_charged
+            if chosen is None or sel_charged < rows[chosen]["sel_charged"]:
+                chosen = len(rows) - 1
+        rows[chosen]["chosen"] = True
+        pick = rows[chosen]
+        # the same model with the boundary coded as the trailing space, not H(L)
+        q, size = count_model(counts, root, int(pick["arm"][4:]))
+        follows = []
+        for piece in val:
+            _, follow = svd_bits(piece, q)
+            if piece.post == 32:
+                follows.append(follow)
+        assert any(piece.post == 32 for piece in val), "no trailing space"
+        bits, k = 0.0, 0
+        for piece in val:
+            one, _ = svd_bits(piece, q)
+            if piece.post == 32:
+                bits += one + follows[k]
+                k += 1
+            else:
+                bits += one + prior_bits(lens, len(piece.raw), n_train, CAP)
+        assert k == len(follows)
+        row("svd@space", bits, size + 2 * (CAP + 1), 1 + len(val), 0.0)
+
     if tail_bytes > 1000:
         for top in (256, 1024, 4096, None):
             cand = fit_arms(b["train"], root, top)
@@ -329,16 +427,10 @@ def measure(name: str, rect: dict) -> dict:
                 1 + len(val),
                 lb,
             )
-            if best is None or rows[-1]["charged"] < best[0]:
-                best = (rows[-1]["charged"], cand["prev+ar"])
-        bits = sum(best[1].bits(q) for q in val)
-        row(
-            "ceiling",
-            bits,
-            2 * (CAP + 1) + best[1].size(),
-            1 + len(val),
-            0.0,
-        )
+        # the ceiling: the chosen shared model, with the boundary removed
+        q, size = count_model(counts, root, int(pick["arm"][4:]))
+        bits = sum(svd_bits(piece, q)[0] for piece in val)
+        row("ceiling", bits, size + 2 * (CAP + 1), 1 + len(val), 0.0)
 
     return {
         "stream_bytes": stream,
@@ -351,20 +443,23 @@ def measure(name: str, rect: dict) -> dict:
         "tail_spans": len(val),
         "bytes_per_span": tail_bytes / max(len(val), 1),
         "arms": rows,
+        "best": next(
+            (a["arm"] for a in rows if a.get("chosen") and a["arm"] != "svd@space"),
+            "uni",
+        ),
     }
 
 
 def gates(res: dict) -> list[dict]:
     """G4 the tail beats the byte unigram; G5 the calls dividend; G6 the total
-    beats the current codec; G7 (shakespeare) the total beats bz2."""
+    beats the current codec; G9 the boundary's cost; the budget is the one the
+    held-out 10% of the train chose (`e["best"]`), never the val's optimum."""
     out = []
     for name, e in res["corpora"].items():
         by = {a["arm"]: a for a in e["arms"]}
         uni = by["uni"]
-        best = min(
-            (a for a in e["arms"] if a["arm"] not in ("uni", "ceiling")),
-            key=lambda a: a["charged"],
-        )
+        best = by[e["best"]]
+        space = by.get("svd@space")
         out += [
             {
                 "id": "G4",
@@ -387,6 +482,17 @@ def gates(res: dict) -> list[dict]:
                 "value": f"best={best['charged']:.3f} current={uni['charged']:.3f} "
                 f"gain={uni['charged'] - best['charged']:+.3f}",
                 "status": "pass" if best["charged"] < uni["charged"] else "fail",
+            },
+            {
+                "id": "G10",
+                "corpus": name,
+                "value": f"space boundary {space['tail_bpb']:.3f} against "
+                f"len boundary {best['tail_bpb']:.3f}"
+                if space
+                else "no space boundary",
+                "status": "pass"
+                if space and space["tail_bpb"] < best["tail_bpb"]
+                else "fail",
             },
             {
                 "id": "G9",
@@ -413,11 +519,15 @@ def report(res: dict, path: Path) -> None:
         "",
         "The dictionary covers a span exactly; the uncovered spans pay the byte "
         "unigram, one byte at a time. The tail coder codes one call per span. The "
-        "models are counts with absolute discounting (Good-Turing, floored), keys "
-        "seen once back off, and each table keeps its top 4,096 keys. The cost is "
-        "the span bytes plus the boundary H(L); the concept arm also transmits "
-        "H(concept) and its centroids. The `ceiling` arm removes the boundary: it "
-        "is the rate a boundary-free span code would reach.",
+        "count arms use absolute discounting (Good-Turing, floored) and keep their "
+        "top 4,096 keys; the `svd@r` arms are the rank-r factorization of the "
+        "257x256 byte-context table (shared parameters, 8.2 kB per rank step of "
+        "16), and r is chosen on the held-out 10% of the train, never the val. The "
+        "cost is the span bytes plus the boundary H(L); `svd@space` codes the "
+        "trailing space instead, but the covered token that follows still pays its "
+        "index, so that row is the tail side of a space-suffixed tokenizer (a "
+        "bound). The `ceiling` arm removes the boundary: the rate a boundary-free "
+        "span code would reach.",
         "",
         "| corpus | tail B | spans | B/span | covered bpb | tail bpb |",
         "|---|---:|---:|---:|---:|---:|",
@@ -439,7 +549,8 @@ def report(res: dict, path: Path) -> None:
         ]
         for a in e["arms"]:
             lines.append(
-                f"| {a['arm']} | {a['len_bpb']:.3f} | {a['byte_bpb']:.3f} | "
+                f"| {a['arm']}{' *' if a.get('chosen') else ''} | "
+                f"{a['len_bpb']:.3f} | {a['byte_bpb']:.3f} | "
                 f"{a['tail_bpb']:.3f} | {a['rate']:.3f} | {a['charged']:.3f} | "
                 f"{a['model_bytes'] / 1e3:.1f} | {a['calls']:.0f} |"
             )
@@ -505,6 +616,17 @@ def selftest() -> None:
     rank = {tok: i for i, tok in enumerate(sorted(d.ids, key=lambda s: -len(s))[:4])}
     ps = pieces(toks, rank)
     assert len(ps) == len(spans) and b"".join(p.raw for p in ps) == b"".join(spans)
+    posts, cur = [], bytearray()
+    for tok in toks:
+        if len(tok) == 1:
+            cur += tok
+        else:
+            if cur:
+                posts.append(tok[0])
+                cur = bytearray()
+    if cur:
+        posts.append(256)
+    assert [p.post for p in ps] == posts
 
     arms = fit_arms(ps, root)
     for arm in arms.values():
