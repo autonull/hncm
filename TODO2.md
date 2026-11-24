@@ -1,24 +1,56 @@
-# TODO2 — H-NCM v7: pay for the concept, then cover the tail
+# TODO2 — H-NCM v7: the concept LM is the solution; measure it
 
-Status: `hncm6.py` is the dense-latent negative, `hncm7.py` is the dictionary
-redesign, and both are committed. This plan starts from the measured state and
-runs the NCM part, which is still open. Do not repeat v6. No backwards
-compatibility. One file per design.
+Status: `hncm6.py` is the dense-latent negative. `hncm7.py` is the dictionary
+redesign. `concept_lm.py` is the measured solution path. All are committed and
+all `selftest` pass. This plan is self-contained: read it, run M1–M3, then decide.
 
-## 1. What is established (measured, committed)
+## 0. Start here (fresh session)
+
+```bash
+git log --oneline -5
+python hncm6.py selftest
+python hncm7.py selftest
+python concept_lm.py            # ~5 min, reproduces the solution table (§2.4)
+```
+
+Then run M1, M2, M3 in §4. They are ~1 h total and they decide the claim.
+
+**One-sentence state.** A span *dictionary index* (an exact code) pays where the
+model amortizes; a *first-order concept LM* over the indices cuts the rate by
+0.40–0.67 bpb on every corpus; the remaining question is the *charge* of the
+model (the dictionary plus the bigram table) at each stream size.
+
+## 1. Files, commits, artifacts
+
+| file | what it is |
+|---|---|
+| `hncm6.py` | v6: dense-latent codec. The negative. `run --phase 0` |
+| `hncm7.py` | v7: dictionary codec, EM cost model, exact DP. `--vocab onsets\|substr` |
+| `concept_lm.py` | the solution probe: first-order Viterbi over dictionary indices |
+| `hncm.q4.md` | H-Net × NCM v2 proposal (the NCM design; §3.3) |
+| `TODO1.md` | the v6 plan and its progress (history) |
+| `README.md`, `REPORT.md` | the headline status and tables |
+| `runs/p0/quick-c3b7a8ac/` | v6 Phase 0, 3 seeds, 512 windows |
+| `runs/v7/results.json` | v7 text-only vocabulary (charged) |
+| `runs/v7/onsets.json` | v7 word vocabulary (charged) |
+| `runs/v7/REPORT.md` | the generated v7 report |
 
 Commits: `ac9ef8b` (v6 honest accounting), `bbf4ed0` (v7 dictionary),
-`bf5fe17` (charged budget), `c6c166c` (text-only candidates), `5795f02` (one cost
-model), `7f83f4f` (coverage/calls).
+`bf5fe17` (charged budget), `c6c166c` (text-only), `5795f02` (one cost model),
+`7f83f4f` (coverage/calls), `d463a51` (the concept LM).
 
-**v6, the dense code fails.** The span code is a 12-bit scalar quantization of a
-pooled *mean*. The mean is permutation-invariant, so it cannot carry byte order:
-the code conveys ~1 bpb and costs 3.1. A probe from the same code with a stronger
-decoder reaches 3.42, so the code, not the decoder, is the limit. `total = code +
-residual` is monotone in the code rate (slope 0.30 at 300 and 1200 steps, every
-level, `d_c`, stride, pool and tiling). The optimizer's optimum is to collapse
-the code: the attention pool does (`total=4.79`, no code). The oracle tiling lies
-on the same R-D line as the grid.
+## 2. What is established (measured, do not re-derive)
+
+### 2.1 v6: a dense latent code fails
+
+The span code is a 12-bit scalar quantization of a *pooled mean*. A mean is
+permutation-invariant, so it cannot carry byte order: the code conveys ~1 bpb and
+costs 3.1. A probe from the same code with a stronger decoder reaches 3.42, so
+the *code*, not the decoder, is the limit. `total = code + residual` is monotone
+in the code rate (slope 0.30 at 300 and 1200 steps, every level, `d_c`, stride,
+pool and tiling). The optimizer's optimum is to collapse the code; the attention
+pool does (`total=4.79`, no code). The oracle tiling lies on the same R-D line as
+the grid, so the tiling cannot rescue a dense code.
 
 Full Phase 0, 3 seeds, 512 windows (`runs/p0/quick-c3b7a8ac/`):
 
@@ -33,14 +65,22 @@ Full Phase 0, 3 seeds, 512 windows (`runs/p0/quick-c3b7a8ac/`):
 
 G0 fails on total only; G6/G9 pass. Phase 1 was not run.
 
-**v7, the dictionary code pays where the model amortizes.** The code is a span
-index into a *free* dictionary; the decoder writes the exact bytes, so the
-residual is zero. The dictionary is a token-usage unigram fitted by EM, the
-vocabulary size is swept, and the model is charged and amortized over train+val.
-Both vocabularies use the same model (`runs/v7/results.json` text-only,
-`runs/v7/onsets.json` word):
+R-D sweep (honest, seed 0, 300 steps, synseg, unigram 4.637): levels 4,
+`d_c` 1, stride 16 → 4.544 + 0.248 = 4.792; levels 8, `d_c` 2, stride 4 →
+4.143 + 1.581 = 5.724; levels 8, `d_c` 4, stride 4 → 3.715 + 3.080 = 6.795.
+At 1200 steps: 4.323 + 0.847 = 5.170; 4.106 + 1.570 = 5.676;
+3.586 + 3.063 = 6.648. The slope stays ~0.3.
 
-| corpus | vocab | dict | model | DP | charged | gzip | DP−greedy | covered | calls |
+### 2.2 v7: a dictionary code pays where the model amortizes
+
+The code is a span *index* into a dictionary; the decoder writes the exact bytes,
+so the residual is zero. The dictionary is a token-usage unigram fitted by EM on
+the train, the vocabulary size is swept, and the model (`512 + sum(len+3)` bytes)
+is charged and amortized over train+val. Both vocabularies use the same model.
+
+Best charged point per row (`runs/v7/onsets.json`, `runs/v7/results.json`):
+
+| corpus | vocab | dict | model | rate | charged | gzip | DP−greedy | covered | calls |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | synseg | word | 768 | 0.038 | 1.290 | **1.328** | 2.225 | +0.000 | 0.996 | 485 |
 | synseg | text | 4,352 | 0.463 | 1.880 | 2.343 | 2.225 | +0.098 | 0.779 | 26,560 |
@@ -49,30 +89,34 @@ Both vocabularies use the same model (`runs/v7/results.json` text-only,
 | shakespeare | word | 4,352 | 0.285 | 3.062 | 3.347 | 3.218 | +0.000 | 0.667 | 37,168 |
 | shakespeare | text | 2,304 | 0.156 | 3.299 | 3.455 | 3.218 | +0.084 | 0.607 | 43,887 |
 
-Three findings:
+Budget curve (word, shakespeare, 1.12 MB stream):
 
-1. The code must be a *dictionary index* (a discrete class with an exact inverse),
-   not a dense latent. The dictionary pays by 0.90/0.82 bpb on synseg/syngrid and
-   loses by 0.13 on shakespeare at 1.1 MB (`runs/v7/onsets.json`).
-2. The *model* is the frontier. The budget optimum on shakespeare is 4,352
-   entries (39.7 kB); below it the rate pays, above it the model pays.
-3. The *parallelism dividend is bounded by coverage*. Calls = 1 + the uncovered
-   bytes. On shakespeare the dictionary covers 0.667, so the tail needs 37,168
-   calls against 128 for a byte-AR model: the dividend is 0.003x. On synseg
-   `0.996` needs 485 calls: `0.26x`. Only syngrid (the grid *is* the structure)
-   reaches 1 call.
+| vocab | model kB | rate | charged |
+|---:|---:|---:|---:|
+| 256 | 2.6 | 3.877 | 3.896 |
+| 512 | 4.8 | 3.756 | 3.791 |
+| 1,024 | 9.5 | 3.435 | 3.504 |
+| 2,048 | 19.3 | 3.237 | 3.375 |
+| 4,096 | 39.7 | 3.062 | **3.347** |
+| 8,192 | 82.5 | 2.905 | 3.497 |
+| 16,384 | 175.0 | 2.816 | 4.071 |
+| 32,768 | 315.6 | 2.709 | 4.972 |
 
-So the dictionary is a *parallel* codec only where it covers; on real text the
-tail dominates. **The NCM's remaining job is the tail.**
+### 2.3 v7: the parallelism dividend is bounded by coverage
 
-## 2. The solution path, measured (2026-11-24)
+Calls = 1 + the uncovered bytes. The uncovered bytes pay the byte unigram, one at
+a time. Word dictionary, DP: synseg covered 0.996 / 485 calls; syngrid 1.000 / 1
+call; shakespeare 0.667 / 37,168 calls against 128 for a byte-AR model. So the
+dividend is 0.003x on shakespeare, 0.26x on synseg, 128x only on syngrid (where
+the grid *is* the structure). The dictionary is a parallel codec only where it
+covers.
 
-v7 prices each concept by its *unigram*: no context. The concept alphabet is
-predictable, and the previous concept is already decoded, so a *bigram over the
-indices* is a decodable context model. It also makes the DP a *first-order*
-Viterbi, so the solver stops being myopic. This is measured in
-`concept_lm.py` (the count bigram is the ceiling; a neural bigram is the next
-step):
+### 2.4 The solution: a first-order concept LM (`concept_lm.py`)
+
+v7 prices each concept by its *unigram*: no context. The alphabet is predictable,
+and the previous concept is already decoded, so a *bigram over the indices* is a
+decodable cost model. It also makes the DP a *first-order Viterbi*, which is
+exact. Count bigram (the ceiling; a neural bigram is M4):
 
 | corpus | vocab | dict | unigram | **bigram** | cut |
 |---|---:|---:|---:|---:|---:|
@@ -83,164 +127,156 @@ step):
 | synseg | 2,048 | 894 | 1.285 | **0.888** | 0.40 |
 | syngrid | 2,048 | 558 | 2.051 | **1.382** | 0.67 |
 
-A 0.40–0.67 bpb cut on all three corpora. On shakespeare the bigram reaches
-2.40–2.54 against gzip 3.218 and xz ~2.5: the *rate* is now competitive.
+**The pitfall that hid it (do not repeat).** An *iterated* bigram — costs from
+the previous token of the *unigram* tiling, then one more DP pass — is *worse*
+than the unigram: 3.128 vs 2.905 on shakespeare; 1.728 vs 1.285; 2.801 vs 2.051.
+The DP picks tokens under a model built for a different path. The model's cost
+must condition on the *actual* state of the path. The first-order Viterbi does
+that, and it wins.
 
-**The pitfall that hid it.** An *iterated* bigram (costs from the previous token
-of the *unigram* tiling, then one more DP pass) is *worse* than the unigram:
-3.128 vs 2.905 on shakespeare. The DP picks tokens under a model built for a
-different path. The model's cost must condition on the *actual* state of the
-path. The first-order Viterbi does exactly that, and it wins. This is a rule:
-**the cost model must be evaluated on the path it is used to search.**
+**The charge.** The bigram table is data: ~6 bytes per entry (two 2-byte indices
+and a 2-byte count). The rate gain is 0.4–0.7 bpb; a pruned table is ~0.2–2 MB,
+so the table pays above roughly 1–5 MB of stream. At 10–100 MB the charge is
+0.02–0.2 bpb. The crossover is `8 * model_bytes / (gzip − rate)`.
 
-**The charge.** The bigram table is data, so it is charged (a pruned bigram:
-~6 bytes per entry; a neural bigram: its fitted parameters). The rate gain is
-0.4–0.7 bpb; the table is ~0.2–2 MB, so it pays above roughly 1–5 MB of stream.
-The *charged* budget curve is the next measurement, and the *crossover* is the
-result. At scale (10–100 MB) the charge is 0.02–0.2 bpb.
+## 3. Findings and the solution path
 
-**What the NCM must add, now with a job.** The dictionary and the count bigram
-are data. A *neural concept LM* (a small model over the indices) is fitted too,
-so it is charged like the table; its value is not a free model, it is
-*generalization*: it predicts a bigram that the table has not seen. That is the
-tail. The NCM's two jobs are now precise:
+1. **The code must be an index, not a dense latent.** A dense latent of 12 bits
+   conveys ~1 bpb (the mean destroys order, the probe bounds it at 3.42); an index
+   into a dictionary has an exact inverse, so the residual is zero.
+2. **The model is the frontier.** The dictionary is free at the rate and charged
+   as data: 6.1 kB on synseg, 39.7 kB on shakespeare. Below the budget optimum
+   the rate pays, above it the model pays.
+3. **The dividend is bounded by coverage.** Calls = 1 + uncovered bytes, so on
+   real text the tail dominates unless the tail is covered by concepts.
+4. **The solution is a first-order concept LM over the indices**, solved exactly
+   by a first-order Viterbi: 0.40–0.67 bpb on all three corpora, with a decodable
+   cost model and no fantasy. Its charge is the table and the dictionary.
+5. **The NCM's job is now precise**: the *tail coder* (spans outside the
+   dictionary, one call per span) and the *bigram generalizer* (unseen concept
+   pairs versus the backoff). Both are rate endpoints; both are cheap to measure.
 
-1. **The tail coder**: on spans outside the dictionary, a learned concept plus a
-   decoder must beat the byte unigram (4.78) at one call per span.
-2. **The bigram generalizer**: on unseen concept pairs, a neural LM must beat the
-   table's backoff. Measure the conditional CE on held-out concept pairs.
+### 3.3 What to take from `hncm.q4.md`
 
-Both endpoints are cheap to measure and both are *rate* numbers, so a negative is
-informative and a positive is real.
+Take: the *coarse-to-fine generator* (`gen_concept`: global chunk → sub-chunk →
+byte, each conditioned on the coarser reconstruction) as the tail coder; the *tied
+router* (`W_k ← W_q`) and the *minimum-chunk-length* prior (they fix
+over-segmentation; the DP prices the same effect exactly through the length cost,
+so they are control arms); the *corruption-chain* training for the hierarchy; and
+the factorial `I_perf = (D−C) − (B−A)` as the merge estimand (M6).
 
-### What the NCM part must do (`hncm.q4.md`)
+Reject or re-scope: the RVQ hierarchy is 4 × (512, 512, 512, 256) ≈ 27
+bits/chunk ≈ 9 bpb at 3.4 bytes/chunk. `hncm.q4.md` measures D at 10.6 bpb and
+its code at 9.07: the same rate wall as v6. A concept must be *cheap*. Its
+interaction is −0.85 at 400 steps: do not read it as evidence.
 
-`hncm.q4.md` (H-Net dynamic chunking × NCM multiscale RVQ) supplies the NCM
-design. Take these ideas:
+## 4. Remaining work (the measurements, in order)
 
-- **The coarse-to-fine generator** (`gen_concept`): level 0 global chunk code,
-  then sub-chunk, then byte, each conditioned on the coarser reconstruction. This
-  is the *tail coder*: a learned decoder that writes a span from its concept
-  instead of looking it up.
-- **The tied-router initialisation** (`W_k ← W_q`) and the **minimum-chunk-length
-  prior**: both fix over-segmentation (1.2 bytes/chunk with a random router). The
-  v7 DP prices the same effect *exactly* through the length cost, so these are
-  control arms, not the main mechanism.
-- **The factorial estimand** `I_perf = (D−C) − (B−A)` on −BPB, with arms A byte-AR,
-  B H-Net-lite, C NCM-lite, D H-NCM. This is the clean merge test; adopt it.
-- **The corruption-chain training** (`p_corr`) for the hierarchy: train fine
-  levels against corrupted coarse codes.
+### M1 — charged bigram budget curve (~30 min) — **run this first**
 
-Reject or re-scope:
+*Question:* does the concept LM pay for its table at each stream size?
+*How:* in `concept_lm.py`, sweep the pruned bigram size (top-N by count:
+4k, 8k, 16k, 32k, 64k) times the dictionary size (2,048, 4,096, 8,192), with the
+backoff for the pruned entries. Charge `dict_bytes + 6 * n_bigrams`. Report the
+charged total and the crossing `N* = 8*model_bytes/(gzip − rate)`.
+*Endpoint:* charged total versus gzip and xz at 1.12 MB; the crossing in MB.
+*Gate:* the charged total < gzip 3.218 at the corpus size, or report the crossing.
+*Stop:* none; this is the measurement that sets the claim. A positive here is a
+real result; a crossing beyond the corpus means a scale-conditioned claim.
 
-- The RVQ hierarchy is 4 levels of 512/512/512/256 ≈ 27 bits/chunk. At ~3.4
-  bytes/chunk that is ~9 bpb. `hncm.q4.md` measures D at 10.6 bpb and its own
-  code term at 9.07: the same rate bottleneck as v6. A concept must be *cheap*
-  (a few bits), or the total cannot pay.
-- The interaction is −0.85 in q4 at 400 steps: still sub-additive. Do not read it
-  as evidence until the code is cheaper than the reconstruction gain.
+### M2 — the solver gain under the first-order cost (~10 min)
 
-The NCM's measurable claim: **on the uncovered tail, a learned concept plus a
-learned decoder must beat the byte unigram at 1 call per span.** It has no other
-job: the dictionary already covers what a lookup covers.
+*Question:* does the exact DP beat a greedy on the *same* bigram costs?
+*How:* add a greedy arm to `concept_lm.py`: at each position take the longest
+dictionary span, pay the bigram cost of its sequence, then compare the sum to the
+Viterbi's. Also add the fixed-4 grid and the unigram for reference.
+*Endpoint:* `DP − greedy` in bpb, and `DP − fixed`.
+*Gate:* DP < greedy. Expected positive, because the greedy is myopic for a bigram
+cost. This is the *first honest test* of "solving beats guessing" with a payoff.
 
-## 3. Plan (priority order)
+### M3 — strong baselines (~30 min)
 
-### P0 — coverage/calls frontier (~15 min)
+*Question:* does the concept LM beat a real codec, not gzip?
+*How:* add `lzma`, `bz2` and `zlib` (stdlib) on the same val bytes; `zstd` and
+`brotli` only if installed. Charge every model (these include their tables in the
+stream, so their size already covers it).
+*Endpoint:* their bpb versus the concept LM's charged total.
+*Gate:* the charged concept LM ≤ the best real codec. xz on shakespeare is ~2.5;
+the concept LM is 2.4–2.5 before the charge, so this is the decisive test.
 
-Add `covered` and `calls` to the budget loop in `run` (`hncm7.py`), which currently
-reports rate/charged only. Anchor:
+### M4 — the neural bigram (~1–2 h)
 
-```python
-rate = bits_of(cover(va, dk, 0.0), dk) / len(va)
-charged = rate + 8 * dk.model_bytes / stream
-# add: toks = cover(...); single = sum(len(s) for s in toks if len(s) == 1)
-#      covered = 1 - single/len(va); calls = 1 + single
-```
+*Question:* does a *learned* concept LM generalize where the count table cannot?
+*How:* train a small model over the dictionary indices (a 64-dim embedding and a
+low-rank output; `p(i | prev) = softmax(E[prev] @ W)`). Measure its conditional
+CE on *held-out* concept pairs (the val pairs not in the train bigram) versus the
+count table's backoff. Charge its fitted parameters.
+*Endpoint:* the held-out conditional CE and the charged total.
+*Gate:* the neural CE < the table's backoff CE and its charged total ≤ the table's.
+*Stop:* if the neural CE ≥ the backoff, the concept LM does not generalize;
+report it. That is the NCM's *bigram generalizer* job, and it is a negative.
 
-Sweep vocab in `(256, 512, 1024, 2048, 4096, 8192, 16384, 32768)` for both
-`--vocab onsets` and `--vocab substr`.
+### M5 — the tail coder (~2–4 h, the last research step)
 
-- Endpoint: `covered`, `calls`, `charged` per point; the calls ratio
-  `L / (1 + uncovered)` at the charged optimum.
-- Gate: the calls ratio ≥ 8 at the charged-optimal point, on at least one corpus.
-- Expected: fail on shakespeare, pass on syngrid only. **Report it either way.**
-- Stop: if no point passes, the parallel dividend is dead on real text; the tail
-  is the only path (P3).
+*Question:* on spans *outside* the dictionary, does a learned concept plus a
+decoder beat the byte unigram at one call per span?
+*How:* take the uncovered val spans. Train a span encoder (an order-aware
+1–2 layer transformer, not a mean) → a VQ concept (K = 256–4,096) with a *static*
+prior → a learned decoder (the concept + the span length + the within-span offset
+→ 256 logits per byte). Arms: `uni` (the byte unigram, 1 call per byte),
+`concept` (1 call per span), `ar-span` (a causal byte model inside the span).
+*Endpoint:* the tail residual in bpb and the calls.
+*Gate:* the tail residual < the byte unigram (4.78) *and* the calls ratio
+`L / (1 + uncovered) ≥ 8` at the charged-optimal vocabulary *and* the total
+(concept + residual) < the dictionary's charged total on the tail.
+*Stop:* if the tail residual ≥ the byte unigram, the concept carries nothing on
+unseen spans; report and stop.
 
-### P1 — held-out vocabulary size (~15 min)
+### M6 — the factorial (~1 h)
 
-The size is chosen on the charged total reported on the same val. Split the val
-into two halves: select the size on half A, report on half B. Gate: the selected
-size is within one grid step and the charged total changes by ≤ 0.05 bpb. If not,
-the budget curve is a selection artifact.
+Adopt `hncm.q4.md`'s estimand on the current arms: A byte-AR, B the dense codec
+(v6), C the dictionary plus unigram plus DP (v7), D the dictionary plus concept
+LM plus DP. `I_perf = (D−C) − (B−A)` on −BPB at a matched budget; 3 seeds;
+report per-seed. A negative is publishable with clean controls.
 
-### P2 — strong baselines (~30 min)
+### M7 — scale (~1 h)
 
-gzip is weak. Add `zlib`, `lzma`, `bz2` (already in the stdlib; no dependency),
-`zstd` and `brotli` only if installed. Charge every model. Gate: the dictionary's
-charged total ≤ the best real codec on shakespeare. Expected: xz ≈ 2.4–2.7 bpb, so
-the dictionary (3.347) lose. Report it.
+`enwik8` at 10 MB and 100 MB, with the model charged at each size. Gate: the
+charged total at 100 MB is below the best real codec and the calls ratio rises
+with size. The representation should dominate and the crossover should disappear.
 
-### P3 — the NCM tail coder (~2 h, the research step)
+**Minimal decisive run: M1 + M2 + M3 (~1 h). Research: M4, M5.**
 
-Take the *uncovered* val spans (a span not in the dictionary). Train a learned
-concept plus decoder on the *train* spans:
-
-```
-span bytes (<= 16) -> order-aware span encoder (a 1-2 layer transformer)
-                   -> z (d_c = 8..16) -> VQ concept (K = 256..4096)
-concept + span length + within-span offset -> learned decoder -> 256 logits/byte
-```
-
-Train end to end; the rate is the concept's entropy under a *static/EMA* prior
-(decodable, never conditioned on `z`). Arms on the tail:
-
-| arm | what it is | calls |
-|---|---|---|
-| `uni` | the byte unigram (the current fallback) | 1 per byte |
-| `concept` | the learned concept + decoder | 1 per span |
-| `ar-span` | a causal byte model inside the span | L per span |
-
-- Endpoint: the tail's residual bpb and the calls.
-- Gate: the tail residual < the byte unigram (4.78 on shakespeare) *and* the calls
-  ratio `L / (1 + uncovered) ≥ 8` at the *charged-optimal* vocabulary, and the
-  total (concept + residual) < the dictionary's charged total on the tail.
-- Stop: if the tail residual ≥ the byte unigram, the concept carries nothing on
-  unseen spans. Report the negative; the NCM part is then a lookup, not a model.
-
-### P4 — the factorial (~1 h)
-
-Adopt q4's estimand on the new arms: A byte-AR, B dense codec (v6), C dictionary
-plus DP (v7), D dictionary plus DP plus the NCM tail (P3). `I_perf = (D−C)−(B−A)`
-on −BPB at matched budget. Report per-seed; 3 seeds. A negative is publishable
-with clean controls.
-
-### P5 — scale (~1 h)
-
-`enwik8` at 10 MB and 100 MB with the model charged at each size. Gate: the
-charged total at 100 MB is below the best real codec, and the calls ratio rises
-with size. The representation should dominate; the crossover should disappear.
-
-## 4. Rules not to repeat (each cost a run)
+## 5. Rules not to repeat (each cost a run)
 
 1. The entropy model must not condition on the latent it codes. The decoder must
    have every input of the model.
 2. Charge per *transmitted* symbol, not per position. A packed tail is not a code.
-3. Train length embeddings on *all* lengths the DP and oracle can emit, not only
-   the DP set.
+3. Train length embeddings on *all* lengths the DP and oracle can emit.
 4. Cap a BPE merge at 16 bytes. A 512-byte "token" is memorisation.
 5. The oracle is a *baseline*, not a ceiling, when the vocabulary is not
    word-aligned.
 6. Normalise the index cost by the *token usage* (a unigram), not by positions.
    Both vocabularies must use one model.
-7. Charge the model (the dictionary or codebook) and amortise it over the stream.
-   Report the stream size and the charge.
+7. Charge the model (the dictionary, the bigram table, the codebook) and amortise
+   it over the stream. Report the stream size with the charge.
 8. Report coverage and calls together. Calls = 1 + the uncovered bytes.
 9. Select the vocabulary size on a held-out split, never on the reported val.
-10. `total_bpb` is the primary metric. A probe, not a judge, bounds the code.
+10. Evaluate the cost model on the *path it searches*. An iterated approximation
+    with stale context is worse than no context (3.128 vs 2.905).
+11. `total_bpb` is the primary metric. A probe, not a judge, bounds the code.
+    "Sample quality" is not a rate.
 
-## 5. Commands and artifacts
+## 6. Constraints (AGENTS.md)
+
+Python 3.14; `uv`; `ruff format` always and `ruff check --fix` on changed files;
+`_selftest` must cover every invariant that broke (DP optimality, exact cover,
+entropy round-trip, resume, tail invariance, decoder geometry); one file per
+design; no backwards compatibility; no pydantic at the boundary; no import-time
+I/O; `main()` plus a CLI; atomic writes; seed and log every run. A run without
+provenance is not evidence.
+
+## 7. Commands
 
 ```bash
 python hncm6.py selftest
@@ -248,20 +284,5 @@ python hncm6.py run --preset quick --phase 0 --seeds 0,1,2
 python hncm7.py selftest
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab onsets
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab substr
+python concept_lm.py
 ```
-
-Artifacts: `runs/v7/onsets.json`, `runs/v7/results.json`,
-`runs/v7/REPORT.md`, `runs/p0/quick-c3b7a8ac/` (the v6 negative).
-Docs: `README.md`, `REPORT.md`, `hncm.q4.md` (the NCM proposal).
-
-## 6. Constraints (AGENTS.md)
-
-Python 3.14; `uv` for the environment; `ruff format` always and
-`ruff check --fix` on changed files; `_selftest` must cover every invariant that
-broke (DP optimality, exact cover, entropy round-trip, resume, shared init, tail
-invariance, decoder geometry); one file per design; no backwards compatibility;
-no pydantic at the boundary; no import-time I/O; `main()` plus a CLI; atomic
-writes; seed and log every run; a run without provenance is not evidence.
-
-**Minimal decisive run: P0 + P1 + P2 (~1 h). The research step: P3 (~2 h).**
-A negative with clean controls is publishable. Do not tune a dead arm.

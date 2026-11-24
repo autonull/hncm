@@ -67,25 +67,37 @@ Read this literally:
 4. The synthetic corpora are highly repetitive; their candidate counts are huge
    (1.1M distinct substrings), so the EM's pruning is doing the heavy lifting.
 
+## The solution: a first-order concept LM
+
+v7 prices each concept by its unigram, so it leaves the context on the table.
+The alphabet is predictable and the previous concept is already decoded, so a
+bigram over the dictionary indices is a decodable cost model; it also makes the
+DP a first-order Viterbi, which is exact (`concept_lm.py`):
+
+| corpus | vocab | unigram | **bigram** | cut |
+|---|---:|---:|---:|---:|
+| shakespeare | 2,048 | 3.237 | **2.655** | 0.58 |
+| shakespeare | 4,096 | 3.062 | **2.538** | 0.52 |
+| shakespeare | 8,192 | 2.905 | **2.450** | 0.46 |
+| synseg | 2,048 | 1.285 | **0.888** | 0.40 |
+| syngrid | 2,048 | 2.051 | **1.382** | 0.67 |
+
+A 0.40-0.67 bpb cut on all three corpora: on shakespeare 2.40-2.54 against gzip
+3.218 and xz ~2.5. The pitfall that hid it: an *iterated* bigram is worse than
+the unigram (3.128 vs 2.905) because its costs come from the previous token of a
+different path. The cost model must be evaluated on the path it searches.
+
+The bigram table is data and is charged (~6 bytes per entry), so it pays above
+roughly 1-5 MB and 0.02-0.2 bpb at 10-100 MB. The NCM's jobs are now precise:
+the tail coder (spans outside the dictionary at one call per span) and the bigram
+generalizer (unseen concept pairs versus the backoff).
+
 ## Next
 
-`TODO2.md` is the runnable plan. It starts from the three measured findings:
-
-1. The code must be a dictionary index (an exact inverse), not a dense latent.
-2. The model is the frontier: 6.1 kB on synseg, 39.7 kB on shakespeare.
-3. The parallelism dividend is bounded by coverage: calls = 1 + the uncovered
-   bytes. On shakespeare the dictionary covers 0.667 and needs 37,168 calls against
-   128 for a byte-AR model, so the dividend is 0.003x.
-
-The NCM's remaining job is the tail. `hncm.q4.md` supplies the design to take:
-the coarse-to-fine generator (a learned concept to bytes decoder), the tied router
-and minimum-chunk-length controls, the corruption-chain training, and the factorial
-`I_perf=(D-C)-(B-A)`. Its RVQ hierarchy is 27 bits/chunk (~9 bpb) and is too
-expensive; a concept must be cheap.
-
-Plan: P0 coverage/calls frontier, P1 held-out vocabulary size, P2 strong baselines
-(lzma, bz2, zstd, brotli), P3 the NCM tail coder, P4 the factorial, P5 scale.
-The minimal decisive run is P0-P2 (~1 h).
+`TODO2.md` is the self-contained plan. Run M1 (the charged bigram budget curve),
+M2 (the DP against a greedy on the same bigram costs) and M3 (lzma, bz2, zstd,
+brotli) first: ~1 h, and they set the claim. Then M4 (the neural bigram),
+M5 (the tail coder), M6 (the factorial), M7 (enwik8 at 10/100 MB).
 
 ## Commands
 
