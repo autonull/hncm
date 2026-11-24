@@ -2,7 +2,7 @@
 
 Status: `hncm6.py` is the dense-latent negative. `hncm7.py` is the dictionary
 redesign. `concept_lm.py` is the measured solution path. All are committed and
-all `selftest` pass. This plan is self-contained: read it, run M1–M3, then decide.
+all `selftest` pass. **M1–M3 are run: the results and the decision are §8.**
 
 ## 0. Start here (fresh session)
 
@@ -10,15 +10,18 @@ all `selftest` pass. This plan is self-contained: read it, run M1–M3, then dec
 git log --oneline -5
 python hncm6.py selftest
 python hncm7.py selftest
-python concept_lm.py            # ~5 min, reproduces the solution table (§2.4)
+python concept_lm.py run        # ~8 min, M1-M3 (§8)
 ```
 
-Then run M1, M2, M3 in §4. They are ~1 h total and they decide the claim.
+M1, M2, M3 in §4 are done; §8 is the measured answer.
 
 **One-sentence state.** A span *dictionary index* (an exact code) pays where the
 model amortizes; a *first-order concept LM* over the indices cuts the rate by
-0.40–0.67 bpb on every corpus; the remaining question is the *charge* of the
-model (the dictionary plus the bigram table) at each stream size.
+0.40–0.67 bpb on every corpus, and at 1 MB only a 1–2k-entry table is
+affordable, so the charge decides: the index pays against zlib on the two
+structured corpora and against bz2/lzma there too, while on real text at 1 MB it
+beats zlib by at most 0.13 bpb (or ties it under the held-out rule) and loses
+0.45 to bz2.
 
 ## 1. Files, commits, artifacts
 
@@ -172,7 +175,7 @@ interaction is −0.85 at 400 steps: do not read it as evidence.
 
 ## 4. Remaining work (the measurements, in order)
 
-### M1 — charged bigram budget curve (~30 min) — **run this first**
+### M1 — charged bigram budget curve (~30 min) — done (§8)
 
 *Question:* does the concept LM pay for its table at each stream size?
 *How:* in `concept_lm.py`, sweep the pruned bigram size (top-N by count:
@@ -184,7 +187,7 @@ charged total and the crossing `N* = 8*model_bytes/(gzip − rate)`.
 *Stop:* none; this is the measurement that sets the claim. A positive here is a
 real result; a crossing beyond the corpus means a scale-conditioned claim.
 
-### M2 — the solver gain under the first-order cost (~10 min)
+### M2 — the solver gain under the first-order cost (~10 min) — done (§8)
 
 *Question:* does the exact DP beat a greedy on the *same* bigram costs?
 *How:* add a greedy arm to `concept_lm.py`: at each position take the longest
@@ -194,7 +197,7 @@ Viterbi's. Also add the fixed-4 grid and the unigram for reference.
 *Gate:* DP < greedy. Expected positive, because the greedy is myopic for a bigram
 cost. This is the *first honest test* of "solving beats guessing" with a payoff.
 
-### M3 — strong baselines (~30 min)
+### M3 — strong baselines (~30 min) — done (§8)
 
 *Question:* does the concept LM beat a real codec, not gzip?
 *How:* add `lzma`, `bz2` and `zlib` (stdlib) on the same val bytes; `zstd` and
@@ -284,5 +287,68 @@ python hncm6.py run --preset quick --phase 0 --seeds 0,1,2
 python hncm7.py selftest
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab onsets
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab substr
-python concept_lm.py
+python concept_lm.py selftest
+python concept_lm.py run            # ~8 min, writes runs/v7/concept.json + CONCEPT.md
+python concept_lm.py run --vocab onsets
 ```
+
+## 8. Results: M1–M3 measured
+
+Artifacts: `runs/v7/concept.json`, `runs/v7/CONCEPT.md`; `python concept_lm.py
+selftest` passes; `run` takes ~8 min on CPU (`shakespeare` dominates: the
+substring counts).
+
+Setup. The dictionary and the table are fitted on the first 90% of each corpus.
+The budget (vocabulary × dict size × table size) is chosen by a *rule* that sees
+the last 10% of the train, which the model never fitted; the val is only
+reported. `oracle` is the best grid point on the val plus the header that sends
+the choice: the envelope of the representation, and the gap from the rule to it
+is the cost of the rule. The table is refitted on the DP's own path (2 EM
+rounds, chosen on the same 10%). The model is charged 6 bytes per bigram entry
+over train+val. v7's `gzip` column is zlib/deflate; here both are measured.
+
+| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle | vs zlib | vs best | zlib crossing |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shakespeare | 1.12 MB | 3.218 | 3.199 | **2.635** | 2.943 | 2.984 | 2.825 | 3.227 | 3.087 | −0.131 | +0.451 | 0.62 MB |
+| synseg | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | **1.325** | **1.323** | −0.901 | −0.190 | 0.06 MB |
+| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **1.999** | 2.453 | 2.295 | **1.939** | **1.939** | −0.947 | −0.060 | 0.32 MB |
+
+**M1, the charge.** The dictionary (6.4 kB at 512 spans to 25.4 kB at 2,048) pays
+above 0.06 MB (synseg), 0.32 MB (syngrid) and 0.62 MB (shakespeare) of stream.
+At 1.12 MB the affordable table is 1,024–2,048 entries (6–12 kB) on real text
+and 256–8,192 on the structured corpora; the *full* table is never affordable
+at 1 MB (shakespeare: 58,981 entries, 354 kB, rate 2.870, charged 5.55). The
+crossings vs lzma are 0.09 MB (synseg), 1.02 MB (syngrid) and 8.53 MB
+(shakespeare); vs bz2 they are 0.24 MB, 0.77 MB and *never* on shakespeare,
+because the concept LM's rate (2.92) is above bz2's (2.635) at every affordable
+budget. The charge is what decides, and it is a scale question.
+
+**M2, the solver.** At the charged optimum the DP equals the greedy to 0.001 bpb
+on all three corpora: the table is too small at 1 MB for the myopic longest
+match to lose. At the *full* table (v7's rate optimum) the DP beats the greedy
+by 0.098 (shakespeare text) and 0.084 (synseg text), and ties on syngrid, where
+the grid *is* the dictionary (the negative control). DP < fixed-4 everywhere
+(rate 3.05/1.27/1.59 against 4.73/4.59/1.59) and DP < the unigram codec
+everywhere (3.49/1.29/2.05): solving beats guessing, but at 1 MB the solver's
+prize is smaller than the table's charge.
+
+**M3, the strong codecs.** bz2 is the baseline that matters: it wins
+shakespeare (2.635 vs the oracle 3.087; brotli 2.825, lzma 2.943, zstd 2.984) and
+synseg (1.513 vs 1.323), and lzma wins syngrid by 0.06 only (1.999 vs 1.939).
+zlib/gzip are weak everywhere (3.2/2.2/2.9 against 3.09/1.32/1.94).
+
+**The decision.** The dictionary index pays its charge against *every* real
+codec exactly where the source has a small exact vocabulary (synseg, syngrid:
+0.06–0.19 bpb below bz2/lzma, 0.9 below zlib). On natural text at 1.1 MB it is
+at parity with zlib at best (a 0.13 win at the envelope: 3.087 against 3.218;
+3.227, i.e. a 0.01 loss, under the held-out rule) and 0.45 bpb behind bz2, and
+56% of the val is
+uncovered, i.e. the tail is the remaining job. The held-out rule costs 0.14 bpb
+on shakespeare: the train tail is 0.29 bpb easier than the val, and at 1 MB the
+budget choice is worth more than the model. So the claim is scale- and
+source-conditioned, and it is a negative on real text at 1 MB.
+
+Next: M4 (does the neural bigram generalize the table at 1/10 MB?), M5 (the
+tail: 56% of the shakespeare val is uncovered, and the tail coder is the job
+that the charge leaves open), M7 (enwik8 at 10/100 MB, where the table's
+crossing at 1–2k entries says a bigger budget becomes affordable).

@@ -2,10 +2,12 @@
 
 Status: `hncm6.py` is the dense-latent v6 negative. `hncm7.py` is the redesign:
 the span code is a *dictionary index*, the dictionary is a *charged model* fit by
-EM, and the tiling is *solved*. **With one cost model for both vocabularies: the
-word vocabulary beats gzip including its model on synseg and syngrid by
-0.90/0.82 bpb, and loses on shakespeare by 0.13. The solver gains 0.08-0.10 bpb
-only on the overlapping text-only vocabulary.**
+EM, and the tiling is *solved*. `concept_lm.py` charges the first-order model
+(M1-M3). **Measured: the index pays against zlib on all three corpora (0.13/0.90/
+0.95 bpb at the budget envelope) and against bz2/lzma on synseg and syngrid
+(0.19/0.06); on real text at 1.12 MB it is at parity with zlib under the
+held-out rule and 0.45 bpb behind bz2. At 1 MB only a 1-2k-entry table is
+affordable, so the table's own 0.4-0.7 bpb cut does not pay yet.**
 
 ## The measured bottleneck (v6)
 
@@ -92,12 +94,52 @@ roughly 1-5 MB and 0.02-0.2 bpb at 10-100 MB. The NCM's jobs are now precise:
 the tail coder (spans outside the dictionary at one call per span) and the bigram
 generalizer (unseen concept pairs versus the backoff).
 
+## The charge (M1-M3, measured)
+
+`concept_lm.py run` (~8 min) fits the dictionary and the table on the first 90%
+of each corpus, chooses the budget (vocabulary × dict × table) with a rule that
+sees the last 10% of the train, and charges 6 bytes per bigram entry over
+train+val. `oracle` is the val-optimal grid point plus the header that sends the
+choice: the envelope, and the gap from the rule is the cost of the rule.
+
+| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle | vs zlib | vs best | zlib crossing |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shakespeare | 1.12 MB | 3.218 | 3.199 | **2.635** | 2.943 | 2.984 | 2.825 | 3.227 | 3.087 | -0.131 | +0.451 | 0.62 MB |
+| synseg | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | **1.325** | **1.323** | -0.901 | -0.190 | 0.06 MB |
+| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **1.999** | 2.453 | 2.295 | **1.939** | **1.939** | -0.947 | -0.060 | 0.32 MB |
+
+Read it literally:
+
+- **Where the source is a dictionary, the index pays against every codec.** On
+  synseg and syngrid the charged concept LM is 0.9 bpb below zlib and 0.19/0.06
+  below bz2/lzma, with a 9-52 kB model. brotli (2.825) and zstd (2.984) do not
+  beat bz2 on shakespeare.
+- **On real text at 1.1 MB it is at best at parity.** The envelope (3.087, a
+  0.13 win against zlib) needs a budget chosen on the target stream; the
+  held-out rule lands at 3.227, a 0.01 loss, because at 1 MB the budget choice
+  is worth more than the model (the train tail is 0.29 bpb easier than the val).
+  bz2 wins by 0.45 and never loses: the concept LM's rate (2.92) is above bz2's
+  (2.635) at every affordable budget, so no stream size rescues it at these
+  rates. lzma's crossing is 8.5 MB.
+- **The table pays only above 1-2k entries at 1 MB.** The full table (58,981
+  entries, 354 kB) reaches rate 2.870 but charges 5.55 bpb; the affordable
+  optimum is 1,024-2,048 entries. The dictionary (6-25 kB) pays above
+  0.06-0.62 MB of stream.
+- **The solver's prize is smaller than the table's charge.** At the charged
+  optimum DP = greedy to 0.001 bpb; at the full table the DP beats the greedy by
+  0.098/0.084 and ties on syngrid (where the grid *is* the dictionary). DP <
+  fixed-4 and DP < the unigram everywhere.
+- **The tail is the remaining job:** 56% of the shakespeare val is uncovered, so
+  the concept LM makes ~50k calls there. That is M5's job.
+
 ## Next
 
-`TODO2.md` is the self-contained plan. Run M1 (the charged bigram budget curve),
-M2 (the DP against a greedy on the same bigram costs) and M3 (lzma, bz2, zstd,
-brotli) first: ~1 h, and they set the claim. Then M4 (the neural bigram),
-M5 (the tail coder), M6 (the factorial), M7 (enwik8 at 10/100 MB).
+`TODO2.md` is the self-contained plan; §8 is the measured result of M1-M3. The
+claim is source- and scale-conditioned: it pays where the vocabulary is smaller
+than the stream. Next: M4 (does a learned bigram generalize the table?), M5 (the
+tail coder: 56% of the shakespeare val is uncovered), M6 (the factorial),
+M7 (enwik8 at 10/100 MB, where the table's crossing says a bigger budget
+becomes affordable).
 
 ## Commands
 
@@ -106,10 +148,13 @@ python hncm6.py selftest
 python hncm7.py selftest
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab substr
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab onsets
+python concept_lm.py selftest
+python concept_lm.py run            # M1-M3, ~8 min
 ```
 
 ## Artifacts
 
 - `runs/v7/results.json` (text-only), `runs/v7/onsets.json` (word).
+- `runs/v7/concept.json`, `runs/v7/CONCEPT.md` (M1-M3, the charge).
 - `runs/v7/REPORT.md`, `runs/p0/quick-c3b7a8ac/` (v6 negative).
 - `hncm7.py`, `hncm6.py`; both `selftest` pass; `ruff format`/`ruff check` pass.
