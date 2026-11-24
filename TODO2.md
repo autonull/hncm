@@ -1,8 +1,10 @@
 # TODO2 — H-NCM v7: the concept LM is the solution; measure it
 
 Status: `hncm6.py` is the dense-latent negative. `hncm7.py` is the dictionary
-redesign. `concept_lm.py` is the measured solution path. All are committed and
-all `selftest` pass. **M1–M3 are run: the results and the decision are §8.**
+redesign. `concept_lm.py` is the measured solution path; `tail_coder.py` (M5) and
+`transfer.py` (the amortization) measure the two remaining charges. All are
+committed and all `selftest` pass. **M1–M3 are §8; M5 and the amortization are
+§9.**
 
 ## 0. Start here (fresh session)
 
@@ -21,7 +23,9 @@ model amortizes; a *first-order concept LM* over the indices cuts the rate by
 affordable, so the charge decides: the index pays against zlib on the two
 structured corpora and against bz2/lzma there too, while on real text at 1 MB it
 beats zlib by at most 0.13 bpb (or ties it under the held-out rule) and loses
-0.45 to bz2.
+0.45 to bz2. The tail (48% of the val, 80% of the bits) is predictable by
+0.16-0.29 bpb only if its boundary and its table both fall; and the model is
+paid *once*, so above eight 14 kB files the shared model beats bz2 on text.
 
 ## 1. Files, commits, artifacts
 
@@ -219,7 +223,7 @@ count table's backoff. Charge its fitted parameters.
 *Stop:* if the neural CE ≥ the backoff, the concept LM does not generalize;
 report it. That is the NCM's *bigram generalizer* job, and it is a negative.
 
-### M5 — the tail coder (~2–4 h, the last research step)
+### M5 — the tail coder (~2–4 h, the last research step) — done (§9)
 
 *Question:* on spans *outside* the dictionary, does a learned concept plus a
 decoder beat the byte unigram at one call per span?
@@ -228,6 +232,12 @@ decoder beat the byte unigram at one call per span?
 prior → a learned decoder (the concept + the span length + the within-span offset
 → 256 logits per byte). Arms: `uni` (the byte unigram, 1 call per byte),
 `concept` (1 call per span), `ar-span` (a causal byte model inside the span).
+
+*Run as:* the count version first (a hard k-means code over the span profile, a
+Good-Turing byte table per context, a length prior), plus a `ceiling` arm with no
+boundary. If a hard code with counts cannot pay, a learned decoder over the same
+code can only smooth it; the ceiling separates the code from the decoder and the
+charge from the boundary.
 *Endpoint:* the tail residual in bpb and the calls.
 *Gate:* the tail residual < the byte unigram (4.78) *and* the calls ratio
 `L / (1 + uncovered) ≥ 8` at the charged-optimal vocabulary *and* the total
@@ -352,3 +362,76 @@ Next: M4 (does the neural bigram generalize the table at 1/10 MB?), M5 (the
 tail: 56% of the shakespeare val is uncovered, and the tail coder is the job
 that the charge leaves open), M7 (enwik8 at 10/100 MB, where the table's
 crossing at 1–2k entries says a bigger budget becomes affordable).
+
+## 9. Results: M5 (the tail) and the amortization
+
+Artifacts: `runs/v7/tail.json`, `runs/v7/TAIL.md`, `runs/v7/transfer.json`,
+`runs/v7/TRANSFER.md`. Both `selftest` pass; `tail_coder.py run` is 1.6 min and
+`transfer.py run` is 1.4 min, on the budget envelope of §8.
+
+### M5: the tail is predictable; its boundary and its table are not free
+
+shakespeare's uncovered 53,746 B (8,263 spans, 6.50 B/span) cost the byte unigram
+5.048 bpb, against 0.943 bpb per covered byte: the tail is 48% of the val and
+~80% of its bits.
+
+| arm (shakespeare) | byte bpb | boundary | tail bpb | rate | charged | model kB | calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| uni | 5.048 | - | 5.048 | 2.921 | **3.087** | 23.1 | 53,747 |
+| ar@256 | 4.724 | 0.616 | 5.340 | 3.062 | 3.503 | 61.6 | 8,264 |
+| ar@1024 | 4.601 | 0.616 | 5.218 | 3.003 | 3.783 | 108.7 | 8,264 |
+| ar@4096 | 4.480 | 0.616 | 5.096 | 2.944 | 4.201 | 175.3 | 8,264 |
+| ar@full | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
+| ceiling (no boundary) | 4.718 | - | 4.718 | **2.762** | 3.297 | 74.5 | 8,264 |
+
+- **The letters are predictable.** A position-conditioned byte bigram cuts the
+  tail bytes by 0.32-0.60 bpb (`ar@full` 4.447 against 5.048), and 0.16 bpb on
+  the total at the best budget with the boundary removed.
+- **The boundary is not free.** The span length costs H(L) = 0.616 bpb (0.601
+  conditioned on the preceding concept class). At 6.50 B/span that exceeds the
+  smallest table's gain (0.324), so every span arm loses to the byte unigram.
+- **The table is not free either.** Even with the boundary removed, 74.5 kB is
+  0.53 bpb at 1.12 MB: 3.297 > 3.087. Both charges must fall, not one.
+- **The hard concept tier adds nothing on the tail.** `prev` (the concept class
+  before the span) is 4.795 against `ar` 4.480; `prev+ar` is 4.582 (worse than
+  `ar` alone); the k-means code is 4.974 plus H(concept) and its centroids.
+  That is a clean negative for a hard concept code on the tail at these counts.
+- **The calls dividend is real:** 53,747 calls (1 per byte) become 8,264 (1 per
+  span), 6.5x, at +0.03 bpb on the rate.
+- **Two pitfalls.** An add-alpha table is overconfident on sparse keys and costs
+  0.15 bpb (`ar` 5.203 against uni 5.048); the Good-Turing discount
+  `D = n1/(n1+2 n2)` fixes it (4.480). And `D = 0` on a key whose counts are all
+  2 puts all its mass on one byte (a zero probability): the discount must be
+  floored (0.25-0.95).
+- **Controls:** syngrid has no tail (coverage 1.000), so the tail coder is a
+  no-op there; synseg's tail is 493 B and the arms tie (1.297 against 1.323).
+
+So M5 says the tail carries 0.16-0.29 bpb of predictable structure at a small
+table, and at 1.1 MB neither the boundary nor the table can be paid. The next
+step is a tail model with shared parameters (10-20 kB, not 60-250 kB of counts)
+and a boundary that comes from the dictionary's own structure (a word's trailing
+space) instead of a transmitted length.
+
+### The amortization: one model, K files; the curve is flat
+
+The val is split into K contiguous shards; every codec compresses each shard on
+its own, and the concept LM tiles every shard with the *same* dictionary and
+table. `archive` charges the model over train + the K shards (the §8 convention),
+`per-file` makes each shard pay it alone.
+
+| corpus | zlib K=1 -> 16 | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses archive at |
+|---|---|---|---:|---:|---:|---:|
+| shakespeare | 3.218 -> 4.016 | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
+| synseg | 2.225 -> 3.348 | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 -> 1.326 | 1.757 -> 8.991 | K = 1 |
+| syngrid | 2.886 -> 3.415 | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 -> 1.940 | 5.045 -> 56.817 | K = 1 |
+
+- **The shared model's curve is flat** (rate 2.921 -> 2.922; archive 3.087 ->
+  3.087 from K=1 to 16) because the model is paid once. Every codec's curve
+  rises (bz2 2.635 -> 3.443), because it pays its model per file.
+- **So the K=1 comparison flatters bz2.** On shakespeare the crossing is K = 8:
+  above eight 14 kB files the shared concept model is cheaper than compressing
+  each file with bz2. On synseg and syngrid it is K = 1 already.
+- **The deploy convention is the harsh one:** if the model must be paid by the
+  111 kB of shards alone, it is 1.65 bpb and nothing pays; the model needs a
+  stream ~10x its own size. That is M7's question (10/100 MB), not a defect of
+  the code.

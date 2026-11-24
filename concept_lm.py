@@ -226,7 +226,10 @@ def dict_at(usage: collections.Counter, top: list[bytes], k: int, bc) -> v.Dict:
 
 
 # %%
-def measure(name: str, vocab: str) -> dict:
+def split(name: str, vocab: str) -> dict:
+    """The protocol: fit on the first 90% of the train, select on the last 10%,
+    truncate the val to 16 bytes. Returns the EM usage and its ranked candidates
+    (the one model both vocabularies share)."""
     corpus = v.base.get_corpus(name)
     tr = corpus["tr"].cpu().numpy().astype(np.uint8).tobytes()
     va = corpus["va"].cpu().numpy().astype(np.uint8).tobytes()
@@ -242,7 +245,31 @@ def measure(name: str, vocab: str) -> dict:
     )
     _, _, usage = v.em_dict(counts, fit, bc)
     top = sorted((s for s in usage if len(s) > 1), key=lambda s: -usage[s])
-    stream = len(tr) + len(va)
+    return {
+        "tr": tr,
+        "fit": fit,
+        "sel": sel,
+        "va": va,
+        "bc": bc,
+        "usage": usage,
+        "top": top,
+        "stream": len(tr) + len(va),
+    }
+
+
+def rebuild(s: dict, k: int, table: int) -> tuple[v.Dict, dict, collections.Counter]:
+    """One measured grid point, rebuilt: the dictionary at `k` and the table
+    pruned to `table` entries. The costs are the unigram-tiling table (the grid),
+    not the EM refit, so the tail is exactly the tail of the reported codec."""
+    d = dict_at(s["usage"], s["top"], k, s["bc"])
+    big, uni = bigrams(v.cover(s["fit"], d, 0.0))
+    return d, prune(big, table), uni
+
+
+def measure(name: str, vocab: str) -> dict:
+    s = split(name, vocab)
+    fit, sel, va, bc = s["fit"], s["sel"], s["va"], s["bc"]
+    usage, top, stream = s["usage"], s["top"], s["stream"]
     codec = {c: 8 * len(f(va)) / len(va) for c, f in codecs().items()}
 
     grid = []
@@ -325,7 +352,7 @@ def measure(name: str, vocab: str) -> dict:
     fitted = next(a for a in arms if a["arm"] == "DP-em")
     return {
         "stream_bytes": stream,
-        "train_bytes": len(tr),
+        "train_bytes": len(s["tr"]),
         "val_bytes": len(va),
         "dict": chosen["dict"],
         "table": chosen["table"],

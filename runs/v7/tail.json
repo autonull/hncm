@@ -1,0 +1,275 @@
+{
+ "format": 7,
+ "rect": "runs/v7/concept.json",
+ "corpora": {
+  "shakespeare": {
+   "stream_bytes": 1115388,
+   "val_bytes": 111536,
+   "dict": 1024,
+   "table": 2048,
+   "model_bytes": 23059,
+   "covered_bpb": 0.942760452546921,
+   "tail_bytes": 53746,
+   "tail_spans": 8263,
+   "bytes_per_span": 6.504417281858889,
+   "arms": [
+    {
+     "arm": "uni",
+     "len_bpb": 0.0,
+     "byte_bpb": 5.04836297674203,
+     "tail_bpb": 5.04836297674203,
+     "rate": 2.9211325769317864,
+     "charged": 3.0865207647193547,
+     "calls": 53747,
+     "model_bytes": 23059
+    },
+    {
+     "arm": "pos",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.883624686907459,
+     "tail_bpb": 5.500039487495293,
+     "rate": 3.1387825352138194,
+     "charged": 3.6137024733878,
+     "calls": 8264,
+     "model_bytes": 66215
+    },
+    {
+     "arm": "ar",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.479933158575208,
+     "tail_bpb": 5.096347959163041,
+     "rate": 2.9442551639458414,
+     "charged": 4.201424866327434,
+     "calls": 8264,
+     "model_bytes": 175279
+    },
+    {
+     "arm": "prev",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.795249357907988,
+     "tail_bpb": 5.411664158495821,
+     "rate": 3.096196998414888,
+     "charged": 4.3606968854497135,
+     "calls": 8264,
+     "model_bytes": 176301
+    },
+    {
+     "arm": "prev+ar",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.582035161339514,
+     "tail_bpb": 5.198449961927347,
+     "rate": 2.993455191206729,
+     "charged": 4.981219090405931,
+     "calls": 8264,
+     "model_bytes": 277141
+    },
+    {
+     "arm": "concept",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.974108509334758,
+     "tail_bpb": 5.590523309922591,
+     "rate": 3.1823840945325825,
+     "charged": 4.800339460736988,
+     "calls": 8264,
+     "model_bytes": 225581
+    },
+    {
+     "arm": "ar@256",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.723852896937255,
+     "tail_bpb": 5.340267697525088,
+     "rate": 3.061793091233951,
+     "charged": 3.503260992986525,
+     "calls": 8264,
+     "model_bytes": 61551
+    },
+    {
+     "arm": "ar@1024",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.601362697120595,
+     "tail_bpb": 5.217777497708429,
+     "rate": 3.002768576464314,
+     "charged": 3.7827303476148018,
+     "calls": 8264,
+     "model_bytes": 108745
+    },
+    {
+     "arm": "ar@4096",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.479933158575246,
+     "tail_bpb": 5.096347959163079,
+     "rate": 2.9442551639458596,
+     "charged": 4.201424866327453,
+     "calls": 8264,
+     "model_bytes": 175279
+    },
+    {
+     "arm": "ar@full",
+     "len_bpb": 0.6164148005878333,
+     "byte_bpb": 4.447048805486881,
+     "tail_bpb": 5.0634636060747145,
+     "rate": 2.928409137182418,
+     "charged": 4.7682352783996445,
+     "calls": 8264,
+     "model_bytes": 256515
+    },
+    {
+     "arm": "ceiling",
+     "len_bpb": 0.0,
+     "byte_bpb": 4.718283151958136,
+     "tail_bpb": 4.718283151958136,
+     "rate": 2.7620765747187326,
+     "charged": 3.296756883275038,
+     "calls": 8264,
+     "model_bytes": 74547
+    }
+   ]
+  },
+  "synseg": {
+   "stream_bytes": 1200024,
+   "val_bytes": 120000,
+   "dict": 512,
+   "table": 256,
+   "model_bytes": 7231,
+   "covered_bpb": 1.2535125196052517,
+   "tail_bytes": 493,
+   "tail_spans": 489,
+   "bytes_per_span": 1.0081799591002045,
+   "arms": [
+    {
+     "arm": "uni",
+     "len_bpb": 0.0,
+     "byte_bpb": 6.536227712098448,
+     "tail_bpb": 6.536227712098448,
+     "rate": 1.2752156745210776,
+     "charged": 1.3234213770736933,
+     "calls": 494,
+     "model_bytes": 7231
+    },
+    {
+     "arm": "pos",
+     "len_bpb": 0.0534591680375276,
+     "byte_bpb": 0.05563355895804267,
+     "tail_bpb": 0.10909272699557028,
+     "rate": 1.2488108616239468,
+     "charged": 1.2972832255100024,
+     "calls": 490,
+     "model_bytes": 7271
+    },
+    {
+     "arm": "ar",
+     "len_bpb": 0.0534591680375276,
+     "byte_bpb": 0.055426641606942516,
+     "tail_bpb": 0.10888580964447012,
+     "rate": 1.248810011538496,
+     "charged": 1.2973223746245675,
+     "calls": 490,
+     "model_bytes": 7277
+    },
+    {
+     "arm": "prev",
+     "len_bpb": 0.0534591680375276,
+     "byte_bpb": 0.05542695410109056,
+     "tail_bpb": 0.10888612213861816,
+     "rate": 1.248810012822326,
+     "charged": 1.2984823527088616,
+     "calls": 490,
+     "model_bytes": 7451
+    },
+    {
+     "arm": "prev+ar",
+     "len_bpb": 0.0534591680375276,
+     "byte_bpb": 0.05542661128850616,
+     "tail_bpb": 0.10888577932603376,
+     "rate": 1.248810011413938,
+     "charged": 1.2985223505004897,
+     "calls": 490,
+     "model_bytes": 7457
+    },
+    {
+     "arm": "concept",
+     "len_bpb": 0.0534591680375276,
+     "byte_bpb": 0.10766399709956533,
+     "tail_bpb": 0.1611231651370929,
+     "rate": 1.2490246200073114,
+     "charged": 1.4067614652704061,
+     "calls": 490,
+     "model_bytes": 23661
+    }
+   ]
+  },
+  "syngrid": {
+   "stream_bytes": 1200128,
+   "val_bytes": 120016,
+   "dict": 302,
+   "table": 8192,
+   "model_bytes": 51778,
+   "covered_bpb": 1.5937184483792397,
+   "tail_bytes": 0,
+   "tail_spans": 0,
+   "bytes_per_span": 0.0,
+   "arms": [
+    {
+     "arm": "uni",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9388682990618336,
+     "calls": 1,
+     "model_bytes": 51778
+    },
+    {
+     "arm": "pos",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9390949415533012,
+     "calls": 1,
+     "model_bytes": 51812
+    },
+    {
+     "arm": "ar",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9390949415533012,
+     "calls": 1,
+     "model_bytes": 51812
+    },
+    {
+     "arm": "prev",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9390949415533012,
+     "calls": 1,
+     "model_bytes": 51812
+    },
+    {
+     "arm": "prev+ar",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9390949415533012,
+     "calls": 1,
+     "model_bytes": 51812
+    },
+    {
+     "arm": "concept",
+     "len_bpb": 0.0,
+     "byte_bpb": 0.0,
+     "tail_bpb": 0.0,
+     "rate": 1.5937184483792397,
+     "charged": 1.9408014261949393,
+     "calls": 1,
+     "model_bytes": 52068
+    }
+   ]
+  }
+ }
+}

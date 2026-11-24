@@ -7,7 +7,10 @@ EM, and the tiling is *solved*. `concept_lm.py` charges the first-order model
 0.95 bpb at the budget envelope) and against bz2/lzma on synseg and syngrid
 (0.19/0.06); on real text at 1.12 MB it is at parity with zlib under the
 held-out rule and 0.45 bpb behind bz2. At 1 MB only a 1-2k-entry table is
-affordable, so the table's own 0.4-0.7 bpb cut does not pay yet.**
+affordable, so the table's own 0.4-0.7 bpb cut does not pay yet. The tail is 48%
+of the val and 80% of its bits: its letters are worth 0.32-0.60 bpb, but the
+span boundary (0.62) and the table (0.53) each eat that at 1 MB. The model is
+paid once, so above K=8 files the shared model beats bz2 on text.**
 
 ## The measured bottleneck (v6)
 
@@ -130,16 +133,60 @@ Read it literally:
   0.098/0.084 and ties on syngrid (where the grid *is* the dictionary). DP <
   fixed-4 and DP < the unigram everywhere.
 - **The tail is the remaining job:** 56% of the shakespeare val is uncovered, so
-  the concept LM makes ~50k calls there. That is M5's job.
+  the concept LM makes ~50k calls there. M5 measures it below.
+
+## The tail (M5, measured)
+
+The dictionary covers a span exactly; the spans it lacks pay the byte unigram,
+one byte at a time. On shakespeare that tail is 48% of the val and ~80% of its
+bits (5.048 bpb against 0.943 on the covered bytes). `tail_coder.py` codes one
+call per span, with counts and a Good-Turing backoff, charged:
+
+| arm | byte bpb | boundary | tail bpb | rate | charged | model kB | calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| uni | 5.048 | - | 5.048 | 2.921 | **3.087** | 23.1 | 53,747 |
+| ar@256 | 4.724 | 0.616 | 5.340 | 3.062 | 3.503 | 61.6 | 8,264 |
+| ar@full | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
+| ceiling (no boundary) | 4.718 | - | 4.718 | **2.762** | 3.297 | 74.5 | 8,264 |
+
+- The letters are predictable: a position-conditioned byte bigram cuts the tail
+  bytes by 0.32-0.60 bpb, and the total by 0.16 with the boundary removed.
+- The boundary is not free: H(L) = 0.616 bpb at 6.50 B/span, more than the
+  smallest table's gain. A dictionary-structured boundary (a word's trailing
+  space) is the next design.
+- The table is not free either: 74.5 kB is 0.53 bpb at 1.12 MB.
+- The hard concept tier adds nothing beyond the letters (`prev` 4.795 against
+  `ar` 4.480; k-means 4.974 plus H(concept)); the calls dividend is 6.5x at
+  +0.03 bpb.
+- Pitfall: an add-alpha table is overconfident on sparse keys (0.15 bpb
+  *worse*); Good-Turing fixes it, and `D = 0` gives a zero probability.
+
+## One model, K files (measured)
+
+The val is split into K shards; every codec compresses each shard on its own,
+and the concept LM tiles every shard with the same model. `archive` charges the
+model over train + the shards; `per-file` makes each shard pay it alone.
+
+| corpus | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses at |
+|---|---|---|---:|---:|---:|
+| shakespeare | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
+| synseg | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 |
+| syngrid | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 |
+
+The shared model's curve is flat and every codec's curve rises, because a codec
+pays its model per file. So the K=1 comparison flatters bz2: on shakespeare the
+crossing is K=8, i.e. above eight 14 kB files the shared concept model is
+cheaper than bz2 per file. The deploy convention (the model paid by the 111 kB
+of shards alone) is 1.65 bpb: the model needs a stream ~10x its size (M7).
 
 ## Next
 
-`TODO2.md` is the self-contained plan; §8 is the measured result of M1-M3. The
-claim is source- and scale-conditioned: it pays where the vocabulary is smaller
-than the stream. Next: M4 (does a learned bigram generalize the table?), M5 (the
-tail coder: 56% of the shakespeare val is uncovered), M6 (the factorial),
-M7 (enwik8 at 10/100 MB, where the table's crossing says a bigger budget
-becomes affordable).
+`TODO2.md` is the self-contained plan; §8 is M1-M3 and §9 is M5 plus the
+amortization. The claim is source- and scale-conditioned: it pays where the
+vocabulary is smaller than the stream. Next: the tail model with shared
+parameters (10-20 kB) and a boundary from the dictionary's structure; M6 (the
+factorial `I_perf`); M7 (enwik8 at 10/100 MB, where the table's crossing and the
+deploy charge say a bigger budget becomes affordable).
 
 ## Commands
 
@@ -150,11 +197,17 @@ python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab substr
 python hncm7.py run --corpora synseg,syngrid,shakespeare --vocab onsets
 python concept_lm.py selftest
 python concept_lm.py run            # M1-M3, ~8 min
+python tail_coder.py selftest
+python tail_coder.py run            # M5, ~1.6 min
+python transfer.py selftest
+python transfer.py run              # amortization, ~1.4 min
 ```
 
 ## Artifacts
 
 - `runs/v7/results.json` (text-only), `runs/v7/onsets.json` (word).
 - `runs/v7/concept.json`, `runs/v7/CONCEPT.md` (M1-M3, the charge).
+- `runs/v7/tail.json`, `runs/v7/TAIL.md` (M5, the tail).
+- `runs/v7/transfer.json`, `runs/v7/TRANSFER.md` (the amortization).
 - `runs/v7/REPORT.md`, `runs/p0/quick-c3b7a8ac/` (v6 negative).
 - `hncm7.py`, `hncm6.py`; both `selftest` pass; `ruff format`/`ruff check` pass.

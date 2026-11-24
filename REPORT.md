@@ -118,6 +118,60 @@ choice: the envelope, and the gap from the rule is the cost of the rule. v7's
   uncovered: its ~50k calls are the tail, i.e. M5's job. The claim is source- and
   scale-conditioned; at 1 MB it is a negative on natural text.
 
+## v7: the tail, bits and calls (M5, measured)
+
+The dictionary covers a span exactly; the spans it lacks pay the byte unigram,
+one byte at a time. On shakespeare that tail is 48% of the val and ~80% of its
+bits. `tail_coder.py` codes one call per span (counts, Good-Turing backoff,
+taught on the train tail, charged):
+
+| arm | byte bpb | boundary | tail bpb | rate | charged | model kB | calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| uni | 5.048 | - | 5.048 | 2.921 | **3.087** | 23.1 | 53,747 |
+| ar@256 | 4.724 | 0.616 | 5.340 | 3.062 | 3.503 | 61.6 | 8,264 |
+| ar@1024 | 4.601 | 0.616 | 5.218 | 3.003 | 3.783 | 108.7 | 8,264 |
+| ar@4096 | 4.480 | 0.616 | 5.096 | 2.944 | 4.201 | 175.3 | 8,264 |
+| ar@full | 4.447 | 0.616 | 5.063 | 2.928 | 4.768 | 256.5 | 8,264 |
+| ceiling (no boundary) | 4.718 | - | 4.718 | **2.762** | 3.297 | 74.5 | 8,264 |
+
+- **The letters are predictable**: a position-conditioned byte bigram cuts the
+  tail bytes by 0.32-0.60 bpb, and the total by 0.16 with the boundary removed.
+- **The boundary is not free**: H(L) = 0.616 bpb at 6.50 B/span, more than the
+  smallest table's gain (0.324), so every span arm loses to the byte unigram.
+- **The table is not free either**: even boundary-free, 74.5 kB is 0.53 bpb at
+  1.12 MB (3.297 > 3.087). Both charges must fall, not one.
+- **The hard concept tier adds nothing on the tail**: `prev` (the concept class
+  before the span) is 4.795 against `ar` 4.480; `prev+ar` is 4.582; the k-means
+  code is 4.974 plus H(concept) and its centroids. A clean negative at these
+  counts, and the ceiling separates the code from the decoder.
+- **The calls dividend is real**: 53,747 calls (1 per byte) become 8,264 (1 per
+  span), 6.5x, at +0.03 bpb.
+- **Two pitfalls**: an add-alpha table is overconfident on sparse keys and
+  *costs* 0.15 bpb (`ar` 5.203 against uni 5.048); the Good-Turing discount
+  fixes it. And `D = 0` on a key whose counts are all 2 puts all its mass on one
+  byte (a zero probability): the discount must be floored.
+- **Controls**: syngrid has no tail (coverage 1.000), so the tail coder is a
+  no-op; synseg's tail is 493 B and the arms tie (1.297 against 1.323).
+
+## v7: one model, K files (measured)
+
+Every codec pays its model per file; a learned vocabulary and concept LM pay it
+once. K contiguous shards of the val; every codec compresses each shard alone,
+the concept LM tiles each shard with the same model. `archive` charges the model
+over train + the K shards; `per-file` makes each shard pay it alone.
+
+| corpus | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses at |
+|---|---|---|---:|---:|---:|
+| shakespeare | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
+| synseg | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 |
+| syngrid | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 |
+
+The shared curve is flat and every codec's curve rises. So the K=1 comparison
+flatters bz2: on shakespeare the crossing is K=8, i.e. above eight 14 kB files
+the shared concept model is cheaper than bz2 per file, and on synseg/syngrid it
+is K=1. The deploy convention (the model paid by the 111 kB of shards alone) is
+1.65 bpb: the model needs a stream ~10x its size.
+
 ## Caveats
 
 1. The budget rule (the charged total on the last 10% of the train) costs 0.14
@@ -133,19 +187,29 @@ choice: the envelope, and the gap from the rule is the cost of the rule. v7's
    chosen point.
 5. The synthetic corpora are highly repetitive, so their win is the structure,
    not the net: enwik8 (a large vocabulary) is untested.
+6. The tail coder's tables are counts and its concept is a hard k-means code:
+   the negative is about *that* code, not about a learned VQ with a shared
+   decoder. The ceiling separates the two.
+7. The transfer crossing (K=8) uses the envelope's model, charged over
+   train+shards. In the deploy convention (the 111 kB of shards alone) the model
+   is 1.65 bpb: it needs a stream ~10x its size.
 
 ## Next
 
-1. M4: does a learned bigram generalize the table on held-out concept pairs, at
+1. The tail model with shared parameters (10-20 kB, not 60-250 kB of counts) and
+   a boundary from the dictionary's structure (a word's trailing space), not a
+   transmitted length.
+2. M4: does a learned bigram generalize the table on held-out concept pairs, at
    1 MB and 10 MB?
-2. M5: the tail coder on the 56% uncovered shakespeare val: one call per span
-   against the byte unigram's one call per byte.
-3. M7: enwik8 at 10/100 MB, where the table's 1-2k-entry crossing says a bigger
-   budget becomes affordable.
+3. M6: the factorial `I_perf = (D-C) - (B-A)` with clean controls.
+4. M7: enwik8 at 10/100 MB, where the table's crossing and the deploy charge
+   say a bigger budget becomes affordable.
 
 ## Artifacts
 
 - `runs/v7/results.json` (text-only), `runs/v7/onsets.json` (word), both with
   `REPORT.md` tables.
 - `runs/v7/concept.json`, `runs/v7/CONCEPT.md` (M1-M3, the charge).
+- `runs/v7/tail.json`, `runs/v7/TAIL.md` (M5, the tail).
+- `runs/v7/transfer.json`, `runs/v7/TRANSFER.md` (K files).
 - `runs/p0/quick-c3b7a8ac/` (v6 honest negative).
