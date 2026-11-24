@@ -1,18 +1,21 @@
 # H-NCM: Hierarchical Neural Concept Modeling
 
 Status: `hncm6.py` is the dense-latent v6 negative. `hncm7.py` is the redesign:
-the span code is a *dictionary index*, the dictionary is a *charged model* fit by
-EM, and the tiling is *solved*. `concept_lm.py` charges the first-order model
-(M1-M3). **Measured: the index pays against zlib on all three corpora (0.13/0.90/
-0.95 bpb at the budget envelope) and against bz2/lzma on synseg and syngrid
-(0.19/0.06); on real text at 1.12 MB it is at parity with zlib under the
-held-out rule and 0.45 bpb behind bz2. At 1 MB only a 1-2k-entry table is
-affordable, so the table's own 0.4-0.7 bpb cut does not pay yet. The tail is 48%
-of the val and 80% of its bits; a 16.4 kB *shared-parameter* tail model (the
-rank-16 factorization of the byte-context table) reaches 4.020 bpb there, 1.03
-below the byte unigram and 0.43 below a 256.5 kB count table, and the whole
-pipeline pays: rate 2.723, archive charge 3.006, at 6.5x fewer calls. The model
-is paid once, so above K~5 files the shared model beats bz2 on text.**
+the span code is a *dictionary index*, the dictionary is a *charged model*, and
+the tiling is *solved*. **v8/N0 prices it end to end**: `codec.py` packs the
+model as counts, derives the CDF, and range-codes the DP's path; the decoder
+never reruns the DP, and every corpus round-trips. The recorded table corrects
+the v7 estimate: the published tail account (2.723 rate / 3.006 charged on
+shakespeare) is a lower bound by 0.07-0.28 bpb because `total - sum(byte
+unigram)` subtracts 5.05 bpb for tail bytes the concept path had already priced
+at the bigram row (3.83). The realizable codec at 1.12 MB is 3.47 charged on
+shakespeare (0.25 behind gzip, 0.97 behind PPMd), 1.39 on synseg (0.11 ahead of
+PPMd, 0.12 ahead of bz2), and 2.10 on syngrid (0.09 behind lzma).
+The structure stands: the model is paid once; the tail arm makes 6.5x fewer
+calls (8,264 vs 56,592) but pays 0.30 bpb more than the concept arm at 1 MB, so
+the calls pay only when the tail fraction falls. Next: the coverage probe and
+the 10 MB run (N1a/N1b), then the tail's context (N2), both re-based on the
+recorded numbers.
 
 ## The measured bottleneck (v6)
 

@@ -1,0 +1,272 @@
+{
+ "format": 8,
+ "seed": 0,
+ "try": 3,
+ "corpora": {
+  "shakespeare": {
+   "corpus": "shakespeare",
+   "arm": "concept",
+   "vocab": "onsets",
+   "dict": 1024,
+   "table": 2048,
+   "r": 16,
+   "val_bytes": 111536,
+   "stream_bytes": 1115388,
+   "payload_bytes": 46072,
+   "model_bytes": 23136,
+   "rate": 3.3045474107014776,
+   "entropy": 3.3045111849984043,
+   "ref": 3.0242281015515577,
+   "v7": 3.0242281015515577,
+   "shared": 3.4717303859669277,
+   "self": 4.965236201428246,
+   "delta_v7": 0.2802830834468466,
+   "delta_ref": 0.2802830834468466,
+   "delta_code": 0.001278738994752615,
+   "bits": {
+    "concept": 3.3045111849984043
+   },
+   "calls": 56592,
+   "encode_s": 0.4446057139430195,
+   "decode_s": 0.7429058940615505,
+   "encode_mb_s": 0.25086497204643304,
+   "decode_mb_s": 0.150134762547407,
+   "model_kb": 23.136,
+   "roundtrip": true,
+   "options": [
+    {
+     "arm": "tail",
+     "dict": 2048,
+     "table": 1024,
+     "rate": 3.2727729163678094,
+     "model_bytes": 59059,
+     "charged": 3.6963672171851036,
+     "calls": 49644
+    },
+    {
+     "arm": "concept",
+     "dict": 2048,
+     "table": 1024,
+     "rate": 3.3720413140152057,
+     "model_bytes": 26227,
+     "charged": 3.5601516397493898,
+     "calls": 49644
+    },
+    {
+     "arm": "tail",
+     "dict": 1024,
+     "table": 2048,
+     "rate": 3.602352603643667,
+     "model_bytes": 39552,
+     "charged": 3.8860350531589924,
+     "calls": 56592
+    },
+    {
+     "arm": "concept",
+     "dict": 1024,
+     "table": 2048,
+     "rate": 3.3045474107014776,
+     "model_bytes": 23136,
+     "charged": 3.4704878726752484,
+     "calls": 56592
+    },
+    {
+     "arm": "tail",
+     "dict": 4096,
+     "table": 1024,
+     "rate": 3.2747812365514273,
+     "model_bytes": 79622,
+     "charged": 3.845861434652895,
+     "calls": 43408
+    },
+    {
+     "arm": "concept",
+     "dict": 4096,
+     "table": 1024,
+     "rate": 3.3048343135848515,
+     "model_bytes": 46790,
+     "charged": 3.6404305366032093,
+     "calls": 43408
+    }
+   ]
+  },
+  "synseg": {
+   "corpus": "synseg",
+   "arm": "tail",
+   "vocab": "onsets",
+   "dict": 512,
+   "table": 1024,
+   "r": 1,
+   "val_bytes": 120000,
+   "stream_bytes": 1200024,
+   "payload_bytes": 19346,
+   "model_bytes": 14710,
+   "rate": 1.2897333333333334,
+   "entropy": 1.2896779052283731,
+   "ref": 1.2306853080859586,
+   "v7": 1.2205993252554799,
+   "shared": 1.3889529133933987,
+   "self": 2.2715548746875065,
+   "delta_v7": 0.06907857997289324,
+   "delta_ref": 0.05899259714241456,
+   "delta_code": 0.0012103027924663667,
+   "bits": {
+    "type": 0.04002858075501074,
+    "len": 0.00022606241014880364,
+    "tail": 0.00046688692074240665,
+    "covered": 1.248956375142471
+   },
+   "calls": 536,
+   "encode_s": 0.8299830849282444,
+   "decode_s": 1.0482868190156296,
+   "encode_mb_s": 0.1445812597619077,
+   "decode_mb_s": 0.11447248770396953,
+   "model_kb": 14.71,
+   "roundtrip": true,
+   "options": [
+    {
+     "arm": "tail",
+     "dict": 512,
+     "table": 512,
+     "rate": 1.3154,
+     "model_bytes": 11374,
+     "charged": 1.3912251501636632,
+     "calls": 507
+    },
+    {
+     "arm": "concept",
+     "dict": 512,
+     "table": 512,
+     "rate": 1.4239333333333333,
+     "model_bytes": 10348,
+     "charged": 1.4929186202942608,
+     "calls": 507
+    },
+    {
+     "arm": "tail",
+     "dict": 639,
+     "table": 256,
+     "rate": 1.3565333333333334,
+     "model_bytes": 9649,
+     "charged": 1.420858713492397,
+     "calls": 28
+    },
+    {
+     "arm": "concept",
+     "dict": 639,
+     "table": 256,
+     "rate": 1.4268666666666667,
+     "model_bytes": 9649,
+     "charged": 1.4911920468257303,
+     "calls": 28
+    },
+    {
+     "arm": "tail",
+     "dict": 512,
+     "table": 1024,
+     "rate": 1.2897333333333334,
+     "model_bytes": 14710,
+     "charged": 1.3877980387058926,
+     "calls": 536
+    },
+    {
+     "arm": "concept",
+     "dict": 512,
+     "table": 1024,
+     "rate": 1.4125333333333334,
+     "model_bytes": 13684,
+     "charged": 1.5037581755031566,
+     "calls": 536
+    }
+   ]
+  },
+  "syngrid": {
+   "corpus": "syngrid",
+   "arm": "tail",
+   "vocab": "onsets",
+   "dict": 302,
+   "table": 8192,
+   "r": 0,
+   "val_bytes": 120016,
+   "stream_bytes": 1200128,
+   "payload_bytes": 26091,
+   "model_bytes": 53641,
+   "rate": 1.7391681109185442,
+   "entropy": 1.7391498210800638,
+   "ref": 1.5937184483792344,
+   "v7": 1.5937184483792344,
+   "shared": 2.097891357667178,
+   "self": 5.315912752987108,
+   "delta_v7": 0.1454313727008294,
+   "delta_ref": 0.1454313727008294,
+   "delta_code": 0.0011730105632230536,
+   "bits": {
+    "type": 0.000683872876170638,
+    "covered": 1.738465948203893
+   },
+   "calls": 1,
+   "encode_s": 1.4144727609818801,
+   "decode_s": 1.7493719129124656,
+   "encode_mb_s": 0.08484857631099864,
+   "decode_mb_s": 0.06860519430667532,
+   "model_kb": 53.641,
+   "roundtrip": true,
+   "options": [
+    {
+     "arm": "tail",
+     "dict": 302,
+     "table": 8192,
+     "rate": 1.7391681109185442,
+     "model_bytes": 53641,
+     "charged": 2.0967366369424347,
+     "calls": 1
+    },
+    {
+     "arm": "concept",
+     "dict": 302,
+     "table": 8192,
+     "rate": 1.8361551793094255,
+     "model_bytes": 53641,
+     "charged": 2.1937237053333165,
+     "calls": 1
+    },
+    {
+     "arm": "tail",
+     "dict": 302,
+     "table": 4096,
+     "rate": 1.9213438208238902,
+     "model_bytes": 29065,
+     "charged": 2.1150898212505114,
+     "calls": 1
+    },
+    {
+     "arm": "concept",
+     "dict": 302,
+     "table": 4096,
+     "rate": 2.0972536995067323,
+     "model_bytes": 29065,
+     "charged": 2.2909996999333533,
+     "calls": 1
+    },
+    {
+     "arm": "tail",
+     "dict": 302,
+     "table": 2048,
+     "rate": 1.9987335021997068,
+     "model_bytes": 16741,
+     "charged": 2.110328265424963,
+     "calls": 1
+    },
+    {
+     "arm": "concept",
+     "dict": 302,
+     "table": 2048,
+     "rate": 2.2066391147846955,
+     "model_bytes": 16741,
+     "charged": 2.3182338780099516,
+     "calls": 1
+    }
+   ]
+  }
+ }
+}

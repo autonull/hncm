@@ -6,6 +6,15 @@ charged, the model is paid once, and the decoder makes 6.5x fewer calls. What is
 missing is the artifact — **a bitstream that round-trips** — and the lever the
 measurements point at hardest: **coverage** (51.8% at 1.1 MB).
 
+**N0 is done (§9).** `codec.py` round-trips all three corpora; the recorded
+size equals the code's entropy + the charge within 0.0013 bpb. The recorded
+table corrects the estimate: 3.47 / 1.39 / 2.10 charged on
+shakespeare/synseg/syngrid; the published 2.723/3.006 is a lower bound by
+0.07-0.28 bpb (the tail formula double-subtracts the byte unigram for bytes the
+concept path priced at the bigram row). At 1 MB the concept arm wins on text;
+the tail arm's 6.5x fewer calls cost 0.30 bpb more. Next: N1a (coverage) and
+N1b (10 MB), re-based on the recorded numbers.
+
 Rev 2 changes, all from measurement:
 
 1. **PPMd is the text bar, not bz2.** Measured on the same val bytes:
@@ -293,3 +302,50 @@ python concept_lm.py run --corpus enwik8_10m       # N1b: the budget curve
 python tail_coder.py run                           # N2: the tail arms
 python transfer.py run                             # K files
 ```
+
+## 9. Results: N0, the bitstream
+
+Artifacts: `codec.py`, `runs/v8/codec.json`, `runs/v8/CODEC.md`. `python
+codec.py selftest` passes (the count quantization, the CDF, the coder, the
+model pack/unpack, a 1 kB slice in both arms); every corpus round-trips and
+the recorded size equals the code's entropy + the model charge within 0.0013
+bpb in both conventions. The model is packed as counts, every CDF is derived,
+the 32-bit arithmetic coder writes the DP's path, and the decoder never reruns
+the DP.
+
+| corpus | arm | dict | table | rate | ref | published v7 | model kB | shared | self | calls | enc MB/s | dec MB/s | best codec | charged gap | RT |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| shakespeare | concept | 1024 | 2048 | 3.305 | 3.024 | 3.024 | 23.1 | 3.472 | 4.965 | 56592 | 0.25 | 0.15 | ppmd | +0.968 | ok |
+| synseg | tail | 512 | 1024 | 1.290 | 1.231 | 1.221 | 14.7 | 1.389 | 2.272 | 536 | 0.14 | 0.11 | ppmd | -0.111 | ok |
+| syngrid | tail | 302 | 8192 | 1.739 | 1.594 | 1.594 | 53.6 | 2.098 | 5.316 | 1 | 0.08 | 0.07 | lzma | +0.093 | ok |
+
+`ref` is the measured cost of the model the codec implements (the multi-byte
+tokens + the tail + the length); `published v7` is the earlier estimate. The
+codec is the judge (rule 17):
+
+- **The published tail estimate is a lower bound, by 0.07-0.28 bpb.** Its
+  `covered = total - sum(byte unigram)` subtracts 5.05 bpb for tail bytes the
+  concept path had already priced at the bigram row (3.83 bpb), so it
+  double-counts the tail's gain. The two codecs at the same budget confirm it:
+  the concept arm is the best realizable codec at 1 MB on shakespeare (it pays
+  the row, not the boundary); the tail arm pays the type, the length and the
+  shared model on top of a row cost it does not beat. The concept arm is 3.305
+  rate on the 1024/full budget against the tail arm's 3.602; the boundary and
+  the type eat the 0.43 bpb the SVD gains on the tail bytes.
+- **At 1 MB the model pays where the source has a small exact vocabulary:**
+  synseg is 1.389 charged against PPMd 1.500 (+0.11) and bz2 1.513 (+0.12);
+  shakespeare is 0.25 behind gzip and 0.97 behind PPMd; syngrid is 0.09
+  behind lzma (the 4096-entry table is 0.02 worse, so the 8192 table stays).
+- **The structure survives:** the model is paid once (the shared column is the
+  K-file convention); the tail arm makes 6.5x fewer calls (8,264 vs 56,592) but
+  pays 0.30 bpb more than the concept arm at 1 MB, so the calls are not free at
+  this size; the decoder runs at 0.07-0.16 MB/s in Python (the DP is the encode
+  cost, not the codec).
+
+The `--try` choice is transmitted; `self` embeds the model per file, `shared`
+sends it once over train+val. The winner is the smallest charged total, so the
+model's size is part of the choice. The next work is scale: the normalization
+cost is a 1 MB artifact (the escape falls as the counts grow), and N1a/N1b
+must re-base on these recorded numbers, not on 2.723/3.006. The v7 §8-§9 tables
+are estimates; the v8 `rate`/`shared` columns are the table of record.
+

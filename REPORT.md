@@ -65,10 +65,32 @@ train+val. Both vocabularies use the same model, so their totals are comparable.
   chosen, the envelope reaches 3.087.)
 - The text vocabulary wins only on syngrid (2.590 vs 2.886), where the grid is
   the structure and the solver adds nothing.
-- **The tail pays with a shared model.** 16.4 kB of rank-16 parameters reach
+- **The tail's estimate is not the codec.** 16.4 kB of rank-16 parameters reach
   4.020 bpb on the uncovered shakespeare bytes (1.03 below the byte unigram,
-  0.43 below a 256.5 kB count table): the whole pipeline is 2.723 / 3.006
-  charged at 6.5x fewer calls, and the hard k-means concept adds nothing there.
+  0.43 below a 256.5 kB count table), but the 2.723 / 3.006 account that used it
+  is a lower bound: `total - sum(byte unigram)` subtracts the unigram for bytes
+  the concept path priced at the bigram row. The v8 bitstream (below) records
+  3.47 charged on shakespeare, 1.39 on synseg and 2.10 on syngrid; the tail
+  model's gain is eaten by the boundary and the type at 1 MB.
+
+## v8: the bitstream (N0)
+
+`codec.py` is the artifact: the model is packed as log-quantized counts, the CDF
+is derived (`round(2^24 p)`), and a 32-bit arithmetic coder writes the DP's token
+path. Two codecs are measured at each budget: `concept` (every token, the
+segmentation implicit) and `tail` (a type, a length, the shared byte model).
+`--try` transmits the budget choice; the decoder never reruns the DP.
+
+| corpus | arm | budget | rate | ref | model kB | charged | best codec |
+|---|---|---:|---:|---:|---:|---:|---|
+| shakespeare | concept | 1024/2048 | 3.305 | 3.024 | 23.1 | 3.472 | gzip 3.218 |
+| synseg | tail | 512/1024 | 1.290 | 1.221 | 14.7 | 1.389 | PPMd 1.500 |
+| syngrid | tail | 302/8192 | 1.739 | 1.594 | 53.6 | 2.098 | lzma 2.005 |
+
+Every corpus round-trips; the recorded size equals the code's entropy + the
+charge within 0.0013 bpb in both the `shared` and the `self` conventions. The
+published estimate is 0.07-0.28 bpb below the model it names. At 1 MB the model
+pays on synseg only; the scale run (N1) is the next lever.
 
 ## The budget curve (shakespeare, word vocabulary, 1.12 MB stream)
 
