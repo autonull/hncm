@@ -69,12 +69,23 @@ Read this literally:
 
 ## Next
 
-1. enwik8 with the model charged at 1/10/100 MB, where the representation should
-   dominate and the crossover stops mattering.
-2. Strong baselines: brotli, xz, zstd -19, a byte transformer.
-3. The parallelism dividend at matched bpb: one pass (DP + lookup) against L
-   passes for a byte-AR model.
-4. A held-out split for the vocabulary size, removing the selection leak.
+`TODO2.md` is the runnable plan. It starts from the three measured findings:
+
+1. The code must be a dictionary index (an exact inverse), not a dense latent.
+2. The model is the frontier: 6.1 kB on synseg, 39.7 kB on shakespeare.
+3. The parallelism dividend is bounded by coverage: calls = 1 + the uncovered
+   bytes. On shakespeare the dictionary covers 0.667 and needs 37,168 calls against
+   128 for a byte-AR model, so the dividend is 0.003x.
+
+The NCM's remaining job is the tail. `hncm.q4.md` supplies the design to take:
+the coarse-to-fine generator (a learned concept to bytes decoder), the tied router
+and minimum-chunk-length controls, the corruption-chain training, and the factorial
+`I_perf=(D-C)-(B-A)`. Its RVQ hierarchy is 27 bits/chunk (~9 bpb) and is too
+expensive; a concept must be cheap.
+
+Plan: P0 coverage/calls frontier, P1 held-out vocabulary size, P2 strong baselines
+(lzma, bz2, zstd, brotli), P3 the NCM tail coder, P4 the factorial, P5 scale.
+The minimal decisive run is P0-P2 (~1 h).
 
 ## Commands
 
