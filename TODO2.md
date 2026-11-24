@@ -65,7 +65,55 @@ Three findings:
 So the dictionary is a *parallel* codec only where it covers; on real text the
 tail dominates. **The NCM's remaining job is the tail.**
 
-## 2. What the NCM part must do (`hncm.q4.md`)
+## 2. The solution path, measured (2026-11-24)
+
+v7 prices each concept by its *unigram*: no context. The concept alphabet is
+predictable, and the previous concept is already decoded, so a *bigram over the
+indices* is a decodable context model. It also makes the DP a *first-order*
+Viterbi, so the solver stops being myopic. This is measured in
+`concept_lm.py` (the count bigram is the ceiling; a neural bigram is the next
+step):
+
+| corpus | vocab | dict | unigram | **bigram** | cut |
+|---|---:|---:|---:|---:|---:|
+| shakespeare | 2,048 | 2,304 | 3.237 | **2.655** | 0.58 |
+| shakespeare | 4,096 | 4,352 | 3.062 | **2.538** | 0.52 |
+| shakespeare | 8,192 | 8,448 | 2.905 | **2.450** | 0.46 |
+| shakespeare | 16,384 | 16,640 | 2.816 | **2.400** | 0.42 |
+| synseg | 2,048 | 894 | 1.285 | **0.888** | 0.40 |
+| syngrid | 2,048 | 558 | 2.051 | **1.382** | 0.67 |
+
+A 0.40–0.67 bpb cut on all three corpora. On shakespeare the bigram reaches
+2.40–2.54 against gzip 3.218 and xz ~2.5: the *rate* is now competitive.
+
+**The pitfall that hid it.** An *iterated* bigram (costs from the previous token
+of the *unigram* tiling, then one more DP pass) is *worse* than the unigram:
+3.128 vs 2.905 on shakespeare. The DP picks tokens under a model built for a
+different path. The model's cost must condition on the *actual* state of the
+path. The first-order Viterbi does exactly that, and it wins. This is a rule:
+**the cost model must be evaluated on the path it is used to search.**
+
+**The charge.** The bigram table is data, so it is charged (a pruned bigram:
+~6 bytes per entry; a neural bigram: its fitted parameters). The rate gain is
+0.4–0.7 bpb; the table is ~0.2–2 MB, so it pays above roughly 1–5 MB of stream.
+The *charged* budget curve is the next measurement, and the *crossover* is the
+result. At scale (10–100 MB) the charge is 0.02–0.2 bpb.
+
+**What the NCM must add, now with a job.** The dictionary and the count bigram
+are data. A *neural concept LM* (a small model over the indices) is fitted too,
+so it is charged like the table; its value is not a free model, it is
+*generalization*: it predicts a bigram that the table has not seen. That is the
+tail. The NCM's two jobs are now precise:
+
+1. **The tail coder**: on spans outside the dictionary, a learned concept plus a
+   decoder must beat the byte unigram (4.78) at one call per span.
+2. **The bigram generalizer**: on unseen concept pairs, a neural LM must beat the
+   table's backoff. Measure the conditional CE on held-out concept pairs.
+
+Both endpoints are cheap to measure and both are *rate* numbers, so a negative is
+informative and a positive is real.
+
+### What the NCM part must do (`hncm.q4.md`)
 
 `hncm.q4.md` (H-Net dynamic chunking × NCM multiscale RVQ) supplies the NCM
 design. Take these ideas:
