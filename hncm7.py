@@ -144,6 +144,68 @@ def build_dict(
     return Dict(ids, strings, cost, bc, trie, model_bytes)
 
 
+def assemble(strings: list[bytes], cost: list[float], bc: np.ndarray) -> Dict:
+    """A dictionary from strings and costs, with the single bytes always present."""
+    strings = list(strings)
+    cost = list(cost)
+    ids = {s: i for i, s in enumerate(strings)}
+    for b in range(256):
+        s = bytes([b])
+        if s not in ids:
+            ids[s] = len(strings)
+            strings.append(s)
+            cost.append(float(bc[b]))
+    trie: dict = {}
+    for s, i in ids.items():
+        node = trie
+        for b in s:
+            node = node.setdefault(b, {})
+        node["#"] = i
+    model_bytes = 512 + sum(len(s) + 3 for s in strings if len(s) > 1)
+    return Dict(ids, strings, cost, bc, trie, model_bytes)
+
+
+def em_dict(
+    counts: dict[bytes, int], tr: bytes, bc: np.ndarray, rounds: int = 2
+) -> tuple[Dict, list[dict]]:
+    """One cost model for every vocabulary: a token-usage unigram fitted by EM.
+
+    The initial costs are the candidate counts; the DP re-tokenizes the train; the
+    usage counts become the new costs; unused strings are dropped. The model is
+    charged at every round, so the vocabulary is selected by the model/rate trade,
+    not by a hand-tuned `min_count`, and both vocabularies use the same model.
+    """
+    total = sum(counts.values())
+    strings = list(counts)
+    cost = [-math.log2(counts[s] / total) for s in strings]
+    d = assemble(strings, cost, bc)
+    hist = [
+        {
+            "round": 0,
+            "dict": len(d.strings),
+            "model_bytes": d.model_bytes,
+            "rate": bits_of(cover(tr, d, 0.0), d) / len(tr),
+        }
+    ]
+    for r in range(1, rounds + 1):
+        usage = collections.Counter(cover(tr, d, 0.0))
+        used = [s for s in d.strings if usage.get(s, 0) > 0 or len(s) == 1]
+        n = sum(usage.get(s, 0) for s in used)
+        cost = [
+            float(bc[s[0]]) if len(s) == 1 else -math.log2(usage[s] / n) for s in used
+        ]
+        d = assemble(used, cost, bc)
+        hist.append(
+            {
+                "round": r,
+                "dict": len(d.strings),
+                "model_bytes": d.model_bytes,
+                "rate": bits_of(cover(tr, d, 0.0), d) / len(tr),
+            }
+        )
+    return d, hist, usage
+
+
 # %%
 def cover(bs: bytes, d: Dict, lam: float, greedy: bool = False) -> list[bytes]:
     L = len(bs)
@@ -336,13 +398,13 @@ def report(res: dict, path: Path) -> None:
         lines += [
             f"## {name}",
             "",
-            f"stream {e['stream_bytes'] / 1e6:.2f} MB; chosen min_count {e['min_count']}; "
+            f"stream {e['stream_bytes'] / 1e6:.2f} MB; chosen vocab {e['min_count']}; "
             f"dictionary {e['dict']} spans, {e['model_bytes'] / 1e3:.1f} kB "
             f"({e['model_bpb']:.3f} bpb); byte unigram {e['unigram']:.3f} bpb; "
             f"gzip {e['gzip']:.3f} bpb; crossover unigram {cross['unigram']}, "
             f"gzip {cross['gzip']}",
             "",
-            "| min_count | dict | model kB | rate | charged |",
+            "| vocab | dict | model kB | rate | charged |",
             "|---:|---:|---:|---:|---:|",
         ]
         for b in e["budget"]:
@@ -384,29 +446,40 @@ def run(names: list[str], out: Path, vocab: str = "substr") -> dict:
         on = base.onsets(name, np.frombuffer(tr, np.uint8))
         counts = counts_onsets(tr, on) if vocab == "onsets" else counts_substr(tr)
         stream = len(tr) + len(va)
+        d, rounds, usage = em_dict(counts, tr, bc)
+        top = sorted((s for s in usage if len(s) > 1), key=lambda s: -usage[s])
         best = None
         budget = []
-        for mc in (1, 4, 16, 64, 128, 512, 2048):
-            d = build_dict(counts, len(tr), bc, mc)
-            rate = bits_of(cover(va, d, 0.0), d) / len(va)
-            charged = rate + 8 * d.model_bytes / stream
+        for k in (256, 512, 1024, 2048, 4096, 8192, 16384, 32768):
+            keep = top[:k]
+            n = sum(usage[s] for s in keep)
+            dk = assemble(
+                keep,
+                [
+                    float(bc[s[0]]) if len(s) == 1 else -math.log2(usage[s] / n)
+                    for s in keep
+                ],
+                bc,
+            )
+            rate = bits_of(cover(va, dk, 0.0), dk) / len(va)
+            charged = rate + 8 * dk.model_bytes / stream
             budget.append(
                 {
-                    "min_count": mc,
-                    "dict": len(d.strings),
-                    "model_bytes": d.model_bytes,
+                    "min_count": k,
+                    "dict": len(dk.strings),
+                    "model_bytes": dk.model_bytes,
                     "rate": rate,
                     "charged": charged,
                 }
             )
-            if best is None or charged < best[2]:
-                best = (mc, d, charged, rate)
+            if best is None or charged < best[0]:
+                best = (charged, k, dk, rate)
             print(
-                f"  {name:11s} min_count={mc:2d} dict={len(d.strings):5d} "
-                f"model={d.model_bytes / 1e3:7.1f} kB rate={rate:.3f} charged={charged:.3f}",
+                f"  {name:11s} vocab={k:5d} dict={len(dk.strings):6d} "
+                f"model={dk.model_bytes / 1e3:7.1f} kB rate={rate:.3f} charged={charged:.3f}",
                 flush=True,
             )
-        mc, d, charged, rate = best
+        charged, mc, d, rate = best
         runs = evaluate(name, va, d)
         cnt = np.bincount(np.frombuffer(tr, np.uint8), minlength=256) + 1
         pb = cnt / cnt.sum()

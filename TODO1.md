@@ -144,6 +144,43 @@ Next: one cost model for both vocabularies (a token-usage unigram with an EM
 pass) so the comparison is exact; enwik8 with the model charged at 1/10/100 MB;
 brotli/xz/zstd and a byte transformer; the parallelism dividend at matched bpb.
 
+## Step 3 (2026-11-24): one cost model, and the honest verdict
+
+Both vocabularies now use the same model: a token-usage unigram fitted by EM on
+the train (the DP re-tokenizes, the usage becomes the cost, unused strings drop),
+with the vocabulary size swept and the model charged. `runs/v7/results.json`
+(text-only) and `runs/v7/onsets.json` (word):
+
+| corpus | vocab | dict | model | unigram | gzip | DP | charged | greedy | fixed4 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| synseg | word | 768 | 0.038 | 4.640 | 2.225 | 1.290 | **1.328** | 1.290 | 4.592 |
+| synseg | text | 4,352 | 0.463 | 4.640 | 2.225 | 1.880 | 2.343 | 1.978 | 4.626 |
+| syngrid | word | 558 | 0.018 | 3.911 | 2.886 | 2.051 | **2.068** | 2.051 | 2.051 |
+| syngrid | text | 512 | 0.018 | 3.911 | 2.886 | 2.573 | **2.590** | 2.573 | 3.906 |
+| shakespeare | word | 4,352 | 0.285 | 4.777 | 3.218 | 3.062 | 3.347 | 3.062 | 4.725 |
+| shakespeare | text | 2,304 | 0.156 | 4.777 | 3.218 | 3.299 | 3.455 | 3.382 | 4.647 |
+
+- **The word vocabulary pays**: charged 1.328 vs gzip 2.225 (synseg) and 2.068 vs
+  2.886 (syngrid), 0.90/0.82 bpb, with a 7.0/2.6 kB model.
+- **The text vocabulary's solver gain does not buy back its model**: on synseg it
+  gains +0.098 from solving but pays −0.425 bpb more model (4,352 vs 768 entries),
+  so it loses (2.343 vs 1.328).
+- **The solver is real but conditional**: DP − greedy = 0.000 on the word
+  vocabulary (no overlap); +0.098 (synseg) and +0.084 (shakespeare) on the
+  overlapping text vocabulary; 0.000 on syngrid (the grid is the structure).
+- **Shakespeare is model-bound at 1.1 MB**: word 3.347 vs gzip 3.218 (0.129 loss,
+  crossing ~2.0 MB); text 3.455 (0.237 loss). The budget optimum (word) is 4,352
+  entries: below it the rate pays, above it the model pays.
+
+The earlier `count`-normalized numbers were optimistic: the unified usage model
+raises the word rate slightly and the text rate by ~0.2 bpb, which flips the text
+synseg arm from a pass to a loss. That is the honest verdict: the representation
+pays where the model amortizes, and the solver pays only where it must be paid
+for with a bigger model.
+
+Caveat: the vocabulary size is chosen on the charged total reported on the same
+val (8 points, one knob) — a selection leak to remove with a held-out split.
+
 Diagnostics only (no claim is established). The v6 R-D curve, honest, seed 0, 300
 steps, `eval_windows=128`, synseg:
 

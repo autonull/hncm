@@ -1,166 +1,169 @@
-# H-NCM v7 - solved tiling over a pruned span dictionary (substr)
+# H-NCM v7 - solved tiling over a pruned span dictionary (onsets)
 
 ## synseg
 
-stream 1.20 MB; chosen min_count 128; dictionary 8361 spans, 62.9 kB (0.420 bpb); byte unigram 4.640 bpb; gzip 2.225 bpb; crossover unigram 0.17 MB, gzip 0.93 MB
+stream 1.20 MB; chosen vocab 512; dictionary 768 spans, 5.7 kB (0.038 bpb); byte unigram 4.640 bpb; gzip 2.225 bpb; crossover unigram 0.01 MB, gzip 0.05 MB
 
-| min_count | dict | model kB | rate | charged |
+| vocab | dict | model kB | rate | charged |
 |---:|---:|---:|---:|---:|
-| 1 | 1095207 | 15516.0 | 1.305 | 104.743 |
-| 4 | 508451 | 6485.5 | 1.318 | 44.554 |
-| 16 | 110351 | 1233.0 | 1.555 | 9.775 |
-| 64 | 9369 | 70.9 | 1.679 | 2.152 |
-| 128 | 8361 | 62.9 | 1.682 | 2.101 |
-| 512 | 2702 | 18.0 | 3.261 | 3.380 |
-| 2048 | 381 | 1.1 | 4.392 | 4.399 |
+| 256 | 512 | 3.0 | 1.916 | 1.936 |
+| 512 | 768 | 5.7 | 1.290 | 1.328 |
+| 1024 | 894 | 7.0 | 1.285 | 1.332 |
+| 2048 | 894 | 7.0 | 1.285 | 1.332 |
+| 4096 | 894 | 7.0 | 1.285 | 1.332 |
+| 8192 | 894 | 7.0 | 1.285 | 1.332 |
+| 16384 | 894 | 7.0 | 1.285 | 1.332 |
+| 32768 | 894 | 7.0 | 1.285 | 1.332 |
 
 | arm | lambda | rate | charged | tokens | bytes/token | align |
 |---|---:|---:|---:|---:|---:|---:|
-| DP | 0.0 | 1.682 | 2.101 | 19512 | 6.15 | 0.850 |
-| DP | 1.0 | 1.682 | 2.101 | 19512 | 6.15 | 0.850 |
-| DP | 2.0 | 1.682 | 2.101 | 19512 | 6.15 | 0.850 |
-| DP | 4.0 | 1.682 | 2.101 | 19512 | 6.15 | 0.850 |
-| fixed16 | 0.0 | 4.636 | 5.056 | 7500 | 16.00 | 0.090 |
-| fixed4 | 0.0 | 3.306 | 3.726 | 30000 | 4.00 | 0.189 |
-| fixed8 | 0.0 | 3.939 | 4.358 | 15000 | 8.00 | 0.137 |
-| greedy | 0.0 | 1.751 | 2.171 | 19004 | 6.31 | 0.886 |
-| greedy | 1.0 | 1.751 | 2.171 | 19004 | 6.31 | 0.886 |
-| greedy | 2.0 | 1.751 | 2.171 | 19004 | 6.31 | 0.886 |
-| greedy | 4.0 | 1.751 | 2.171 | 19004 | 6.31 | 0.886 |
-| oracle | 0.0 | 1.913 | 2.332 | 17737 | 6.77 | 1.000 |
-| random | 0.0 | 4.285 | 4.705 | 19275 | 6.23 | 0.150 |
-| random | 1.0 | 4.285 | 4.705 | 19275 | 6.23 | 0.150 |
-| random | 2.0 | 4.285 | 4.705 | 19275 | 6.23 | 0.150 |
-| random | 4.0 | 4.285 | 4.705 | 19275 | 6.23 | 0.150 |
+| DP | 0.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| DP | 1.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| DP | 2.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| DP | 4.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| fixed16 | 0.0 | 4.636 | 4.674 | 7500 | 16.00 | 0.090 |
+| fixed4 | 0.0 | 4.592 | 4.630 | 30000 | 4.00 | 0.189 |
+| fixed8 | 0.0 | 4.557 | 4.595 | 15000 | 8.00 | 0.137 |
+| greedy | 0.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| greedy | 1.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| greedy | 2.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| greedy | 4.0 | 1.290 | 1.328 | 18219 | 6.59 | 0.987 |
+| oracle | 0.0 | 1.376 | 1.414 | 17737 | 6.77 | 1.000 |
+| random | 0.0 | 4.615 | 4.653 | 19275 | 6.23 | 0.150 |
+| random | 1.0 | 4.615 | 4.653 | 19275 | 6.23 | 0.150 |
+| random | 2.0 | 4.615 | 4.653 | 19275 | 6.23 | 0.150 |
+| random | 4.0 | 4.615 | 4.653 | 19275 | 6.23 | 0.150 |
 
 ## syngrid
 
-stream 1.20 MB; chosen min_count 512; dictionary 2478 spans, 15.0 kB (0.100 bpb); byte unigram 3.911 bpb; gzip 2.886 bpb; crossover unigram 0.09 MB, gzip 0.34 MB
+stream 1.20 MB; chosen vocab 512; dictionary 558 spans, 2.6 kB (0.018 bpb); byte unigram 3.911 bpb; gzip 2.886 bpb; crossover unigram 0.01 MB, gzip 0.03 MB
 
-| min_count | dict | model kB | rate | charged |
+| vocab | dict | model kB | rate | charged |
 |---:|---:|---:|---:|---:|
-| 1 | 1088267 | 13901.4 | 1.882 | 94.548 |
-| 4 | 252735 | 2680.7 | 1.956 | 19.825 |
-| 16 | 132420 | 1269.4 | 1.985 | 10.447 |
-| 64 | 9101 | 67.4 | 2.504 | 2.953 |
-| 128 | 4380 | 28.9 | 2.525 | 2.717 |
-| 512 | 2478 | 15.0 | 2.530 | 2.630 |
-| 2048 | 410 | 1.4 | 3.599 | 3.608 |
+| 256 | 512 | 2.3 | 2.279 | 2.294 |
+| 512 | 558 | 2.6 | 2.051 | 2.068 |
+| 1024 | 558 | 2.6 | 2.051 | 2.068 |
+| 2048 | 558 | 2.6 | 2.051 | 2.068 |
+| 4096 | 558 | 2.6 | 2.051 | 2.068 |
+| 8192 | 558 | 2.6 | 2.051 | 2.068 |
+| 16384 | 558 | 2.6 | 2.051 | 2.068 |
+| 32768 | 558 | 2.6 | 2.051 | 2.068 |
 
 | arm | lambda | rate | charged | tokens | bytes/token | align |
 |---|---:|---:|---:|---:|---:|---:|
-| DP | 0.0 | 2.530 | 2.630 | 30219 | 3.97 | 0.076 |
-| DP | 1.0 | 2.530 | 2.630 | 30219 | 3.97 | 0.076 |
-| DP | 2.0 | 2.530 | 2.630 | 30219 | 3.97 | 0.076 |
-| DP | 4.0 | 2.530 | 2.630 | 30219 | 3.97 | 0.076 |
-| fixed16 | 0.0 | 3.906 | 4.006 | 7501 | 16.00 | 0.400 |
-| fixed4 | 0.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| fixed8 | 0.0 | 3.906 | 4.006 | 15002 | 8.00 | 0.667 |
-| greedy | 0.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| greedy | 1.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| greedy | 2.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| greedy | 4.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| oracle | 0.0 | 2.551 | 2.651 | 30004 | 4.00 | 1.000 |
-| random | 0.0 | 3.801 | 3.901 | 19276 | 6.23 | 0.190 |
-| random | 1.0 | 3.801 | 3.901 | 19276 | 6.23 | 0.190 |
-| random | 2.0 | 3.801 | 3.901 | 19276 | 6.23 | 0.190 |
-| random | 4.0 | 3.801 | 3.901 | 19276 | 6.23 | 0.190 |
+| DP | 0.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| DP | 1.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| DP | 2.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| DP | 4.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| fixed16 | 0.0 | 3.906 | 3.923 | 7501 | 16.00 | 0.400 |
+| fixed4 | 0.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| fixed8 | 0.0 | 3.906 | 3.923 | 15002 | 8.00 | 0.667 |
+| greedy | 0.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| greedy | 1.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| greedy | 2.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| greedy | 4.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| oracle | 0.0 | 2.051 | 2.068 | 30004 | 4.00 | 1.000 |
+| random | 0.0 | 3.847 | 3.864 | 19276 | 6.23 | 0.190 |
+| random | 1.0 | 3.847 | 3.864 | 19276 | 6.23 | 0.190 |
+| random | 2.0 | 3.847 | 3.864 | 19276 | 6.23 | 0.190 |
+| random | 4.0 | 3.847 | 3.864 | 19276 | 6.23 | 0.190 |
 
 ## shakespeare
 
-stream 1.12 MB; chosen min_count 128; dictionary 5792 spans, 40.7 kB (0.292 bpb); byte unigram 4.777 bpb; gzip 3.218 bpb; crossover unigram 0.20 MB, gzip 3.85 MB
+stream 1.12 MB; chosen vocab 4096; dictionary 4352 spans, 39.7 kB (0.285 bpb); byte unigram 4.777 bpb; gzip 3.218 bpb; crossover unigram 0.19 MB, gzip 2.03 MB
 
-| min_count | dict | model kB | rate | charged |
+| vocab | dict | model kB | rate | charged |
 |---:|---:|---:|---:|---:|
-| 1 | 934991 | 10907.0 | 2.257 | 80.486 |
-| 4 | 292870 | 3008.2 | 2.355 | 23.931 |
-| 16 | 55846 | 491.0 | 2.636 | 6.158 |
-| 64 | 13070 | 101.7 | 2.974 | 3.703 |
-| 128 | 5792 | 40.7 | 3.133 | 3.426 |
-| 512 | 1209 | 6.2 | 3.518 | 3.563 |
-| 2048 | 452 | 1.6 | 3.932 | 3.944 |
+| 256 | 512 | 2.6 | 3.877 | 3.896 |
+| 512 | 768 | 4.8 | 3.756 | 3.791 |
+| 1024 | 1280 | 9.5 | 3.435 | 3.504 |
+| 2048 | 2304 | 19.3 | 3.237 | 3.375 |
+| 4096 | 4352 | 39.7 | 3.062 | 3.347 |
+| 8192 | 8448 | 82.5 | 2.905 | 3.497 |
+| 16384 | 16640 | 175.0 | 2.816 | 4.071 |
+| 32768 | 28949 | 315.6 | 2.709 | 4.972 |
 
 | arm | lambda | rate | charged | tokens | bytes/token | align |
 |---|---:|---:|---:|---:|---:|---:|
-| DP | 0.0 | 3.133 | 3.426 | 36954 | 3.02 | 0.239 |
-| DP | 1.0 | 3.133 | 3.426 | 36954 | 3.02 | 0.239 |
-| DP | 2.0 | 3.133 | 3.426 | 36954 | 3.02 | 0.239 |
-| DP | 4.0 | 3.133 | 3.426 | 36954 | 3.02 | 0.239 |
-| fixed16 | 0.0 | 4.829 | 5.121 | 6971 | 16.00 | 0.092 |
-| fixed4 | 0.0 | 4.106 | 4.398 | 27884 | 4.00 | 0.210 |
-| fixed8 | 0.0 | 4.813 | 5.105 | 13942 | 8.00 | 0.148 |
-| greedy | 0.0 | 3.352 | 3.645 | 34634 | 3.22 | 0.398 |
-| greedy | 1.0 | 3.352 | 3.645 | 34634 | 3.22 | 0.398 |
-| greedy | 2.0 | 3.352 | 3.645 | 34634 | 3.22 | 0.398 |
-| greedy | 4.0 | 3.352 | 3.645 | 34634 | 3.22 | 0.398 |
-| oracle | 0.0 | 4.262 | 4.554 | 20153 | 5.53 | 1.000 |
-| random | 0.0 | 4.693 | 4.985 | 17935 | 6.22 | 0.169 |
-| random | 1.0 | 4.693 | 4.985 | 17935 | 6.22 | 0.169 |
-| random | 2.0 | 4.693 | 4.985 | 17935 | 6.22 | 0.169 |
-| random | 4.0 | 4.693 | 4.985 | 17935 | 6.22 | 0.169 |
+| DP | 0.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| DP | 1.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| DP | 2.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| DP | 4.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| fixed16 | 0.0 | 4.829 | 5.114 | 6971 | 16.00 | 0.092 |
+| fixed4 | 0.0 | 4.725 | 5.010 | 27884 | 4.00 | 0.210 |
+| fixed8 | 0.0 | 4.814 | 5.099 | 13942 | 8.00 | 0.148 |
+| greedy | 0.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| greedy | 1.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| greedy | 2.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| greedy | 4.0 | 3.062 | 3.347 | 52978 | 2.11 | 0.551 |
+| oracle | 0.0 | 3.126 | 3.411 | 20153 | 5.53 | 1.000 |
+| random | 0.0 | 4.812 | 5.097 | 17935 | 6.22 | 0.169 |
+| random | 1.0 | 4.812 | 5.097 | 17935 | 6.22 | 0.169 |
+| random | 2.0 | 4.812 | 5.097 | 17935 | 6.22 | 0.169 |
+| random | 4.0 | 4.812 | 5.097 | 17935 | 6.22 | 0.169 |
 
 ## Gates
 
 | gate | corpus | value | status |
 |---|---|---|---|
-| G0 | synseg | DP charged=2.101 gzip=2.225 (model=0.420 bpb) | **pass** |
-| G1 | synseg | DP=1.682 gzip=2.225 lam=0.0 | **pass** |
-| G2 | synseg | DP charged=2.101 unigram=4.640 | **pass** |
-| G5 | synseg | DP=1.682 fixed=3.306 lam=0.0 | **pass** |
-| G5c | synseg | DP=1.682 greedy=1.751 gain=+0.070 lam=0.0 | **pass** |
-| G0 | synseg | DP charged=2.101 gzip=2.225 (model=0.420 bpb) | **pass** |
-| G1 | synseg | DP=1.682 gzip=2.225 lam=1.0 | **pass** |
-| G2 | synseg | DP charged=2.101 unigram=4.640 | **pass** |
-| G5 | synseg | DP=1.682 fixed=3.306 lam=1.0 | **pass** |
-| G5c | synseg | DP=1.682 greedy=1.751 gain=+0.070 lam=1.0 | **pass** |
-| G0 | synseg | DP charged=2.101 gzip=2.225 (model=0.420 bpb) | **pass** |
-| G1 | synseg | DP=1.682 gzip=2.225 lam=2.0 | **pass** |
-| G2 | synseg | DP charged=2.101 unigram=4.640 | **pass** |
-| G5 | synseg | DP=1.682 fixed=3.306 lam=2.0 | **pass** |
-| G5c | synseg | DP=1.682 greedy=1.751 gain=+0.070 lam=2.0 | **pass** |
-| G0 | synseg | DP charged=2.101 gzip=2.225 (model=0.420 bpb) | **pass** |
-| G1 | synseg | DP=1.682 gzip=2.225 lam=4.0 | **pass** |
-| G2 | synseg | DP charged=2.101 unigram=4.640 | **pass** |
-| G5 | synseg | DP=1.682 fixed=3.306 lam=4.0 | **pass** |
-| G5c | synseg | DP=1.682 greedy=1.751 gain=+0.070 lam=4.0 | **pass** |
-| G0 | syngrid | DP charged=2.630 gzip=2.886 (model=0.100 bpb) | **pass** |
-| G1 | syngrid | DP=2.530 gzip=2.886 lam=0.0 | **pass** |
-| G2 | syngrid | DP charged=2.630 unigram=3.911 | **pass** |
-| G5 | syngrid | DP=2.530 fixed=2.551 lam=0.0 | **pass** |
-| G5c | syngrid | DP=2.530 greedy=2.551 gain=+0.021 lam=0.0 | **pass** |
-| G0 | syngrid | DP charged=2.630 gzip=2.886 (model=0.100 bpb) | **pass** |
-| G1 | syngrid | DP=2.530 gzip=2.886 lam=1.0 | **pass** |
-| G2 | syngrid | DP charged=2.630 unigram=3.911 | **pass** |
-| G5 | syngrid | DP=2.530 fixed=2.551 lam=1.0 | **pass** |
-| G5c | syngrid | DP=2.530 greedy=2.551 gain=+0.021 lam=1.0 | **pass** |
-| G0 | syngrid | DP charged=2.630 gzip=2.886 (model=0.100 bpb) | **pass** |
-| G1 | syngrid | DP=2.530 gzip=2.886 lam=2.0 | **pass** |
-| G2 | syngrid | DP charged=2.630 unigram=3.911 | **pass** |
-| G5 | syngrid | DP=2.530 fixed=2.551 lam=2.0 | **pass** |
-| G5c | syngrid | DP=2.530 greedy=2.551 gain=+0.021 lam=2.0 | **pass** |
-| G0 | syngrid | DP charged=2.630 gzip=2.886 (model=0.100 bpb) | **pass** |
-| G1 | syngrid | DP=2.530 gzip=2.886 lam=4.0 | **pass** |
-| G2 | syngrid | DP charged=2.630 unigram=3.911 | **pass** |
-| G5 | syngrid | DP=2.530 fixed=2.551 lam=4.0 | **pass** |
-| G5c | syngrid | DP=2.530 greedy=2.551 gain=+0.021 lam=4.0 | **pass** |
-| G0 | shakespeare | DP charged=3.426 gzip=3.218 (model=0.292 bpb) | **fail** |
-| G1 | shakespeare | DP=3.133 gzip=3.218 lam=0.0 | **pass** |
-| G2 | shakespeare | DP charged=3.426 unigram=4.777 | **pass** |
-| G5 | shakespeare | DP=3.133 fixed=4.106 lam=0.0 | **pass** |
-| G5c | shakespeare | DP=3.133 greedy=3.352 gain=+0.219 lam=0.0 | **pass** |
-| G0 | shakespeare | DP charged=3.426 gzip=3.218 (model=0.292 bpb) | **fail** |
-| G1 | shakespeare | DP=3.133 gzip=3.218 lam=1.0 | **pass** |
-| G2 | shakespeare | DP charged=3.426 unigram=4.777 | **pass** |
-| G5 | shakespeare | DP=3.133 fixed=4.106 lam=1.0 | **pass** |
-| G5c | shakespeare | DP=3.133 greedy=3.352 gain=+0.219 lam=1.0 | **pass** |
-| G0 | shakespeare | DP charged=3.426 gzip=3.218 (model=0.292 bpb) | **fail** |
-| G1 | shakespeare | DP=3.133 gzip=3.218 lam=2.0 | **pass** |
-| G2 | shakespeare | DP charged=3.426 unigram=4.777 | **pass** |
-| G5 | shakespeare | DP=3.133 fixed=4.106 lam=2.0 | **pass** |
-| G5c | shakespeare | DP=3.133 greedy=3.352 gain=+0.219 lam=2.0 | **pass** |
-| G0 | shakespeare | DP charged=3.426 gzip=3.218 (model=0.292 bpb) | **fail** |
-| G1 | shakespeare | DP=3.133 gzip=3.218 lam=4.0 | **pass** |
-| G2 | shakespeare | DP charged=3.426 unigram=4.777 | **pass** |
-| G5 | shakespeare | DP=3.133 fixed=4.106 lam=4.0 | **pass** |
-| G5c | shakespeare | DP=3.133 greedy=3.352 gain=+0.219 lam=4.0 | **pass** |
+| G0 | synseg | DP charged=1.328 gzip=2.225 (model=0.038 bpb) | **pass** |
+| G1 | synseg | DP=1.290 gzip=2.225 lam=0.0 | **pass** |
+| G2 | synseg | DP charged=1.328 unigram=4.640 | **pass** |
+| G5 | synseg | DP=1.290 fixed=4.592 lam=0.0 | **pass** |
+| G5c | synseg | DP=1.290 greedy=1.290 gain=+0.000 lam=0.0 | **pass** |
+| G0 | synseg | DP charged=1.328 gzip=2.225 (model=0.038 bpb) | **pass** |
+| G1 | synseg | DP=1.290 gzip=2.225 lam=1.0 | **pass** |
+| G2 | synseg | DP charged=1.328 unigram=4.640 | **pass** |
+| G5 | synseg | DP=1.290 fixed=4.592 lam=1.0 | **pass** |
+| G5c | synseg | DP=1.290 greedy=1.290 gain=+0.000 lam=1.0 | **pass** |
+| G0 | synseg | DP charged=1.328 gzip=2.225 (model=0.038 bpb) | **pass** |
+| G1 | synseg | DP=1.290 gzip=2.225 lam=2.0 | **pass** |
+| G2 | synseg | DP charged=1.328 unigram=4.640 | **pass** |
+| G5 | synseg | DP=1.290 fixed=4.592 lam=2.0 | **pass** |
+| G5c | synseg | DP=1.290 greedy=1.290 gain=+0.000 lam=2.0 | **pass** |
+| G0 | synseg | DP charged=1.328 gzip=2.225 (model=0.038 bpb) | **pass** |
+| G1 | synseg | DP=1.290 gzip=2.225 lam=4.0 | **pass** |
+| G2 | synseg | DP charged=1.328 unigram=4.640 | **pass** |
+| G5 | synseg | DP=1.290 fixed=4.592 lam=4.0 | **pass** |
+| G5c | synseg | DP=1.290 greedy=1.290 gain=+0.000 lam=4.0 | **pass** |
+| G0 | syngrid | DP charged=2.068 gzip=2.886 (model=0.018 bpb) | **pass** |
+| G1 | syngrid | DP=2.051 gzip=2.886 lam=0.0 | **pass** |
+| G2 | syngrid | DP charged=2.068 unigram=3.911 | **pass** |
+| G5 | syngrid | DP=2.051 fixed=2.051 lam=0.0 | **fail** |
+| G5c | syngrid | DP=2.051 greedy=2.051 gain=+0.000 lam=0.0 | **pass** |
+| G0 | syngrid | DP charged=2.068 gzip=2.886 (model=0.018 bpb) | **pass** |
+| G1 | syngrid | DP=2.051 gzip=2.886 lam=1.0 | **pass** |
+| G2 | syngrid | DP charged=2.068 unigram=3.911 | **pass** |
+| G5 | syngrid | DP=2.051 fixed=2.051 lam=1.0 | **fail** |
+| G5c | syngrid | DP=2.051 greedy=2.051 gain=+0.000 lam=1.0 | **pass** |
+| G0 | syngrid | DP charged=2.068 gzip=2.886 (model=0.018 bpb) | **pass** |
+| G1 | syngrid | DP=2.051 gzip=2.886 lam=2.0 | **pass** |
+| G2 | syngrid | DP charged=2.068 unigram=3.911 | **pass** |
+| G5 | syngrid | DP=2.051 fixed=2.051 lam=2.0 | **fail** |
+| G5c | syngrid | DP=2.051 greedy=2.051 gain=+0.000 lam=2.0 | **pass** |
+| G0 | syngrid | DP charged=2.068 gzip=2.886 (model=0.018 bpb) | **pass** |
+| G1 | syngrid | DP=2.051 gzip=2.886 lam=4.0 | **pass** |
+| G2 | syngrid | DP charged=2.068 unigram=3.911 | **pass** |
+| G5 | syngrid | DP=2.051 fixed=2.051 lam=4.0 | **fail** |
+| G5c | syngrid | DP=2.051 greedy=2.051 gain=+0.000 lam=4.0 | **pass** |
+| G0 | shakespeare | DP charged=3.347 gzip=3.218 (model=0.285 bpb) | **fail** |
+| G1 | shakespeare | DP=3.062 gzip=3.218 lam=0.0 | **pass** |
+| G2 | shakespeare | DP charged=3.347 unigram=4.777 | **pass** |
+| G5 | shakespeare | DP=3.062 fixed=4.725 lam=0.0 | **pass** |
+| G5c | shakespeare | DP=3.062 greedy=3.062 gain=+0.000 lam=0.0 | **pass** |
+| G0 | shakespeare | DP charged=3.347 gzip=3.218 (model=0.285 bpb) | **fail** |
+| G1 | shakespeare | DP=3.062 gzip=3.218 lam=1.0 | **pass** |
+| G2 | shakespeare | DP charged=3.347 unigram=4.777 | **pass** |
+| G5 | shakespeare | DP=3.062 fixed=4.725 lam=1.0 | **pass** |
+| G5c | shakespeare | DP=3.062 greedy=3.062 gain=+0.000 lam=1.0 | **pass** |
+| G0 | shakespeare | DP charged=3.347 gzip=3.218 (model=0.285 bpb) | **fail** |
+| G1 | shakespeare | DP=3.062 gzip=3.218 lam=2.0 | **pass** |
+| G2 | shakespeare | DP charged=3.347 unigram=4.777 | **pass** |
+| G5 | shakespeare | DP=3.062 fixed=4.725 lam=2.0 | **pass** |
+| G5c | shakespeare | DP=3.062 greedy=3.062 gain=+0.000 lam=2.0 | **pass** |
+| G0 | shakespeare | DP charged=3.347 gzip=3.218 (model=0.285 bpb) | **fail** |
+| G1 | shakespeare | DP=3.062 gzip=3.218 lam=4.0 | **pass** |
+| G2 | shakespeare | DP charged=3.347 unigram=4.777 | **pass** |
+| G5 | shakespeare | DP=3.062 fixed=4.725 lam=4.0 | **pass** |
+| G5c | shakespeare | DP=3.062 greedy=3.062 gain=+0.000 lam=4.0 | **pass** |
 
