@@ -1,0 +1,411 @@
+{
+ "format": 7,
+ "corpora": {
+  "synseg": {
+   "dict": 895,
+   "unigram": 4.63987422614988,
+   "gzip": 2.2248666666666668,
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 1.2847495223057899,
+     "tokens": 17737,
+     "bytes_per_token": 6.765518407848002,
+     "align": 1.0
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 4.590959169061057,
+     "tokens": 30000,
+     "bytes_per_token": 4.0,
+     "align": 0.18857489997276744
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 4.5565384857007905,
+     "tokens": 15000,
+     "bytes_per_token": 8.0,
+     "align": 0.1374591440877295
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 4.636491328056561,
+     "tokens": 7500,
+     "bytes_per_token": 16.0,
+     "align": 0.09010579704402268
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 4.615560880035657,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 4.615560880035657,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 4.615560880035657,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 4.615560880035657,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894
+    }
+   ]
+  },
+  "syngrid": {
+   "dict": 558,
+   "unigram": 3.910862454821862,
+   "gzip": 2.8860818557525665,
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 2.0508494347799666,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 3.9057313260680946,
+     "tokens": 15002,
+     "bytes_per_token": 8.0,
+     "align": 0.6666666666666666
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 3.9057313260680946,
+     "tokens": 7501,
+     "bytes_per_token": 16.0,
+     "align": 0.4
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 3.846657711763951,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 3.846657711763951,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 3.846657711763951,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 3.846657711763951,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142
+    }
+   ]
+  },
+  "shakespeare": {
+   "dict": 29148,
+   "unigram": 4.777367908512253,
+   "gzip": 3.2179744656433797,
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 2.70947973855976,
+     "tokens": 38496,
+     "bytes_per_token": 2.8973399833748963,
+     "align": 0.6872410441780763
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 2.70947973855976,
+     "tokens": 38496,
+     "bytes_per_token": 2.8973399833748963,
+     "align": 0.6872410441780763
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 2.70947973855976,
+     "tokens": 38496,
+     "bytes_per_token": 2.8973399833748963,
+     "align": 0.6872410441780763
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 2.70947973855976,
+     "tokens": 38496,
+     "bytes_per_token": 2.8973399833748963,
+     "align": 0.6872410441780763
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 2.7375169384354767,
+     "tokens": 37803,
+     "bytes_per_token": 2.950453667698331,
+     "align": 0.6954586237835599
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 2.7375169384354767,
+     "tokens": 37803,
+     "bytes_per_token": 2.950453667698331,
+     "align": 0.6954586237835599
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 2.7375169384354767,
+     "tokens": 37803,
+     "bytes_per_token": 2.950453667698331,
+     "align": 0.6954586237835599
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 2.7375169384354767,
+     "tokens": 37803,
+     "bytes_per_token": 2.950453667698331,
+     "align": 0.6954586237835599
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 2.7756846721103092,
+     "tokens": 20153,
+     "bytes_per_token": 5.534461370515556,
+     "align": 1.0
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 4.727841101427568,
+     "tokens": 27884,
+     "bytes_per_token": 4.0,
+     "align": 0.20963007681578782
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 4.804536635425634,
+     "tokens": 13942,
+     "bytes_per_token": 8.0,
+     "align": 0.14782226132864057
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 4.829384646762005,
+     "tokens": 6971,
+     "bytes_per_token": 16.0,
+     "align": 0.09239050287568205
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 4.8167878759857885,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 4.8167878759857885,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 4.8167878759857885,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 4.8167878759857885,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424
+    }
+   ]
+  }
+ },
+ "runs": []
+}

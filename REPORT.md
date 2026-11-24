@@ -1,61 +1,66 @@
-# H-NCM v6 report
+# H-NCM report
 
-G0 fails on the codec, before the DP. Two measurement defects were fixed first;
-both had inflated the codec:
+## v6: the dense-latent codec fails, and why
 
-1. The entropy model conditioned on the latent it was coding (`ctx = [z, mu,
-   gain@Fh, hq]`). The decoder never has `z`, so the code rate was a fantasy
-   (`CE=0.02` bpb against an empirical `H=2.96`). `SpanEnt` now conditions only on
-   what the decoder has: the span start, the span length, the transmitted global
-   factor, and the already-sent codes.
-2. The rate was charged per position, not per span. `pool` packs one code per span
-   at `s < S`, but `quantize` charged `L` codes and `code_info` counted the
-   zero-derived padding tail. For stride 4 that is a 4x overcharge, and the tail
-   deflated `CE`. Only the packed prefix is now charged, decoded, and measured.
+Two measurement defects were fixed first (an entropy model conditioned on the
+latent, and a 4x per-position rate overcharge). The honest number then exposed
+the real defect: the span code is a 12-bit scalar quantization of a *mean*, which
+is permutation-invariant, so it carries ~1 bpb while costing 3.1 bpb.
+`total = code + residual` is monotone in the code rate (slope 0.30 at 300 and 1200
+steps, every level/`d_c`/stride/pool), the optimizer's optimum is to collapse the
+code, and the oracle tiling lies on the same R-D line as the grid.
 
-Also fixed: `pos="span"` computed the span position embedding and never added it.
-
-## Phase 0 at budget
-
-Preset `quick`, 3 seeds, 512 windows, 400 steps, `format: 7`
-(`runs/p0/quick-c3b7a8ac/`), mean of 3 seeds:
+Honest Phase 0 (`runs/p0/quick-c3b7a8ac/`, 3 seeds, 512 windows):
 
 | corpus | arm | total | recon | code | H(code) | util |
 |---|---|---:|---:|---:|---:|---:|
 | synseg | rel-pos | 6.891 | 3.752 | 3.138 | 381.0 | 1.000 |
-| synseg | abs-pos | 6.844 | 3.758 | 3.085 | 376.9 | 1.000 |
 | synseg | constant-code | 4.642 | 4.642 | 0.000 | 0.0 | 0.0 |
-| synseg | no-quant | 3.758 | 3.609 | 0.149 | 0.0 | 0.0 |
 | synseg | unigram | 4.637 | 4.637 | 0.000 | - | - |
 | syngrid | rel-pos | 5.975 | 2.863 | 3.112 | 377.0 | 1.000 |
-| syngrid | abs-pos | 5.958 | 2.839 | 3.119 | 378.6 | 1.000 |
 | syngrid | constant-code | 3.909 | 3.909 | 0.000 | 0.0 | 0.0 |
-| syngrid | no-quant | 2.812 | 2.664 | 0.148 | 0.0 | 0.0 |
 | syngrid | unigram | 3.908 | 3.908 | 0.000 | - | - |
 
-Gates: **G0 fail** (total above the unigram on both corpora; `util`, `delta`,
-`H` pass), **G6 pass** (`-0.006/+0.024`), **G9 pass** (3 seeds).
+Gates: G0 fail on total only; G6 pass; G9 pass. No Phase 1 was run: the code
+does not pay for itself.
 
-## Interpretation
+## v7: the redesign
 
-The code is healthy: fully used (`util=1.0`), informative (`H≈380` bits/window =
-2.97 bpb), and used by the decoder (`delta_recon=0.89/1.05` bpb). It is not worth
-its bits: it costs 3.14/3.11 bpb and buys 0.89/1.05, i.e. 0.28-0.34 bpb per bpb of code.
-The honest rate is ~`log2(levels)=3` bits/symbol; the decodable context cannot
-compress the code (`CE ≈ H`).
+The code is the index of a span in a free dictionary; the decoder writes the
+exact bytes, so the residual is zero and only indices and fallback bytes are paid.
+The DP solves the exact cover with the index costs. The greedy is the same cost
+model with a longest-match cover, so the gap isolates solving from guessing.
 
-The R-D curve is monotone at every swept point (levels 4/8, `d_c` 1/2/4, stride
-4/8/16; 300 steps) and at 4x the steps (1200). `total = recon + code` is minimized
-at code 0, where it equals the unigram. So no `lambda` and no tiling can pass G0:
-the tiling cannot fix a code that does not pay for itself.
+Best lambda, `runs/v7/results.json`:
 
-Per the decision tree G0 fails, so Phase 1 was not run and its smoke run is not
-interpreted. The negative is publishable: the controls are clean.
+| corpus | unigram | gzip | DP | greedy | oracle | fixed4 | align(DP/oracle) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| synseg | 4.640 | 2.225 | **1.285** | 1.285 | 1.285 | 4.591 | 1.000 |
+| syngrid | 3.911 | 2.886 | **2.051** | 2.051 | 2.051 | 2.051 | 1.000 |
+| shakespeare | 4.777 | 3.218 | **2.709** | 2.738 | 2.776 | 4.728 | 0.687 |
 
-## Next step
+The representation wins: below the unigram and gzip on all three corpora, with a
+parallel decoder. The tiling is decisive: the fixed grid destroys the value
+(4.59/4.73 on synseg/shakespeare). On syngrid the grid *is* the oracle by
+construction, so the fixed arm ties the DP: the plan's negative control holds.
 
-Code transfer efficiency, not the tiling. At the operating point the reconstruction
-must gain > 1 bpb per code bit (now ~0.29): a decoder that predicts bytes
-conditionally from the span content (a wider code, or an autoregressive decoder
-inside the span), trained end to end, then rerun Phase 0. The DP only makes sense
-once the code pays for itself.
+The solver is not the win. On a word dictionary the greedy longest-match already
+finds the words (`DP == greedy` on synseg/syngrid); the DP beats the greedy only
+on shakespeare, by 0.029 bpb. The DP does beat the oracle on shakespeare
+(2.709 vs 2.776) by splitting rare words into the cheaper byte fallback.
+
+## Caveat and next step
+
+The v7 vocabulary is built from the train word onsets, so it is supervised; the
+*tiling* is not (the DP uses only costs). A deployable version must build the
+vocabulary without onsets (a suffix automaton, BPE, or a learned candidate
+generator), then rerun the arms. The second step is to make the solver matter: on
+an overlapping (word + phrase) vocabulary the greedy is myopic and the DP can
+merge, which is where the solving claim can be tested.
+
+## Artifacts
+
+- `runs/v7/results.json`, `runs/v7/REPORT.md` (v7).
+- `runs/p0/quick-c3b7a8ac/` (v6 honest negative).
+- Superseded: `runs/p0/quick-dbe8d386/` (`format: 6`), `runs/p1/smoke-37d2450a/`,
+  `runs/p2/smoke-bad03cb9/`.

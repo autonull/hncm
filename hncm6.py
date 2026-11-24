@@ -88,6 +88,7 @@ class Cfg:
     span_cost: float = 3.0
     # quantizer / training
     mode: str = "scalar"
+    span_pool: str = "mean"
     pos: str = "span"
     pos_drop: float = 0.5
     bs: int = 16
@@ -142,6 +143,7 @@ class Cfg:
         assert s.lengths and s.lengths[0] == 1 and max(s.lengths) <= s.L
         assert s.L % s.fixed_len == 0 and s.fixed_len in (4, 8, 16)
         assert s.mode in ("scalar", "vq", "constant", "noquant")
+        assert s.span_pool in ("attn", "mean")
         assert s.pos in ("span", "rel", "abs")
         assert s.eval_windows >= 2 and s.bs >= 2 and s.sample_n >= 1
         assert s.seeds and all(x >= 0 for x in s.seeds)
@@ -442,6 +444,16 @@ def random_masks(B, L, lengths, rng):
     return m
 
 
+def train_lengths(cfg):
+    """Every length the tiling can produce, so no length embedding is untrained.
+
+    The DP uses `cfg.lengths`; the oracle uses word onsets and can emit any span
+    length up to the window. Training only on the DP set leaves the decoder's
+    length embeddings untrained for the oracle tiling.
+    """
+    return tuple(range(1, max(cfg.lengths) + 1))
+
+
 def oracle_masks(ons, starts, L):
     B = len(starts)
     m = torch.zeros(B, L, dtype=torch.bool, device=DEVICE)
@@ -504,19 +516,56 @@ class Encoder(nn.Module):
         return s.stack(s.emb(x) + s.pos.weight[: x.size(1)][None])
 
 
+class SpanPool(nn.Module):
+    """Order-aware span pool: one learned relative-offset kernel per code dim.
+
+    A uniform kernel is the mean, which is permutation-invariant: it cannot tell
+    "abab" from "aabb". A learned kernel reads a specific relative offset, so the
+    code can carry byte order. `span_pool="mean"` is the ablation.
+    """
+
+    def __init__(s, cfg):
+        super().__init__()
+        s.cfg = cfg
+        s.k = nn.Parameter(torch.zeros(cfg.d_c, max(cfg.lengths)))
+        s.plain = nn.Linear(cfg.d, cfg.d_c)
+        s.proj = nn.Linear(cfg.d * (cfg.d_c + 1), cfg.d_c)
+
+    def forward(s, H, bnd):
+        B, L, D = H.shape
+        dc = s.cfg.d_c
+        ids, rel, _, cnt = geometry(bnd)
+        mean = (
+            torch.zeros(B, L, D, device=H.device).scatter_add_(
+                1, ids[..., None].expand(-1, -1, D), H
+            )
+            / cnt.clamp_min(1)[..., None]
+        )
+        if s.cfg.span_pool == "mean":
+            return s.plain(mean), mean
+        kk = s.k[:, rel.clamp(max=s.k.size(1) - 1)]
+        w = torch.exp(kk - kk.max())
+        idx = ids[None].expand(dc, -1, -1)
+        w = w / w.new_zeros(dc, B, L).scatter_add_(2, idx, w).gather(2, idx).clamp_min(
+            1e-9
+        )
+        z = w.new_zeros(dc, B, L, D).scatter_add_(
+            2, idx[..., None].expand(-1, -1, -1, D), w[..., None] * H[None]
+        )
+        return s.proj(torch.cat([mean] + list(z), -1)), mean
+
+
 class LowRank(nn.Module):
     """Hierarchical prior: a transmitted global factor and per-span gains."""
 
     def __init__(s, cfg):
         super().__init__()
         s.cfg = cfg
-        s.mean = nn.Linear(cfg.d, cfg.d_c)
         s.h = nn.Linear(cfg.d, cfg.rank) if cfg.rank > 0 else None
         s.gain = nn.Linear(cfg.d, cfg.d_c * cfg.rank) if cfg.rank > 0 else None
 
-    def forward(s, z, valid, train):
+    def forward(s, y, z, valid, train):
         B, M, _ = z.shape
-        y = s.mean(z)
         if s.cfg.rank == 0:
             return y, None, torch.zeros(B, device=z.device)
         n = valid.sum(1, keepdim=True).clamp_min(1)
@@ -671,14 +720,16 @@ class Codec(nn.Module):
         super().__init__()
         s.cfg = cfg
         s.enc = Encoder(cfg)
+        s.span = SpanPool(cfg)
         s.prior = LowRank(cfg)
         s.quant = ScalarQ(cfg)
         s.dec = Decoder(cfg)
 
     def forward(s, x, bnd, train):
         H = s.enc(x)
-        z, valid, _ = pool(H, bnd)
-        mu, h, hrate = s.prior(z, valid, train)
+        _, _, valid = span_layout(bnd)
+        y, z = s.span(H, bnd)
+        mu, h, hrate = s.prior(y, z, valid, train)
         yq, k, rate, commit = s.quant.quantize(mu, bnd, valid, h, train)
         rec = (
             F.cross_entropy(
@@ -697,8 +748,9 @@ class Codec(nn.Module):
     @torch.no_grad()
     def eval_bits(s, x, bnd):
         H = s.enc(x)
-        z, valid, _ = pool(H, bnd)
-        mu, h, hrate = s.prior(z, valid, False)
+        _, _, valid = span_layout(bnd)
+        y, z = s.span(H, bnd)
+        mu, h, hrate = s.prior(y, z, valid, False)
         yq, k, rate, _ = s.quant.quantize(mu, bnd, valid, h, False)
         rec = (
             F.cross_entropy(
@@ -915,7 +967,7 @@ def train_codec(cfg, corpus, seed, arm, random_tilings):
     for it in range(cfg.codec_steps):
         x = train_batch(corpus, cfg.L, cfg.bs, rng)
         b = (
-            random_masks(cfg.bs, cfg.L, cfg.lengths, rng)
+            random_masks(cfg.bs, cfg.L, train_lengths(cfg), rng)
             if random_tilings
             else fixed_mask(cfg.bs, cfg.L, step)
         )
@@ -1957,8 +2009,9 @@ def _selftest():
     # the decoder never reads the padded tail: one code per span
     with torch.no_grad():
         H = model.enc(x)
-        z, valid, _ = pool(H, b)
-        mu, h, _ = model.prior(z, valid, False)
+        _, _, valid = span_layout(b)
+        y, z = model.span(H, b)
+        mu, h, _ = model.prior(y, z, valid, False)
         yq, _, _, _ = model.quant.quantize(mu, b, valid, h, False)
         tail = yq.clone()
         tail[~valid] = torch.randn_like(tail[~valid])

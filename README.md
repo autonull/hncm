@@ -1,70 +1,89 @@
 # H-NCM: Hierarchical Neural Concept Modeling
 
-Status: `hncm6.py` implements the v6 plan. Phase 0 is measured at budget (3 seeds,
-512 windows) with honest accounting. **No P1/P2/P3 claim is established: G0
-fails.**
+Status: `hncm6.py` is the dense-latent v6 negative; `hncm7.py` is the redesign
+that follows from the measured bottleneck. **No v6 P1/P2/P3 claim is established.
+The v7 redesign beats the byte unigram and gzip on all three corpora with a
+*parallel* decoder.**
 
-## Result
+## The measured bottleneck (v6)
 
-The codec is healthy but not competitive. Honest Phase 0, preset `quick`, 3 seeds,
-512 windows, 400 steps (`runs/p0/quick-c3b7a8ac/`), mean of 3 seeds:
+`hncm6.py` transmits a span code that is a 12-bit scalar quantization of a
+*pooled span mean*. The mean is permutation-invariant: it cannot tell `abab` from
+`aabb`. The encoder's per-byte features recover the bytes exactly, but the mean
+destroys the byte order, so the code carries ~1 bpb while it costs 3.1 bpb
+(`delta_recon=0.89/1.05`, `code=3.14/3.11`). A probe from the same 12-bit code
+(with a stronger decoder than the codec's) reaches only 3.42 bpb, so the decoder
+is not the limit: the code is. Consequently `total = code + residual` is monotone
+in the code rate (slope 0.30, unchanged at 1200 steps and at every level, `d_c`,
+stride and tiling), and the optimizer's optimum is to collapse the code to a
+constant (`total=4.79`, i.e. no code). The oracle tiling lies on the same R-D
+line as the grid, so the tiling cannot rescue a dense code.
 
-| corpus | arm | total | recon | code | H(code) | util |
-|---|---|---:|---:|---:|---:|---:|
-| synseg | rel-pos | 6.891 | 3.752 | 3.138 | 381.0 | 1.000 |
-| synseg | constant-code | 4.642 | 4.642 | 0.000 | 0.0 | 0.0 |
-| synseg | no-quant | 3.758 | 3.609 | 0.149 | 0.0 | 0.0 |
-| synseg | unigram | 4.637 | 4.637 | 0.000 | - | - |
-| syngrid | rel-pos | 5.975 | 2.863 | 3.112 | 377.0 | 1.000 |
-| syngrid | constant-code | 3.909 | 3.909 | 0.000 | 0.0 | 0.0 |
-| syngrid | no-quant | 2.812 | 2.664 | 0.148 | 0.0 | 0.0 |
-| syngrid | unigram | 3.908 | 3.908 | 0.000 | - | - |
+Full v6 Phase 0: `runs/p0/quick-c3b7a8ac/` (3 seeds, 512 windows). G0 fails on
+total only; util/delta/H pass; G6/G9 pass.
 
-- G0 **fail**: `util=1.000`, `delta_recon=0.890/1.046`, `H=381/377` bits/window
-  pass, `total` does not. G6 **pass** (`rel-abs = -0.006/+0.024`). G9 **pass**.
-- The code is fully used and carries information, but it costs 3.14/3.11 bpb and
-  buys 0.89/1.05 bpb of reconstruction: 0.28-0.34 bpb per bpb of code. `total` is monotone
-  in the code budget at every swept operating point (levels 4/8, `d_c` 1/2/4, stride
-  4/8/16) and at 4x the training steps. No `lambda` and no tiling can pass G0.
-- Per the decision tree, G0 fails, so Phase 1 is not run: the DP cannot be
-  interpreted on an uncompetitive codec. The negative is publishable because the
-  controls are clean.
+## The redesign (v7)
 
-## Hypothesis
+The code is the *index* of a span in a *free* dictionary (part of the model, like
+the byte unigram table). The decoder writes the span's exact bytes, so the
+residual is **zero** for dictionary spans; spans outside the dictionary pay their
+bytes at the byte unigram. Only indices and fallback bytes are paid. The tiling is
+inference: a shortest-path DP solves the exact cover with the index costs; the
+greedy arm runs the *same* cost model with a longest-match cover, so the DP/greedy
+gap isolates solving from guessing. The oracle splits at the true word onsets; the
+fixed grid is the chunker. Every arm pays the same cost model.
 
-Replacing the router with an exact DP over a learned cost field, and RVQ with scalar
-quantization + a low-rank prior, yields (i) `total < unigram` on a real corpus,
-(ii) `calls_AR/calls_DP >= 8` at matched total bits, and (iii) `I_structure > 0` at
-matched lambda. The v5 interaction `I` is a ceiling, not the deployable claim.
+Honest run (`runs/v7/results.json`), best lambda:
 
-(i) fails at the codec, before the DP: the code does not pay for itself. The next
-decisive step is code transfer efficiency (the reconstruction must gain > 1 bpb per
-code bit), not the tiling.
+| corpus | unigram | gzip | DP | greedy | oracle | fixed4 |
+|---|---:|---:|---:|---:|---:|---:|
+| synseg | 4.640 | 2.225 | **1.285** | 1.285 | 1.285 | 4.591 |
+| syngrid | 3.911 | 2.886 | **2.051** | 2.051 | 2.051 | 2.051 |
+| shakespeare | 4.777 | 3.218 | **2.709** | 2.738 | 2.776 | 4.728 |
 
-## Implementation
+Read this literally:
 
-- `hncm6.py` is the complete self-contained script (one file): shared codec, scalar
-  quantization, low-rank prior, exact DP cost field, span-relative decoder,
-  closed-loop generation, controls, baselines, staged training, resume, gates, and
-  report.
-- The entropy model is decodable: it conditions only on the span start, span length,
-  the transmitted global factor, and the already-sent codes. The rate is charged once
-  per transmitted span code; the padded tail is neither charged, decoded, nor counted.
-- Run the smallest decisive phase first; scale only after G0 and G6 pass.
-- Commands:
-  ```bash
-  python hncm6.py selftest
-  python hncm6.py run --preset quick --phase 0 --seeds 0,1,2
-  python hncm6.py report --results runs/latest/results.json
-  ```
+- The *representation* is the win: the dictionary index plus a byte fallback is
+  1.29/2.05/2.71 bpb, below the unigram (4.64/3.91/4.78) and below gzip
+  (2.23/2.89/3.22) on all three corpora, with a *parallel* decoder (one call;
+  the greedy is the same model).
+- The *tiling* is decisive: the fixed 4-byte grid scores 4.59/2.05/4.73, i.e. it
+  destroys the dictionary's value on synseg and shakespeare. On syngrid the grid
+  is the oracle by construction (`align=1.000`), so the fixed arm ties the DP:
+  that is the plan's negative control, and it holds.
+- The DP recovers the true word boundaries from the index costs alone
+  (`align=1.000` on synseg and syngrid) and beats the oracle on shakespeare
+  (2.709 vs 2.776) by splitting rare words into the cheaper byte fallback.
+- The DP beats the greedy only on shakespeare and only by 0.029 bpb. On a word
+  dictionary the greedy longest-match already finds the words, so the solver adds
+  little; the falsifier "the DP does not beat the greedy" is **confirmed** on two
+  of three corpora.
+- The `fixed` grid, `random`, `oracle` and `DP` all pay the same cost model; the
+  fixed grid is *free* (its boundaries are part of the model), so this is a
+  *conservative* comparison for it.
+
+## Caveat
+
+The v7 dictionary is built from the *train* word onsets, so the vocabulary is
+supervised (the tiling is not: the DP uses only the costs). A deployable version
+must build the vocabulary from the train text without onsets (a suffix automaton,
+BPE, or a learned candidate generator). That is the next step. The dictionary is
+free, as gzip's code and the unigram table are free; the JSON counts only the
+indices and the fallback.
+
+## Commands
+
+```bash
+python hncm6.py selftest
+python hncm6.py run --preset quick --phase 0 --seeds 0,1,2
+python hncm7.py selftest
+python hncm7.py run --corpora synseg,syngrid,shakespeare
+```
 
 ## Artifacts
 
-- `runs/p0/quick-c3b7a8ac/results.json` and `REPORT.md` (honest Phase 0,
-  `format: 7`).
-- `TODO1.md` (plan and progress); `REPORT.md` (headline).
-- `hncm6.py`, `_selftest` passes; `ruff format`/`ruff check` pass.
-- Superseded and misleading: `runs/p0/quick-dbe8d386/` (`format: 6`: rate charged
-  per position, entropy model conditioned on the latent), `runs/p1/smoke-37d2450a/`,
-  `runs/p2/smoke-bad03cb9/`. Do not cite them.
-- The v5 negative report remains at `runs/p0/quick-a6924fcff3/REPORT.md`.
+- `runs/v7/results.json`, `runs/v7/REPORT.md` (the redesign).
+- `runs/p0/quick-c3b7a8ac/` (v6 Phase 0, honest negative).
+- `hncm7.py`, `hncm6.py`; both `selftest` pass; `ruff format`/`ruff check` pass.
+- Superseded and misleading: `runs/p0/quick-dbe8d386/` (format 6),
+  `runs/p1/smoke-37d2450a/`, `runs/p2/smoke-bad03cb9/`.

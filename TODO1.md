@@ -35,8 +35,48 @@ embedding and never added it, so the main mode silently dropped the span geometr
 `constant-code`/`no-quant` now use the same position mode as the scalar codec, and
 `rel-pos` is the main span-relative arm (train and eval agree).
 
-Diagnostics only (no claim is established). The R-D curve, honest, seed 0, 300
+## Redesign (2026-11-24): the code must be a dictionary index
+
+The v6 plan's codec is retired by measurement, not by opinion. The span code is a
+12-bit scalar quantization of a *mean*, and a mean is permutation-invariant: the
+encoder's per-byte features recover the bytes exactly (a probe reaches 0.0 bpb),
+but the mean cannot tell `abab` from `aabb`, so the code carries ~1 bpb while it
+costs 3.1 bpb. A probe from the same code (a stronger decoder than the codec's)
+reaches 3.42 bpb, so the decoder is not the limit. `total = code + residual` is
+monotone in the code rate (slope 0.30, unchanged at 1200 steps, at every level,
+`d_c`, stride, pool and tiling), and the optimizer's optimum is to collapse the
+code (the attention pool does exactly that: `total=4.79`, no code). The oracle
+tiling lies on the same R-D line as the grid.
+
+`hncm7.py` changes what the code is: the *index* of a span in a *free*
+dictionary. The decoder writes the exact bytes, so the residual is zero for
+dictionary spans, and spans outside the dictionary pay the byte unigram. Only the
+indices and the fallback are paid. The tiling is still solved by the exact DP,
+with a greedy arm on the *same* cost model, so the DP/greedy gap isolates solving
+from guessing (`runs/v7/results.json`):
+
+| corpus | unigram | gzip | DP | greedy | oracle | fixed4 |
+|---|---:|---:|---:|---:|---:|---:|
+| synseg | 4.640 | 2.225 | **1.285** | 1.285 | 1.285 | 4.591 |
+| syngrid | 3.911 | 2.886 | **2.051** | 2.051 | 2.051 | 2.051 |
+| shakespeare | 4.777 | 3.218 | **2.709** | 2.738 | 2.776 | 4.728 |
+
+The representation wins (below the unigram and gzip on all three corpora, with a
+parallel decoder) and the tiling is decisive: the fixed grid destroys the value
+(4.59/4.73 on synseg/shakespeare); on syngrid the grid *is* the oracle, so the
+fixed arm ties the DP and the plan's negative control holds. The solver is *not*
+the win: on a word dictionary the greedy already finds the words, so the DP ties
+the greedy except on shakespeare (+0.029). The DP does beat the oracle on
+shakespeare by splitting rare words into the cheaper byte fallback.
+
+Caveat: the v7 vocabulary is built from the train word onsets (supervised); the
+tiling is not (the DP uses only costs). Next: build the vocabulary without
+onsets (a suffix automaton / BPE / a learned candidate generator), then test the
+solving claim on an overlapping word+phrase vocabulary where the greedy is myopic.
+
+Diagnostics only (no claim is established). The v6 R-D curve, honest, seed 0, 300
 steps, `eval_windows=128`, synseg:
+
 
 | levels | d_c | stride | recon | code | total | unigram |
 |---:|---:|---:|---:|---:|---:|---:|
