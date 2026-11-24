@@ -84,15 +84,43 @@ class Dict:
         )
 
 
-def build_dict(tr: bytes, on: np.ndarray, bc: np.ndarray, min_count: int = 1) -> Dict:
-    """A free dictionary, pruned by train frequency.
+def counts_onsets(tr: bytes, on: np.ndarray) -> dict[bytes, int]:
+    """Supervised candidate counts: the train word spans. The old builder."""
+    return dict(collections.Counter(w for w in spans(tr, on) if len(w) <= CAP))
 
-    `min_count` trades model bytes for index rate: a singleton word costs 4 bytes
-    of model and saves nothing when it recurs once. The single bytes are always
-    present, so every span has a token.
+
+def counts_substr(tr: bytes) -> dict[bytes, int]:
+    """Text-only candidate counts: every substring <= CAP bytes, count >= 2.
+
+    One pass per length with a 64-bit rolling hash. Two different strings collide
+    with probability ~2^-64; the count is then attributed to the first index.
     """
-    words = spans(tr, on)
-    counts = collections.Counter(w for w in words if len(w) <= CAP)
+    a = np.frombuffer(tr, np.uint8).astype(np.uint64)
+    n = len(a)
+    out: dict[bytes, int] = {}
+    for ell in range(2, CAP + 1):
+        m = n - ell + 1
+        h = np.zeros(m, dtype=np.uint64)
+        for j in range(ell):
+            h = h * np.uint64(257) + a[j : j + m]
+        vals, idx, cnt = np.unique(h, return_index=True, return_counts=True)
+        for i, c in zip(idx.tolist(), cnt.tolist()):
+            if c >= 2:
+                out[bytes(tr[i : i + ell])] = int(c)
+    return out
+
+
+def build_dict(
+    counts: dict[bytes, int], n: int, bc: np.ndarray, min_count: int = 1
+) -> Dict:
+    """A dictionary from candidate counts, pruned by count.
+
+    `cost = -log2(count / n)` is the static substring unigram code length, where
+    `n` is the number of start positions. It over-prices by ~log2(n/tokens), so
+    the rate is a conservative bound. `min_count` trades model bytes for rate: a
+    singleton costs 4 model bytes and saves nothing. The single bytes are always
+    present, so every span has a token and the decoder needs no switch.
+    """
     keep = [w for w in counts if counts[w] >= min_count]
     ids = {w: i for i, w in enumerate(keep)}
     strings = list(keep)
@@ -101,7 +129,6 @@ def build_dict(tr: bytes, on: np.ndarray, bc: np.ndarray, min_count: int = 1) ->
         if s not in ids:
             ids[s] = len(strings)
             strings.append(s)
-    n = sum(counts[w] for w in keep)
     cost = [float(sum(bc[b] for b in s)) for s in strings]
     for w in keep:
         cost[ids[w]] = -math.log2(counts[w] / n)
@@ -111,7 +138,7 @@ def build_dict(tr: bytes, on: np.ndarray, bc: np.ndarray, min_count: int = 1) ->
         for b in s:
             node = node.setdefault(b, {})
         node["#"] = i
-    # the model is data: 1 byte length + 2 bytes count per word string, plus the
+    # the model is data: 1 byte length + 2 bytes count per string, plus the
     # 256-entry byte table (2 bytes each). Single bytes are that table.
     model_bytes = 512 + sum(len(s) + 3 for s in strings if len(s) > 1)
     return Dict(ids, strings, cost, bc, trie, model_bytes)
@@ -230,6 +257,11 @@ def evaluate(name: str, va: bytes, d: Dict) -> list[dict]:
 
 # %%
 def gates(res: dict) -> list[dict]:
+    """The gates that are meaningful for a dictionary code: charged rate, tiling
+    value, solver value. The oracle is a baseline, not a ceiling: with a substring
+    vocabulary the words are not special, and the DP is the optimal cover by
+    construction, so `DP <= oracle` is an invariant, not a test.
+    """
     out = []
     for name, e in res["corpora"].items():
         rows = collections.defaultdict(dict)
@@ -242,13 +274,13 @@ def gates(res: dict) -> list[dict]:
                 continue
             fixed = rows["fixed4"][0.0]
             greedy = rows["greedy"].get(lam)
-            oracle = rows["oracle"][0.0]
             out.append(
                 {
                     "id": "G0",
                     "corpus": name,
-                    "value": f"DP={dp['total_bpb']:.3f} unigram={uni:.3f} lam={lam:.1f}",
-                    "status": "pass" if dp["total_bpb"] < uni else "fail",
+                    "value": f"DP charged={dp['charged_bpb']:.3f} gzip={gz:.3f} "
+                    f"(model={e['model_bpb']:.3f} bpb)",
+                    "status": "pass" if dp["charged_bpb"] < gz else "fail",
                 }
             )
             out.append(
@@ -261,32 +293,19 @@ def gates(res: dict) -> list[dict]:
             )
             out.append(
                 {
-                    "id": "G0b",
+                    "id": "G2",
                     "corpus": name,
-                    "value": f"charged DP={dp['charged_bpb']:.3f} gzip={gz:.3f} "
-                    f"(model={e['model_bpb']:.3f} bpb at {e['stream_bytes'] / 1e6:.2f} MB)",
-                    "status": "pass" if dp["charged_bpb"] < gz else "fail",
-                }
-            )
-            out.append(
-                {
-                    "id": "G4",
-                    "corpus": name,
-                    "value": f"oracle={oracle['total_bpb']:.3f} fixed={fixed['total_bpb']:.3f}",
-                    "status": "pass"
-                    if oracle["total_bpb"] < fixed["total_bpb"]
-                    else "fail",
+                    "value": f"DP charged={dp['charged_bpb']:.3f} unigram={uni:.3f}",
+                    "status": "pass" if dp["charged_bpb"] < uni else "fail",
                 }
             )
             out.append(
                 {
                     "id": "G5",
                     "corpus": name,
-                    "value": f"DP={dp['total_bpb']:.3f} fixed={fixed['total_bpb']:.3f} "
-                    f"align={dp['align']:.3f}/{fixed['align']:.3f} lam={lam:.1f}",
+                    "value": f"DP={dp['total_bpb']:.3f} fixed={fixed['total_bpb']:.3f} lam={lam:.1f}",
                     "status": "pass"
                     if dp["total_bpb"] < fixed["total_bpb"]
-                    and dp["align"] > fixed["align"] + 0.05
                     else "fail",
                 }
             )
@@ -294,7 +313,8 @@ def gates(res: dict) -> list[dict]:
                 {
                     "id": "G5c",
                     "corpus": name,
-                    "value": f"DP={dp['total_bpb']:.3f} greedy={greedy['total_bpb']:.3f} lam={lam:.1f}",
+                    "value": f"DP={dp['total_bpb']:.3f} greedy={greedy['total_bpb']:.3f} "
+                    f"gain={greedy['total_bpb'] - dp['total_bpb']:+.3f} lam={lam:.1f}",
                     "status": "pass"
                     if dp["total_bpb"] <= greedy["total_bpb"]
                     else "fail",
@@ -304,7 +324,10 @@ def gates(res: dict) -> list[dict]:
 
 
 def report(res: dict, path: Path) -> None:
-    lines = ["# H-NCM v7 - solved tiling over a pruned span dictionary", ""]
+    lines = [
+        f"# H-NCM v7 - solved tiling over a pruned span dictionary ({res['vocab']})",
+        "",
+    ]
     for name, e in res["corpora"].items():
         cross = {
             k: (f"{v / 1e6:.2f} MB" if v else "never")
@@ -350,8 +373,8 @@ def report(res: dict, path: Path) -> None:
 
 
 # %%
-def run(names: list[str], out: Path) -> dict:
-    res = {"format": FORMAT, "corpora": {}, "runs": []}
+def run(names: list[str], out: Path, vocab: str = "substr") -> dict:
+    res = {"format": FORMAT, "vocab": vocab, "corpora": {}, "runs": []}
     for name in names:
         corpus = base.get_corpus(name)
         tr = corpus["tr"].cpu().numpy().astype(np.uint8).tobytes()
@@ -359,11 +382,12 @@ def run(names: list[str], out: Path) -> dict:
         va = va[: len(va) // 16 * 16]
         bc = byte_costs(tr)
         on = base.onsets(name, np.frombuffer(tr, np.uint8))
+        counts = counts_onsets(tr, on) if vocab == "onsets" else counts_substr(tr)
         stream = len(tr) + len(va)
         best = None
         budget = []
-        for mc in (1, 2, 4, 8, 16, 32):
-            d = build_dict(tr, on, bc, mc)
+        for mc in (1, 4, 16, 64, 128, 512, 2048):
+            d = build_dict(counts, len(tr), bc, mc)
             rate = bits_of(cover(va, d, 0.0), d) / len(va)
             charged = rate + 8 * d.model_bytes / stream
             budget.append(
@@ -435,7 +459,7 @@ def run(names: list[str], out: Path) -> dict:
 def selftest() -> None:
     bs = b"abcdabcdabcd"
     bc = np.ones(256) * 8
-    d = build_dict(bs, np.ones(len(bs), dtype=bool), bc)
+    d = build_dict(counts_onsets(bs, np.ones(len(bs), dtype=bool)), len(bs), bc)
     toks = cover(bs, d, 0.0)
     assert b"".join(toks) == bs and len(toks) <= len(bs)
     assert mask_of(toks, len(bs))[0] and sum(mask_of(toks, len(bs))) == len(toks)
@@ -465,12 +489,13 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("--corpora", default="synseg,syngrid,shakespeare")
     r.add_argument("--out", default="runs/v7/results.json")
+    r.add_argument("--vocab", default="substr", choices=("substr", "onsets"))
     sub.add_parser("selftest")
     a = p.parse_args(argv)
     if a.cmd == "selftest":
         selftest()
     elif a.cmd == "run":
-        run([x for x in a.corpora.split(",") if x], Path(a.out))
+        run([x for x in a.corpora.split(",") if x], Path(a.out), a.vocab)
     else:
         p.print_help()
         return 1

@@ -1,0 +1,637 @@
+{
+ "format": 7,
+ "vocab": "onsets",
+ "corpora": {
+  "synseg": {
+   "min_count": 4,
+   "dict": 894,
+   "model_bytes": 7017,
+   "stream_bytes": 1200024,
+   "model_bpb": 0.04677906441871162,
+   "unigram": 4.63987422614988,
+   "gzip": 2.2248666666666668,
+   "crossing_bytes": {
+    "unigram": 19045.312350604574,
+    "gzip": 105421.81940272245
+   },
+   "budget": [
+    {
+     "min_count": 1,
+     "dict": 895,
+     "model_bytes": 7022,
+     "rate": 1.6923772795735208,
+     "charged": 1.7391896766589123
+    },
+    {
+     "min_count": 4,
+     "dict": 894,
+     "model_bytes": 7017,
+     "rate": 1.6923772795735208,
+     "charged": 1.7391563439922324
+    },
+    {
+     "min_count": 16,
+     "dict": 894,
+     "model_bytes": 7017,
+     "rate": 1.6923772795735208,
+     "charged": 1.7391563439922324
+    },
+    {
+     "min_count": 64,
+     "dict": 576,
+     "model_bytes": 3612,
+     "rate": 1.7223643193626663,
+     "charged": 1.7464438377722982
+    },
+    {
+     "min_count": 128,
+     "dict": 575,
+     "model_bytes": 3605,
+     "rate": 1.7225089702625347,
+     "charged": 1.7465418229388145
+    },
+    {
+     "min_count": 512,
+     "dict": 268,
+     "model_bytes": 621,
+     "rate": 4.532882914258984,
+     "charged": 4.53702283146064
+    },
+    {
+     "min_count": 2048,
+     "dict": 256,
+     "model_bytes": 512,
+     "rate": 4.636491328056561,
+     "charged": 4.639904593124593
+    }
+   ],
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17741,
+     "bytes_per_token": 6.763993010540556,
+     "align": 0.9998872540729467,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 1.6923772795735208,
+     "tokens": 17737,
+     "bytes_per_token": 6.765518407848002,
+     "align": 1.0,
+     "charged_bpb": 1.7391563439922324
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 4.60500261759168,
+     "tokens": 30000,
+     "bytes_per_token": 4.0,
+     "align": 0.18857489997276744,
+     "charged_bpb": 4.651781682010392
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 4.564192280071817,
+     "tokens": 15000,
+     "bytes_per_token": 8.0,
+     "align": 0.1374591440877295,
+     "charged_bpb": 4.610971344490529
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 4.636491328056561,
+     "tokens": 7500,
+     "bytes_per_token": 16.0,
+     "align": 0.09010579704402268,
+     "charged_bpb": 4.683270392475273
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 4.61820861938551,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894,
+     "charged_bpb": 4.664987683804222
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 4.61820861938551,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894,
+     "charged_bpb": 4.664987683804222
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 4.61820861938551,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894,
+     "charged_bpb": 4.664987683804222
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 4.61820861938551,
+     "tokens": 19275,
+     "bytes_per_token": 6.22568093385214,
+     "align": 0.14968118448070894,
+     "charged_bpb": 4.664987683804222
+    }
+   ]
+  },
+  "syngrid": {
+   "min_count": 1,
+   "dict": 558,
+   "model_bytes": 2626,
+   "stream_bytes": 1200128,
+   "model_bpb": 0.01750479948805461,
+   "unigram": 3.910862454821862,
+   "gzip": 2.8860818557525665,
+   "crossing_bytes": {
+    "unigram": 15446.91094159734,
+    "gzip": 62666.96979680571
+   },
+   "budget": [
+    {
+     "min_count": 1,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 4,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 16,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 64,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 128,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 512,
+     "dict": 558,
+     "model_bytes": 2626,
+     "rate": 2.550849434779966,
+     "charged": 2.568354234268021
+    },
+    {
+     "min_count": 2048,
+     "dict": 257,
+     "model_bytes": 519,
+     "rate": 3.8883873580939174,
+     "charged": 3.8918469890666136
+    }
+   ],
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 2.550849434779966,
+     "tokens": 30004,
+     "bytes_per_token": 4.0,
+     "align": 1.0,
+     "charged_bpb": 2.568354234268021
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 3.9057313260680946,
+     "tokens": 15002,
+     "bytes_per_token": 8.0,
+     "align": 0.6666666666666666,
+     "charged_bpb": 3.923236125556149
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 3.9057313260680946,
+     "tokens": 7501,
+     "bytes_per_token": 16.0,
+     "align": 0.4,
+     "charged_bpb": 3.923236125556149
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 3.8622722964859877,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142,
+     "charged_bpb": 3.8797770959740423
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 3.8622722964859877,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142,
+     "charged_bpb": 3.8797770959740423
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 3.8622722964859877,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142,
+     "charged_bpb": 3.8797770959740423
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 3.8622722964859877,
+     "tokens": 19276,
+     "bytes_per_token": 6.226188005810334,
+     "align": 0.19017857142857142,
+     "charged_bpb": 3.8797770959740423
+    }
+   ]
+  },
+  "shakespeare": {
+   "min_count": 4,
+   "dict": 5127,
+   "model_bytes": 47587,
+   "stream_bytes": 1115388,
+   "model_bpb": 0.34131261946515473,
+   "unigram": 4.777367908512253,
+   "gzip": 3.2179744656433797,
+   "crossing_bytes": {
+    "unigram": 274336.0564462441,
+    "gzip": null
+   },
+   "budget": [
+    {
+     "min_count": 1,
+     "dict": 29148,
+     "model_bytes": 317236,
+     "rate": 3.097261078734949,
+     "charged": 5.372602036321009
+    },
+    {
+     "min_count": 4,
+     "dict": 5127,
+     "model_bytes": 47587,
+     "rate": 3.389668438994665,
+     "charged": 3.7309810584598195
+    },
+    {
+     "min_count": 16,
+     "dict": 1431,
+     "model_bytes": 10917,
+     "rate": 3.753345370351496,
+     "charged": 3.8316463741277604
+    },
+    {
+     "min_count": 64,
+     "dict": 588,
+     "model_bytes": 3205,
+     "rate": 4.165461682867673,
+     "charged": 4.188449199319347
+    },
+    {
+     "min_count": 128,
+     "dict": 429,
+     "model_bytes": 1821,
+     "rate": 4.2624305474199415,
+     "charged": 4.275491473304029
+    },
+    {
+     "min_count": 512,
+     "dict": 297,
+     "model_bytes": 789,
+     "rate": 4.491391360647551,
+     "charged": 4.497050377958119
+    },
+    {
+     "min_count": 2048,
+     "dict": 263,
+     "model_bytes": 554,
+     "rate": 4.72777905661689,
+     "charged": 4.731752561800736
+    }
+   ],
+   "runs": [
+    {
+     "arm": "DP",
+     "lambda": 0.0,
+     "total_bpb": 3.389668438994665,
+     "tokens": 52302,
+     "bytes_per_token": 2.132537952659554,
+     "align": 0.5562901111034436,
+     "charged_bpb": 3.7309810584598195
+    },
+    {
+     "arm": "DP",
+     "lambda": 1.0,
+     "total_bpb": 3.389668438994665,
+     "tokens": 52302,
+     "bytes_per_token": 2.132537952659554,
+     "align": 0.5562901111034436,
+     "charged_bpb": 3.7309810584598195
+    },
+    {
+     "arm": "DP",
+     "lambda": 2.0,
+     "total_bpb": 3.389668438994665,
+     "tokens": 52302,
+     "bytes_per_token": 2.132537952659554,
+     "align": 0.5562901111034436,
+     "charged_bpb": 3.7309810584598195
+    },
+    {
+     "arm": "DP",
+     "lambda": 4.0,
+     "total_bpb": 3.389668438994665,
+     "tokens": 52302,
+     "bytes_per_token": 2.132537952659554,
+     "align": 0.5562901111034436,
+     "charged_bpb": 3.7309810584598195
+    },
+    {
+     "arm": "greedy",
+     "lambda": 0.0,
+     "total_bpb": 3.3999419138455065,
+     "tokens": 51040,
+     "bytes_per_token": 2.185266457680251,
+     "align": 0.5661511665472729,
+     "charged_bpb": 3.741254533310661
+    },
+    {
+     "arm": "greedy",
+     "lambda": 1.0,
+     "total_bpb": 3.3999419138455065,
+     "tokens": 51040,
+     "bytes_per_token": 2.185266457680251,
+     "align": 0.5661511665472729,
+     "charged_bpb": 3.741254533310661
+    },
+    {
+     "arm": "greedy",
+     "lambda": 2.0,
+     "total_bpb": 3.3999419138455065,
+     "tokens": 51040,
+     "bytes_per_token": 2.185266457680251,
+     "align": 0.5661511665472729,
+     "charged_bpb": 3.741254533310661
+    },
+    {
+     "arm": "greedy",
+     "lambda": 4.0,
+     "total_bpb": 3.3999419138455065,
+     "tokens": 51040,
+     "bytes_per_token": 2.185266457680251,
+     "align": 0.5661511665472729,
+     "charged_bpb": 3.741254533310661
+    },
+    {
+     "arm": "oracle",
+     "lambda": 0.0,
+     "total_bpb": 3.444274398508558,
+     "tokens": 20153,
+     "bytes_per_token": 5.534461370515556,
+     "align": 1.0,
+     "charged_bpb": 3.7855870179737128
+    },
+    {
+     "arm": "fixed4",
+     "lambda": 0.0,
+     "total_bpb": 4.759601867965198,
+     "tokens": 27884,
+     "bytes_per_token": 4.0,
+     "align": 0.20963007681578782,
+     "charged_bpb": 5.100914487430353
+    },
+    {
+     "arm": "fixed8",
+     "lambda": 0.0,
+     "total_bpb": 4.814926517632359,
+     "tokens": 13942,
+     "bytes_per_token": 8.0,
+     "align": 0.14782226132864057,
+     "charged_bpb": 5.156239137097514
+    },
+    {
+     "arm": "fixed16",
+     "lambda": 0.0,
+     "total_bpb": 4.829384646762005,
+     "tokens": 6971,
+     "bytes_per_token": 16.0,
+     "align": 0.09239050287568205,
+     "charged_bpb": 5.17069726622716
+    },
+    {
+     "arm": "random",
+     "lambda": 0.0,
+     "total_bpb": 4.817246897690581,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424,
+     "charged_bpb": 5.158559517155736
+    },
+    {
+     "arm": "random",
+     "lambda": 1.0,
+     "total_bpb": 4.817246897690581,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424,
+     "charged_bpb": 5.158559517155736
+    },
+    {
+     "arm": "random",
+     "lambda": 2.0,
+     "total_bpb": 4.817246897690581,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424,
+     "charged_bpb": 5.158559517155736
+    },
+    {
+     "arm": "random",
+     "lambda": 4.0,
+     "total_bpb": 4.817246897690581,
+     "tokens": 17935,
+     "bytes_per_token": 6.218901589071647,
+     "align": 0.16860953581180424,
+     "charged_bpb": 5.158559517155736
+    }
+   ]
+  }
+ },
+ "runs": []
+}

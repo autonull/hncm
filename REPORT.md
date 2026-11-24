@@ -2,13 +2,13 @@
 
 ## v6: the dense-latent codec fails, and why
 
-Two measurement defects were fixed first (an entropy model conditioned on the
-latent, and a 4x per-position rate overcharge). The honest number then exposed the
-real defect: the span code is a 12-bit scalar quantization of a *mean*, which is
-permutation-invariant, so it carries ~1 bpb while costing 3.1 bpb.
-`total = code + residual` is monotone in the code rate (slope 0.30 at 300 and 1200
-steps, every level/`d_c`/stride/pool), the optimizer's optimum is to collapse the
-code, and the oracle tiling lies on the same R-D line as the grid.
+The span code is a 12-bit scalar quantization of a *mean*, which is
+permutation-invariant, so it cannot carry byte order: it conveys ~1 bpb while it
+costs 3.1. A probe from the same code (a stronger decoder) reaches 3.42, so the
+code, not the decoder, is the limit. `total = code + residual` is monotone in the
+code rate (slope 0.30 at 300 and 1200 steps, every level/`d_c`/stride/pool), the
+optimizer's optimum is to collapse the code, and the oracle tiling lies on the
+same R-D line as the grid.
 
 Honest Phase 0 (`runs/p0/quick-c3b7a8ac/`, 3 seeds, 512 windows):
 
@@ -21,72 +21,72 @@ Honest Phase 0 (`runs/p0/quick-c3b7a8ac/`, 3 seeds, 512 windows):
 | syngrid | constant-code | 3.909 | 3.909 | 0.000 | 0.0 | 0.0 |
 | syngrid | unigram | 3.908 | 3.908 | 0.000 | - | - |
 
-Gates: G0 fail on total only; G6 pass; G9 pass. No Phase 1: the code does not pay.
+G0 fails on total only; G6/G9 pass. No Phase 1: the code does not pay.
 
-## v7: the redesign, with the model charged
+## v7: the redesign, with the model charged and both vocabularies
 
 The code is the index of a span in a dictionary; the decoder writes the exact
-bytes, so the residual is zero. The dictionary is pruned by train frequency, so
-its model is a real cost, amortized over the stream (train+val). The DP solves the
-exact cover; the greedy runs the same cost model with a longest-match cover.
+bytes (residual zero); the model is charged and amortized over train+val; the DP
+solves the exact cover and the greedy runs the same cost model.
 
-`runs/v7/results.json`:
+`runs/v7/results.json` (text-only, `substr`) and `runs/v7/onsets.json` (word
+spans, the supervised baseline):
 
-| corpus | unigram | gzip | DP rate | model | DP charged | crossover (gzip) |
-|---|---:|---:|---:|---:|---:|---:|
-| synseg | 4.640 | 2.225 | 1.288 | 0.041 | **1.329** | 0.05 MB |
-| syngrid | 3.911 | 2.886 | 2.051 | 0.018 | **2.068** | 0.03 MB |
-| shakespeare | 4.777 | 3.218 | 3.004 | 0.341 | 3.345 | 1.78 MB |
+| corpus | vocab | dict | model | unigram | gzip | DP | charged | greedy | fixed4 | oracle |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| synseg | word | 894 | 0.047 | 4.640 | 2.225 | 1.692 | 1.739 | 1.692 | 4.605 | 1.692 |
+| synseg | substr | 8,361 | 0.420 | 4.640 | 2.225 | **1.682** | **2.101** | 1.751 | 3.306 | 1.913 |
+| syngrid | word | 558 | 0.018 | 3.911 | 2.886 | 2.551 | 2.568 | 2.551 | 2.551 | 2.551 |
+| syngrid | substr | 2,478 | 0.100 | 3.911 | 2.886 | **2.530** | **2.630** | 2.551 | 2.551 | 2.551 |
+| shakespeare | word | 5,127 | 0.341 | 4.777 | 3.218 | 3.390 | 3.731 | 3.400 | 4.760 | 3.444 |
+| shakespeare | substr | 5,792 | 0.292 | 4.777 | 3.218 | **3.133** | 3.426 | 3.352 | 4.106 | 4.262 |
 
-The representation wins where the model is small: 1.33/2.07 bpb against gzip
-2.23/2.89. On shakespeare the best prune (5,127 spans, 47.6 kB) charges 0.34 bpb
-and the total loses to gzip by 0.127 bpb at 1.1 MB; it ties gzip at 1.78 MB.
+## What holds
 
-The tiling is decisive: the fixed grid costs 4.63/2.07/5.07, destroying the
-dictionary's value on synseg and shakespeare. On syngrid the grid is the oracle
-(`align=1.000`), so the fixed arm ties the DP and the negative control holds.
+- **The representation pays where the model is small.** Text-only, no onsets in
+  the vocabulary: charged 2.101 vs gzip 2.225 (synseg, 0.12 bpb) and 2.630 vs
+  2.886 (syngrid, 0.26 bpb). The dictionary is data and it is paid for.
+- **The tiling is decisive.** The fixed grid costs 3.31/2.55/4.11 against the DP
+  1.68/2.53/3.13. On syngrid the grid is the oracle by construction, so the
+  fixed arm ties the DP and the negative control holds.
+- **The solver earns its keep only when candidates overlap.** Word dictionary
+  (no overlap): DP vs greedy +0.000/+0.000/+0.010. Text-only (overlapping): the
+  DP gains **+0.070/+0.021/+0.219 bpb**. That is the plan's P3 claim with clean
+  controls: solving beats guessing exactly where guessing is myopic.
+- The DP beats the fixed grid by 1.62/0.02/0.97 bpb; it beats the oracle by
+  0.23/0.02/1.13. The oracle is a baseline, not a ceiling, for a substring
+  vocabulary: the words are not special, so the DP, as the optimal cover, wins.
 
-The DP beats the oracle on synseg (1.288 vs 1.347) by splitting rare words into
-the cheaper byte fallback. The solver is *not* the win: `DP == greedy` on
-synseg/syngrid, and 0.001 bpb apart on shakespeare. On a word dictionary the
-greedy longest-match already finds the words.
+## What does not hold
 
-## The budget curve (shakespeare, 1.12 MB stream)
-
-| min_count | dict | model kB | rate | charged |
-|---:|---:|---:|---:|---:|
-| 1 | 29,148 | 317.2 | 2.709 | 4.985 |
-| 2 | 10,961 | 109.1 | 2.852 | 3.635 |
-| 4 | 5,127 | 47.6 | 3.004 | 3.345 |
-| 8 | 2,630 | 22.5 | 3.207 | 3.368 |
-| 16 | 1,431 | 10.9 | 3.391 | 3.469 |
-| 32 | 873 | 5.8 | 3.715 | 3.756 |
-
-The optimum is a compromise: an unpruned dictionary is free at the rate but
-expensive as a model; a pruned one pays at the rate. The frontier is set by the
-stream size, not by the codec.
+- **Shakespeare is model-bound at 1.1 MB.** The best text-only point (5,792
+  spans, 40.7 kB, 0.292 bpb) charges 3.426 against gzip 3.218: a 0.208 bpb loss.
+  The model pays at 3.85 MB (text-only) or ~1.8 MB (word). The word vocabulary
+  was better there because the words are the right units and the model is smaller.
+- The text-only vocabulary costs more model than the word vocabulary for the same
+  rate (8,361 vs 894 entries on synseg), so the *charge* is the frontier, not
+  the codec.
 
 ## Caveats
 
-The vocabulary comes from train onsets (supervised); the tiling does not. The
-index model normalizes over the kept words and the fallback switch is not charged
-(optimistic). Shakespeare is 1.1 MB, and gzip is a weak baseline (brotli/xz are
-~2.4-2.7 bpb).
+The index cost is the static substring unigram, `-log2(count/n)`; it is
+conservative in the length normalizer, and the two vocabularies normalize
+differently, so their charged totals are not directly comparable (each is
+compared to the same baselines). gzip is weak (brotli/xz are ~2.4-2.7 bpb on
+shakespeare). The fallback switch is not charged.
 
 ## Next
 
-1. An unsupervised vocabulary (suffix automaton / BPE / learned candidates), with
-   the oracle kept only as a ceiling.
-2. An overlapping vocabulary (words + phrases + subwords) where the greedy is
-   myopic: the only setting where the solver can beat it.
-3. Strong baselines (brotli, xz, zstd -19, a byte transformer) and enwik8, with the
-   model charged at every size.
-4. The parallelism dividend at matched bpb: one pass (DP + lookup) against L for a
-   byte-AR model.
+1. One cost model for both vocabularies: a token-usage unigram with an EM pass,
+   so the comparison is exact.
+2. enwik8 with the model charged at 1/10/100 MB, where the representation should
+   dominate.
+3. brotli, xz, zstd -19, a byte transformer.
+4. The parallelism dividend at matched bpb: one pass (DP + lookup) against L
+   passes for a byte-AR model.
 
 ## Artifacts
 
-- `runs/v7/results.json`, `runs/v7/REPORT.md` (v7, charged).
+- `runs/v7/results.json`, `runs/v7/REPORT.md` (text-only).
+- `runs/v7/onsets.json` (word vocabulary).
 - `runs/p0/quick-c3b7a8ac/` (v6 honest negative).
-- Superseded: `runs/p0/quick-dbe8d386/` (`format: 6`), `runs/p1/smoke-37d2450a/`,
-  `runs/p2/smoke-bad03cb9/`.

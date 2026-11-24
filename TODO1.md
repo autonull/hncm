@@ -105,6 +105,45 @@ Next: an unsupervised vocabulary; then an overlapping (word+phrase) vocabulary
 where the greedy is myopic; then strong baselines (brotli/xz) and enwik8 with the
 model charged; then the parallelism measurement at matched bpb.
 
+## Step 2 (2026-11-24): the vocabulary is text-only, and the solver now matters
+
+The onset supervision is removed: the candidate set is every substring of the
+train text (<= 16 bytes, count >= 2, one pass per length with a rolling hash),
+pruned by count and charged. The word dictionary stays as a baseline
+(`runs/v7/onsets.json`). All arms pay the same model and index costs:
+
+| corpus | vocab | dict | model | unigram | gzip | DP | charged | greedy | fixed4 | oracle |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| synseg | word | 894 | 0.047 | 4.640 | 2.225 | 1.692 | 1.739 | 1.692 | 4.605 | 1.692 |
+| synseg | substr | 8,361 | 0.420 | 4.640 | 2.225 | **1.682** | **2.101** | 1.751 | 3.306 | 1.913 |
+| syngrid | word | 558 | 0.018 | 3.911 | 2.886 | 2.551 | 2.568 | 2.551 | 2.551 | 2.551 |
+| syngrid | substr | 2,478 | 0.100 | 3.911 | 2.886 | **2.530** | **2.630** | 2.551 | 2.551 | 2.551 |
+| shakespeare | word | 5,127 | 0.341 | 4.777 | 3.218 | 3.390 | 3.731 | 3.400 | 4.760 | 3.444 |
+| shakespeare | substr | 5,792 | 0.292 | 4.777 | 3.218 | **3.133** | 3.426 | 3.352 | 4.106 | 4.262 |
+
+Results:
+
+- **Text-only survives the charge on synseg/syngrid** (2.101 vs gzip 2.225;
+  2.630 vs 2.886), so the earlier win did not depend on supervised word
+  boundaries.
+- **Shakespeare stays model-bound at 1.1 MB**: 3.426 vs gzip 3.218, crossing at
+  3.85 MB (text-only) or ~1.8 MB (word).
+- **The solver now matters**: on the word dictionary (no overlap) the DP vs
+  greedy gain is +0.000/+0.000/+0.010; on the text-only overlapping vocabulary
+  it is **+0.070/+0.021/+0.219 bpb**. That is P3 with clean controls: solving
+  beats guessing exactly where guessing is myopic.
+- The DP beats the fixed grid by 1.62/0.02/0.97 and the oracle by
+  0.23/0.02/1.13. The oracle is a baseline, not a ceiling, for a substring
+  vocabulary; `DP <= oracle` is an invariant of the optimal cover.
+
+Gates: G0/G1/G2 (charged vs gzip/unigram) pass on synseg/syngrid and fail on
+shakespeare; G5 (DP < fixed) passes on all three; G5c (DP <= greedy) passes on
+all three, with a positive gain only on the overlapping vocabulary.
+
+Next: one cost model for both vocabularies (a token-usage unigram with an EM
+pass) so the comparison is exact; enwik8 with the model charged at 1/10/100 MB;
+brotli/xz/zstd and a byte transformer; the parallelism dividend at matched bpb.
+
 Diagnostics only (no claim is established). The v6 R-D curve, honest, seed 0, 300
 steps, `eval_windows=128`, synseg:
 
