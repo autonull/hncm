@@ -16,20 +16,82 @@ decoder, exact shortest-path DP tiling, `fixed`/`BPE`/`IsoWarp`/`oracle`/
 training, atomic `results.json`, fingerprint-checked resume, gates, report, and
 `_selftest`. `ruff format` and `ruff check` pass.
 
-Diagnostics only (no claim is established):
+Two measurement defects were fixed before the budget run. Both inflated the codec:
 
-| run | result | gate |
-|---|---|---|
-| Phase 0 minimal, 3 seeds | `util=1.00`, `delta_recon=0.894/0.993`, `H(code)=685/694` bits/window, total `6.452/5.867` vs unigram `4.637/3.908` | G0 **fail** (total not below unigram); G6 **pass** (`rel-abs=-0.345/-0.584`); G9 **pass** |
-| Phase 1 smoke, synseg, seed 0 | `I_oracle=0.122` CI `[0.085,0.158]`; `I_DP=0.153`; align `0.244` vs fixed `0.236` | G4 **pass**; G5 **fail** (align); G5b **fail** (oracle `6.275` > DP `6.244`); G5c/G5d **pass** |
-| Phase 2 smoke, shakespeare, seed 0 | DP `6.502`, unigram `4.995`, byte GPT `5.009`, gzip `3.218` | G1/G2/G2b **fail**; G3 **unmatched** (`|dTotal|=0.918`) |
+1. **The entropy model conditioned on the latent it was coding.** `ScalarQ` took
+   `ctx = [z, mu, gain@Fh, hq]` and predicted the code from `z`. The decoder
+   never has `z`, so the reported `code_bpb` was a fantasy: `CE=0.02` bpb on eval
+   against an empirical code entropy of `H=2.96` bpb. `SpanEnt` now conditions
+   only on what the decoder has: the span start, the span length, the transmitted
+   global factor `h`, and the already-sent codes (previous span, earlier dims).
+2. **The rate was charged per position, not per span.** `pool` packs one code per
+   span at index `s < S`, but `quantize` charged `L` codes and `code_info` counted
+   the zero-derived padding tail. For stride 4 that is a 4x overcharge, and the tail
+   deflated `CE` because its codes are constants. The packed prefix is now the only
+   thing charged, decoded, and measured (`span_layout`, `valid`).
 
-Artifacts: `runs/p0/quick-dbe8d386/`, `runs/p1/smoke-37d2450a/`,
-`runs/p2/smoke-bad03cb9/`. These are smoke/quick diagnostics, not P1/P2/P3
-evidence. G0 fails on total: the conditional entropy model is worse than the
-empirical code entropy (`CE > H`), and the code rate is too high. The next
-decisive step is to fix the entropy model, then run the full Phase 0 budget with three seeds;
-do not run Phase 1 before G0 passes.
+Also fixed: `pos="span"` (the default decoder mode) computed the span position
+embedding and never added it, so the main mode silently dropped the span geometry.
+`constant-code`/`no-quant` now use the same position mode as the scalar codec, and
+`rel-pos` is the main span-relative arm (train and eval agree).
+
+Diagnostics only (no claim is established). The R-D curve, honest, seed 0, 300
+steps, `eval_windows=128`, synseg:
+
+| levels | d_c | stride | recon | code | total | unigram |
+|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 1 | 16 | 4.544 | 0.248 | 4.792 | 4.637 |
+| 4 | 1 | 4 | 4.385 | 0.620 | 5.005 | 4.637 |
+| 8 | 2 | 4 | 4.143 | 1.581 | 5.724 | 4.637 |
+| 8 | 4 | 4 | 3.715 | 3.080 | 6.795 | 4.637 |
+| 8 | 1 | 16 | 4.536 | 0.283 | 4.818 | 4.637 |
+| 8 | 2 | 16 | 4.498 | 0.425 | 4.923 | 4.637 |
+
+On syngrid the best point is 4.011 (levels 4, `d_c` 1, stride 16) against unigram
+3.916. At 1200 steps the slope is unchanged (synseg, stride 4): `d_c=1`
+4.323+0.847=5.170; `d_c=2` 4.106+1.570=5.676; `d_c=4` 3.586+3.063=6.648.
+Reconstruction improves
+by 0.3-0.5 bpb per extra bpb of code at every operating point, so `total = recon + code`
+is monotone in the code budget and bounded below by the unigram (code 0). No
+`lambda` and no tiling can pass G0 at this codec: the *code transfer*, not the
+tiling, is the bottleneck (the code conveys ~4 of its 12 bits per span to the
+reconstruction).
+
+Full Phase 0, preset `quick`, 3 seeds, 512 windows, 400 steps, `format: 7`
+(`runs/p0/quick-c3b7a8ac/`):
+
+| corpus | arm | total | recon | code | H(code) | util |
+|---|---|---:|---:|---:|---:|---:|
+| synseg | rel-pos | 6.891 | 3.752 | 3.138 | 381.0 | 1.000 |
+| synseg | abs-pos | 6.844 | 3.758 | 3.085 | 376.9 | 1.000 |
+| synseg | constant-code | 4.642 | 4.642 | 0.000 | 0.0 | 0.0 |
+| synseg | no-quant | 3.758 | 3.609 | 0.149 | 0.0 | 0.0 |
+| synseg | unigram | 4.637 | 4.637 | 0.000 | - | - |
+| syngrid | rel-pos | 5.975 | 2.863 | 3.112 | 377.0 | 1.000 |
+| syngrid | abs-pos | 5.958 | 2.839 | 3.119 | 378.6 | 1.000 |
+| syngrid | constant-code | 3.909 | 3.909 | 0.000 | 0.0 | 0.0 |
+| syngrid | no-quant | 2.812 | 2.664 | 0.148 | 0.0 | 0.0 |
+| syngrid | unigram | 3.908 | 3.908 | 0.000 | - | - |
+
+Gates: **G0 fail** (total above unigram on both corpora; util, delta, H pass),
+**G6 pass** (`rel-abs = -0.006/+0.024`), **G9 pass** (3 seeds). The code is fully
+used and worth 0.89/1.05 bpb of reconstruction, but it costs 3.14/3.11 bpb. The
+honest rate is ~`log2(levels) = 3` bits/symbol: the decodable context cannot
+compress the code at all (`CE ≈ H`).
+
+Artifacts: `runs/p0/quick-c3b7a8ac/`. Superseded and misleading:
+`runs/p0/quick-dbe8d386/` (`format: 6`: per-position rate, entropy model
+conditioned on `z`), `runs/p1/smoke-37d2450a/`, `runs/p2/smoke-bad03cb9/`.
+
+Per the decision tree G0 fails, so Phase 1 was **not** run: the DP cannot be
+interpreted on top of an uncompetitive codec. The negative is publishable: the
+controls are clean and the accounting is now honest. The next decisive step is code
+transfer efficiency, not the tiling: the reconstruction must gain >1 bpb per code bit
+at the operating point (now ~0.29), e.g. a decoder that predicts bytes
+conditionally from the *span content* (a wider code or an autoregressive decoder
+inside the span), retrained end to end. The tiling only makes sense once the code
+pays for itself.
+
 
 ---
 
@@ -88,6 +150,19 @@ Read this table literally:
 9. **The baseline is not matched.** The byte GPT is a different size and budget from
    the codec/prior.
 10. **Statistics are underpowered.** Two seeds; CI over windows only; no seed CI.
+11. **The entropy model conditioned on the latent it coded.** `ScalarQ` predicted
+    the code from `z`, which the decoder never has; the reported code rate was a
+    fantasy (`CE=0.02` vs empirical `H=2.96` bpb). Measurement defect.
+12. **The rate was charged per position, not per span.** One code per span is packed
+    at `s < S`, but `L` positions were charged and the zero-derived padding tail
+    was counted in `H(code)`; a 4x overcharge for stride 4, and the tail deflated
+    `CE`. Measurement defect.
+13. **The code transfer is the bottleneck.** Honest Phase 0: the code carries
+    information (`util=1.0`, `H≈380` bits/window) and the decoder uses it
+    (`delta_recon=0.89/1.05` bpb), but it costs 3.14/3.11 bpb and buys 0.29 bpb
+    per bit. `total` is monotone in the code budget at every swept point and at 4x
+    the steps, so no `lambda` or tiling can pass G0. The tiling cannot fix a code
+    that does not pay for itself.
 
 ### 0.2 What is salvageable
 
@@ -546,16 +621,19 @@ python hncm6.py report --results runs/latest/results.json
 
 ## 8. Implementation order and deliverables
 
-1. **Implemented.** `ScalarQ` + `LowRankPrior` + span-relative decoder; fixed
-   grid; no DP. Phase 0 minimal, 3 seeds: G0 fails on total, G6/G9 pass. Iterate
-   on the entropy model until the code is used; no claim.
-2. **Implemented.** Cost field + `dp_tile`; staged training. Phase 1 smoke: G4
-   passes; G5 fails on alignment; G5b fails; G5c/G5d pass. No claim.
-3. **Implemented.** Shakespeare P1/P2. Phase 2 smoke: G1/G2/G2b fail; G3 is
-   unmatched. No claim.
+1. **Implemented.** `SpanEnt` (decodable) + `LowRank` (transmitted global factor
+   + per-span gains) + span-relative decoder; fixed grid; no DP. Full Phase 0, 3
+   seeds, 512 windows: G0 fails on total only (util, delta, H pass), G6/G9 pass.
+   The rate equals the empirical code entropy (`CE ≈ H`); the code is worth
+   0.29 bpb per bit. No claim; the next step is transfer efficiency.
+2. **Implemented, not run.** Cost field + `dp_tile`; staged training. The Phase 1
+   smoke predates the honest accounting; do not interpret it. Do not rerun Phase 1
+   before G0 passes.
+3. **Implemented, not run.** Shakespeare P1/P2. The Phase 2 smoke predates the
+   honest accounting; do not interpret it. No claim.
 4. **Not run.** Scale/report; Phase 3.
-5. **In progress.** Report the negative diagnostics; update `README.md`/`REPORT.md`
-   only with the negative status; no claim.
+5. **In progress.** The negative diagnostics are reported; `README.md`/`REPORT.md`
+   carry the honest status and the next step; no claim.
 
 Deliverables:
 

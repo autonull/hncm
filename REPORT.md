@@ -1,95 +1,61 @@
 # H-NCM v6 report
 
-Status: `hncm6.py` implements the v6 plan, but every run below is a smoke or quick
-diagnostic. **No P1/P2/P3 claim is established.** The controls are not decisive at
-these presets.
+G0 fails on the codec, before the DP. Two measurement defects were fixed first;
+both had inflated the codec:
 
-## Phase 0 - codec health (minimal, 3 seeds, 400 steps, 512 windows)
+1. The entropy model conditioned on the latent it was coding (`ctx = [z, mu,
+   gain@Fh, hq]`). The decoder never has `z`, so the code rate was a fantasy
+   (`CE=0.02` bpb against an empirical `H=2.96`). `SpanEnt` now conditions only on
+   what the decoder has: the span start, the span length, the transmitted global
+   factor, and the already-sent codes.
+2. The rate was charged per position, not per span. `pool` packs one code per span
+   at `s < S`, but `quantize` charged `L` codes and `code_info` counted the
+   zero-derived padding tail. For stride 4 that is a 4x overcharge, and the tail
+   deflated `CE`. Only the packed prefix is now charged, decoded, and measured.
 
-`L=128`, `d=96`, `d_c=4`, levels 4, rank 4. Means over seeds 0,1,2.
+Also fixed: `pos="span"` computed the span position embedding and never added it.
 
-| corpus | `rel-pos` total | recon | code | H(code), bits/window | `constant-code` | unigram | G0 | G6 |
-|---|---:|---:|---:|---:|---:|---:|---|---|
-| synseg | 6.452 | 3.750 | 2.702 | 685.4 | 4.644 | 4.637 | **fail** | **pass** (`rel-abs=-0.345`) |
-| syngrid | 5.867 | 2.921 | 2.946 | 693.6 | 3.914 | 3.908 | **fail** | **pass** (`rel-abs=-0.584`) |
+## Phase 0 at budget
 
-- **G0 fails on both corpora**: `util=1.000`, `delta_recon=0.894` (synseg) and
-  `0.993` (syngrid), and `H(code)=685-694` bits/window pass, but the total is above
-  unigram. The code carries information; the entropy model is worse than the
-  empirical code entropy (`CE > H`) and the code rate is too high.
-- **G6 passes**: removing the absolute-position decoder does not help; the
-  span-relative decoder is not worse than absolute.
-- Three seeds; G9 passes for Phase 0.
-- This is the minimal Phase 0, but it is still a negative codec-health result. No
-  Phase 1 structure claim is allowed.
+Preset `quick`, 3 seeds, 512 windows, 400 steps, `format: 7`
+(`runs/p0/quick-c3b7a8ac/`), mean of 3 seeds:
 
-## Phase 1 - structure (smoke, synseg, seed 0, 40 steps)
+| corpus | arm | total | recon | code | H(code) | util |
+|---|---|---:|---:|---:|---:|---:|
+| synseg | rel-pos | 6.891 | 3.752 | 3.138 | 381.0 | 1.000 |
+| synseg | abs-pos | 6.844 | 3.758 | 3.085 | 376.9 | 1.000 |
+| synseg | constant-code | 4.642 | 4.642 | 0.000 | 0.0 | 0.0 |
+| synseg | no-quant | 3.758 | 3.609 | 0.149 | 0.0 | 0.0 |
+| synseg | unigram | 4.637 | 4.637 | 0.000 | - | - |
+| syngrid | rel-pos | 5.975 | 2.863 | 3.112 | 377.0 | 1.000 |
+| syngrid | abs-pos | 5.958 | 2.839 | 3.119 | 378.6 | 1.000 |
+| syngrid | constant-code | 3.909 | 3.909 | 0.000 | 0.0 | 0.0 |
+| syngrid | no-quant | 2.812 | 2.664 | 0.148 | 0.0 | 0.0 |
+| syngrid | unigram | 3.908 | 3.908 | 0.000 | - | - |
 
-| arm | total | boundary | align |
-|---|---:|---:|---:|
-| `fixed` | 6.397 | 0.000 | 0.236 |
-| `DP` | 6.244 | 0.003 | 0.244 |
-| `oracle` | 6.275 | 0.000 | 1.000 |
-| `oracle-costed` | 6.899 | 0.624 | 1.000 |
-| `BPE` | 7.764 | 0.767 | 0.322 |
-| `IsoWarp` | 7.287 | 0.000 | 0.270 |
-| `random` | 7.278 | 0.861 | 0.241 |
+Gates: **G0 fail** (total above the unigram on both corpora; `util`, `delta`,
+`H` pass), **G6 pass** (`-0.006/+0.024`), **G9 pass** (3 seeds).
 
-- **G4 passes**: `I_oracle=0.122`, bootstrap CI `[0.085, 0.158]`.
-- **G5 fails**: `I_DP=0.153` passes the effect size, but `align(DP)=0.244` is below
-  `align(fixed)+0.05=0.286`.
-- **G5b fails**: the oracle `6.275` is worse than the DP `6.244`, so
-  `oracle < DP < fixed` does not hold. The oracle tiling is not a ceiling here.
-- **G5c/G5d pass**: DP beats BPE and IsoWarp.
-- Smoke only; one seed; no P3 claim.
+## Interpretation
 
-## Phase 2 - compression and parallelism (smoke, shakespeare, seed 0, 40 steps)
+The code is healthy: fully used (`util=1.0`), informative (`H≈380` bits/window =
+2.97 bpb), and used by the decoder (`delta_recon=0.89/1.05` bpb). It is not worth
+its bits: it costs 3.14/3.11 bpb and buys 0.89/1.05, i.e. 0.28-0.34 bpb per bpb of code.
+The honest rate is ~`log2(levels)=3` bits/symbol; the decodable context cannot
+compress the code (`CE ≈ H`).
 
-| arm | total bpb |
-|---|---:|
-| `DP` | 6.502 |
-| `fixed` | 6.638 |
-| `byte GPT` | 5.009 |
-| `byte AR` | 5.584 |
-| `unigram` | 4.995 |
-| `gzip` | 3.218 |
+The R-D curve is monotone at every swept point (levels 4/8, `d_c` 1/2/4, stride
+4/8/16; 300 steps) and at 4x the steps (1200). `total = recon + code` is minimized
+at code 0, where it equals the unigram. So no `lambda` and no tiling can pass G0:
+the tiling cannot fix a code that does not pay for itself.
 
-- **G1 fails**: `DP=6.502` is not below `unigram-0.10=4.895`.
-- **G2 fails**: `DP=6.502` is not below `byte GPT+0.05=5.059`.
-- **G2b fails**: `DP=6.502` is not below `gzip+0.10=3.318`.
-- **G3 fails as unmatched**: the closest DP/AR pair differs by `0.918 > 0.05` bpb.
-- P1 and P2 are negative. P3 is independent and is also negative at the smoke gate.
+Per the decision tree G0 fails, so Phase 1 was not run and its smoke run is not
+interpreted. The negative is publishable: the controls are clean.
 
-## Decision
+## Next step
 
-G0 fails first. Per the decision tree, fix the codec before interpreting the DP:
-the conditional entropy model must beat the empirical code entropy, and the code rate
-must fall below the gain in reconstruction. Do not report the Phase 1 effects as P3
-evidence, and do not run the full Phase 1 before G0 passes.
-
-The result is a negative diagnostic with clean accounting: the tiling is paid for
-DP/BPE/IsoWarp, the fixed grid and oracle are free, the codec is shared, and the
-decoder is span-relative. That is the intended v6 protocol; the implementation is
-not yet healthy enough for a claim.
-
-## Artifacts
-
-- `runs/p0/quick-dbe8d386/results.json` and `REPORT.md`
-- `runs/p1/smoke-37d2450a/results.json` and `REPORT.md`
-- `runs/p2/smoke-bad03cb9/results.json` and `REPORT.md`
-- `hncm6.py`, `_selftest` passes; `ruff format`/`ruff check` pass.
-- The v5 negative report remains at `runs/p0/quick-a6924fcff3/REPORT.md`.
-
-## Provenance
-
-```json
-{
-  "format": 6,
-  "torch": "2.15.0",
-  "device": "cuda",
-  "gpu": "NVIDIA GeForce RTX 3080",
-  "seeds": [0],
-  "presets": ["smoke", "quick"],
-  "note": "diagnostic only; not P1/P2/P3 evidence"
-}
-```
+Code transfer efficiency, not the tiling. At the operating point the reconstruction
+must gain > 1 bpb per code bit (now ~0.29): a decoder that predicts bytes
+conditionally from the span content (a wider code, or an autoregressive decoder
+inside the span), trained end to end, then rerun Phase 0. The DP only makes sense
+once the code pays for itself.

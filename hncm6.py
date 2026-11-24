@@ -36,7 +36,7 @@ import torch.nn.functional as F
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 LN2 = math.log(2.0)
-FORMAT = 6
+FORMAT = 7
 PHASE_CORPORA = {
     0: ("synseg", "syngrid"),
     1: ("synseg", "syngrid"),
@@ -379,16 +379,27 @@ def nparams(m):
     return sum(p.numel() for p in m.parameters())
 
 
+def span_layout(bnd):
+    """Packed span index, span count per row, and the valid prefix mask.
+
+    One code vector per span lives at position `s < S`; the tail is padding and is
+    neither charged nor decoded.
+    """
+    B, L = bnd.shape
+    ids = (torch.cumsum(bnd.long(), 1) - 1).clamp_min(0)
+    cnt = torch.zeros(B, L, device=bnd.device).scatter_add_(
+        1, ids, torch.ones_like(ids, dtype=torch.float)
+    )
+    return ids, cnt, cnt > 0
+
+
 def pool(H, bnd):
     B, L, D = H.shape
-    ids = (torch.cumsum(bnd.long(), 1) - 1).clamp_min(0)
+    ids, cnt, valid = span_layout(bnd)
     sums = torch.zeros(B, L, D, device=H.device).scatter_add_(
         1, ids[..., None].expand(-1, -1, D), H
     )
-    cnt = torch.zeros(B, L, device=H.device).scatter_add_(
-        1, ids, torch.ones_like(ids, dtype=torch.float)
-    )
-    return sums / cnt.clamp_min(1)[..., None], cnt, ids
+    return sums / cnt.clamp_min(1)[..., None], valid, ids
 
 
 def geometry(bnd):
@@ -402,6 +413,18 @@ def geometry(bnd):
     )
     plen = cnt.gather(1, ids.clamp(max=L - 1))
     return ids, pos - start, plen, cnt
+
+
+def span_meta(bnd):
+    """Span start offset and span length, packed at the span index."""
+    B, L = bnd.shape
+    ids, rel, plen, _ = geometry(bnd)
+    start = torch.arange(L, device=bnd.device)[None].expand(B, -1) - rel
+    st = torch.zeros(B, L, dtype=torch.long, device=bnd.device).scatter_(1, ids, start)
+    ln = torch.zeros(B, L, dtype=torch.long, device=bnd.device).scatter_(
+        1, ids, plen.long()
+    )
+    return st, ln
 
 
 def fixed_mask(B, L, step):
@@ -482,82 +505,110 @@ class Encoder(nn.Module):
 
 
 class LowRank(nn.Module):
+    """Hierarchical prior: a transmitted global factor and per-span gains."""
+
     def __init__(s, cfg):
         super().__init__()
         s.cfg = cfg
-        s.mu = nn.Linear(cfg.d, cfg.d_c)
-        s.sig = nn.Linear(cfg.d, cfg.d_c)
+        s.mean = nn.Linear(cfg.d, cfg.d_c)
         s.h = nn.Linear(cfg.d, cfg.rank) if cfg.rank > 0 else None
         s.gain = nn.Linear(cfg.d, cfg.d_c * cfg.rank) if cfg.rank > 0 else None
 
-    def forward(s, z, train):
-        B, M, d = z.shape
-        mu = s.mu(z)
-        sig = F.softplus(s.sig(z)) + 1e-3
-        if s.cfg.rank > 0:
-            raw = torch.tanh(s.h(z.mean(1)))
-            hq = torch.round(raw * 16) / 16
-            h = raw + (hq - raw).detach()
-            gain = s.gain(z).view(B, M, s.cfg.d_c, s.cfg.rank)
-            gfh = (gain @ h[:, None, :, None]).squeeze(-1)
-            hrate = (
-                (hq**2).sum(1) / (2 * LN2)
-                + 0.5 * s.cfg.rank * math.log2(2 * math.pi * math.e)
-                + 2.0 * s.cfg.rank
+    def forward(s, z, valid, train):
+        B, M, _ = z.shape
+        y = s.mean(z)
+        if s.cfg.rank == 0:
+            return y, None, torch.zeros(B, device=z.device)
+        n = valid.sum(1, keepdim=True).clamp_min(1)
+        mz = (z * valid[..., None]).sum(1) / n
+        raw = torch.tanh(s.h(mz))
+        hq = torch.round(raw * 16) / 16
+        h = raw + (hq - raw).detach()
+        gain = s.gain(z).view(B, M, s.cfg.d_c, s.cfg.rank)
+        y = y + (gain @ h[:, None, :, None]).squeeze(-1)
+        hrate = (
+            (hq**2).sum(1) / (2 * LN2)
+            + 0.5 * s.cfg.rank * math.log2(2 * math.pi * math.e)
+            + 2.0 * s.cfg.rank
+        )
+        return y, h, hrate
+
+
+class SpanEnt(nn.Module):
+    """Decodable code model: earlier spans, earlier dims, length and offset.
+
+    It never sees the encoder latent; a real decoder has only the symbols that
+    were already sent.
+    """
+
+    def __init__(s, cfg):
+        super().__init__()
+        s.cfg = cfg
+        d = cfg.d
+        s.h = nn.Linear(cfg.rank, d) if cfg.rank > 0 else None
+        s.pos = nn.Embedding(cfg.L, d)
+        s.len = nn.Embedding(cfg.L + 1, d)
+        s.prev = nn.ModuleList([nn.Embedding(cfg.levels, d) for _ in range(cfg.d_c)])
+        s.own = nn.ModuleList([nn.Embedding(cfg.levels, d) for _ in range(cfg.d_c)])
+        s.mix = nn.Sequential(
+            nn.LayerNorm(d), nn.Linear(d, d), nn.GELU(), nn.Linear(d, d)
+        )
+        s.out = nn.ModuleList([nn.Linear(d, cfg.levels) for _ in range(cfg.d_c)])
+
+    def forward(s, k, valid, bnd, h):
+        B, L, dc = k.shape
+        st, ln = span_meta(bnd)
+        ctx = s.pos(st.clamp(max=s.cfg.L - 1)) + s.len(ln.clamp(max=s.cfg.L))
+        if s.h is not None and h is not None:
+            ctx = ctx + s.h(h)[:, None, :]
+        prev = torch.cat(
+            [torch.zeros(B, 1, dc, dtype=torch.long, device=k.device), k[:, :-1]], 1
+        )
+        for j in range(dc):
+            ctx = ctx + s.prev[j](prev[..., j])
+        f = s.mix(ctx)
+        rate = torch.zeros(B, device=k.device)
+        for j in range(dc):
+            ce = (
+                F.cross_entropy(
+                    s.out[j](f).reshape(-1, s.cfg.levels),
+                    k[..., j].reshape(-1),
+                    reduction="none",
+                )
+                .view(B, L)
+                .masked_fill(~valid, 0.0)
+                .sum(1)
             )
-        else:
-            h, hq, gfh, hrate = (
-                None,
-                None,
-                torch.zeros_like(mu),
-                torch.zeros(B, device=z.device),
-            )
-        ctx = torch.cat([z, mu, gfh], -1)
-        if s.cfg.rank > 0:
-            ctx = torch.cat([ctx, hq[:, None].expand(-1, M, -1)], -1)
-        return mu, sig, h, gfh, ctx, hrate
+            rate = rate + ce / LN2
+            f = f + s.own[j](k[..., j])
+        return rate
 
 
 class ScalarQ(nn.Module):
     def __init__(s, cfg):
         super().__init__()
         s.cfg = cfg
-        s.proj = nn.Linear(cfg.d, cfg.d_c)
-        ctx_dim = cfg.d + 2 * cfg.d_c + cfg.rank
-        s.ent = nn.Sequential(
-            nn.LayerNorm(ctx_dim),
-            nn.Linear(ctx_dim, cfg.d),
-            nn.GELU(),
-            nn.Linear(cfg.d, cfg.d_c * cfg.levels),
-        )
+        s.ent = SpanEnt(cfg)
         if cfg.mode == "vq":
             s.cb = nn.Parameter(torch.randn(cfg.vq_codes, cfg.d_c) * 0.1)
 
-    def logits(s, ctx):
-        B, M, _ = ctx.shape
-        return s.ent(ctx).view(B, M, s.cfg.d_c, s.cfg.levels)
-
-    def quantize(s, y, mu, gfh, sig, ctx, train):
-        B, M, dc = y.shape
+    def quantize(s, y, bnd, valid, h, train):
+        B, L, dc = y.shape
+        zero = torch.zeros((), device=y.device)
         if s.cfg.mode == "noquant":
-            return (
-                y,
-                None,
-                torch.zeros(B, device=y.device),
-                torch.zeros((), device=y.device),
-            )
+            return y, None, torch.zeros(B, device=y.device), zero
         if s.cfg.mode == "constant":
             return (
                 torch.zeros_like(y),
-                torch.zeros(B, M, dc, dtype=torch.long),
+                torch.zeros(B, L, dc, dtype=torch.long, device=y.device),
                 torch.zeros(B, device=y.device),
-                torch.zeros((), device=y.device),
+                zero,
             )
         if s.cfg.mode == "vq":
             d = ((y[..., None, :] - s.cb) ** 2).sum(-1)
             k = d.argmin(-1)
             yq = s.cb[k]
-            rate = torch.full((B,), M * math.log2(s.cfg.vq_codes), device=y.device)
+            rate = valid.sum(1).float() * math.log2(s.cfg.vq_codes)
             commit = s.cfg.vq_beta * ((yq.detach() - y) ** 2).mean()
             return yq, k, rate, commit
         step = 2.0 / s.cfg.levels
@@ -567,17 +618,7 @@ class ScalarQ(nn.Module):
         k = torch.floor((u + 1.0) / step).clamp(0, s.cfg.levels - 1).long()
         dq = (k.float() + 0.5) * step - 1.0
         yq = u + (dq - u).detach() if train else dq
-        lg = s.logits(ctx)
-        rate = (
-            F.cross_entropy(
-                lg.reshape(-1, s.cfg.levels), k.reshape(-1), reduction="none"
-            )
-            .view(B, M, s.cfg.d_c)
-            .sum(-1)
-            .sum(1)
-            / LN2
-        )
-        return yq, k, rate, torch.zeros((), device=y.device)
+        return yq, k, s.ent(k, valid, bnd, h), zero
 
 
 class Decoder(nn.Module):
@@ -603,6 +644,7 @@ class Decoder(nn.Module):
                 + s.plen(plen.clamp(max=L).long())
                 + s.sidx(ids % L)
             )
+            f = f + p
         elif s.cfg.pos == "rel":
             p = s.rel(rel.clamp(max=L - 1))
             if train and s.cfg.pos_drop > 0:
@@ -635,10 +677,9 @@ class Codec(nn.Module):
 
     def forward(s, x, bnd, train):
         H = s.enc(x)
-        z, _, _ = pool(H, bnd)
-        mu, sig, h, gfh, ctx, hrate = s.prior(z, train)
-        y = s.quant.proj(z)
-        yq, k, rate, commit = s.quant.quantize(y, mu, gfh, sig, ctx, train)
+        z, valid, _ = pool(H, bnd)
+        mu, h, hrate = s.prior(z, valid, train)
+        yq, k, rate, commit = s.quant.quantize(mu, bnd, valid, h, train)
         rec = (
             F.cross_entropy(
                 s.dec(yq, bnd, h, train).reshape(-1, 256),
@@ -651,15 +692,14 @@ class Codec(nn.Module):
             / x.size(1)
         )
         code = (rate + hrate) / x.size(1)
-        return rec + code + commit, rec, code, k, commit
+        return rec + code + commit, rec, code, k, valid, commit
 
     @torch.no_grad()
     def eval_bits(s, x, bnd):
         H = s.enc(x)
-        z, _, _ = pool(H, bnd)
-        mu, sig, h, gfh, ctx, hrate = s.prior(z, False)
-        y = s.quant.proj(z)
-        yq, k, rate, _ = s.quant.quantize(y, mu, gfh, sig, ctx, False)
+        z, valid, _ = pool(H, bnd)
+        mu, h, hrate = s.prior(z, valid, False)
+        yq, k, rate, _ = s.quant.quantize(mu, bnd, valid, h, False)
         rec = (
             F.cross_entropy(
                 s.dec(yq, bnd, h, False).reshape(-1, 256),
@@ -671,7 +711,7 @@ class Codec(nn.Module):
             / LN2
             / x.size(1)
         )
-        return rec, (rate + hrate) / x.size(1), k
+        return rec, (rate + hrate) / x.size(1), k, valid
 
     @torch.no_grad()
     def generate(s, cfg, n=4, steps=4, temp=1.0, cf=None):
@@ -695,19 +735,20 @@ class Codec(nn.Module):
         return canvas
 
 
-def code_info(k, levels):
+def code_info(k, valid, levels):
+    """Empirical code entropy over transmitted spans only, in bits per window."""
     if k is None:
         return 1.0, 0.0
-    B, M, dc = k.shape
+    B, L, dc = k.shape
     util = 0.0
     info = 0.0
     for j in range(dc):
-        cnt = torch.bincount(k[..., j].reshape(-1), minlength=levels).float()
+        cnt = torch.bincount(k[..., j][valid], minlength=levels).float()
         p = cnt / cnt.sum().clamp_min(1)
         q = p[p > 0]
         info += float(-(q * torch.log2(q)).sum())
         util += float((cnt > 0).float().mean())
-    return util / dc, info * k.size(1)
+    return util / dc, info * float(valid.float().sum(1).mean())
 
 
 # %%
@@ -848,13 +889,13 @@ def apply_bpe(data, merges):
 # ---------------- training -------------------------------------------------------------------
 def codec_variant(cfg, arm):
     if arm == "constant-code":
-        return replace(cfg, mode="constant", rank=0, pos="rel"), 4
+        return replace(cfg, mode="constant", rank=0), 4
     if arm == "no-quant":
-        return replace(cfg, mode="noquant", pos="rel"), 4
+        return replace(cfg, mode="noquant"), 4
     if arm == "abs-pos":
         return replace(cfg, pos="abs"), 4
     if arm == "rel-pos":
-        return replace(cfg, pos="rel"), 4
+        return replace(cfg, pos="span"), 4
     if arm == "vq":
         return replace(cfg, mode="vq"), cfg.fixed_len
     if arm == "meanfield":
@@ -878,7 +919,7 @@ def train_codec(cfg, corpus, seed, arm, random_tilings):
             if random_tilings
             else fixed_mask(cfg.bs, cfg.L, step)
         )
-        loss, rec, code, _, _ = model(x, b, True)
+        loss, rec, code, _, _, _ = model(x, b, True)
         opt.zero_grad()
         loss.mean().backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -906,7 +947,7 @@ def train_cost(cfg, corpus, codec, seed):
         b, ll, cost = cf(H, lam)
         mask = dp_tile(cost, cfg.lengths, cfg.L)
         with torch.no_grad():
-            rec, code, _ = codec.eval_bits(x, mask)
+            rec, code, _, _ = codec.eval_bits(x, mask)
         bnd = dp_bits(mask, b, ll).mean() / cfg.L
         loss = rec.mean() + code.mean() + bnd
         opt.zero_grad()
@@ -985,21 +1026,23 @@ def eval_arm(cfg, corpus, model, cf, arm, lam, seed, starts, ons, bpe_ons):
         bbits = global_bits(masks)
     else:
         bbits = torch.zeros(B, device=DEVICE)
-    recs, codes, ks = [], [], []
+    recs, codes, ks, vs = [], [], [], []
     for i in range(0, B, 64):
-        r, c, k = model.eval_bits(x[i : i + 64], masks[i : i + 64])
+        r, c, k, v = model.eval_bits(x[i : i + 64], masks[i : i + 64])
         recs.append(r)
         codes.append(c)
         ks.append(k)
+        vs.append(v)
     rec = torch.cat(recs)
     code = torch.cat(codes)
     k = None if ks[0] is None else torch.cat(ks)
+    valid = None if vs[0] is None else torch.cat(vs)
     bnd = bbits / cfg.L
     total = rec + code + bnd
     wall = (time.perf_counter() - t0) / B
-    util, info = code_info(k, cfg.levels) if cfg.mode == "scalar" else (1.0, 0.0)
+    util, info = code_info(k, valid, cfg.levels) if cfg.mode == "scalar" else (1.0, 0.0)
     if cfg.mode == "vq":
-        util, info = 1.0, masks.size(1) * math.log2(cfg.vq_codes)
+        util, info = 1.0, float(valid.float().sum(1).mean()) * math.log2(cfg.vq_codes)
     if cfg.mode in ("constant", "noquant"):
         util, info = 0.0, 0.0
     return {
@@ -1864,12 +1907,12 @@ def _selftest():
     ons[[0, 5, 9, 21, 40]] = True
     om = oracle_masks(ons, starts, 8)
     assert om[:, 0].all() and om.shape == (3, 8)
-    # cumsum pool vs naive
+    # cumsum pool vs naive; one code per span, tail is padding
     H = torch.randn(2, 8, 4)
     bnd = torch.tensor(
         [[1, 0, 0, 1, 0, 1, 0, 0], [1, 0, 1, 0, 0, 0, 0, 1]], dtype=torch.bool
     )
-    z, cnt, ids = pool(H, bnd)
+    z, valid, ids = pool(H, bnd)
     for i in range(2):
         p = 0
         j = 0
@@ -1880,29 +1923,56 @@ def _selftest():
             assert torch.allclose(z[i, j], H[i, p:e].mean(0), atol=1e-5)
             p = e
             j += 1
-    # entropy round-trip within a step
+        assert int(valid[i].sum()) == j and not valid[i, j:].any()
+        assert float(z[i, j:].abs().sum()) == 0.0
+    # quantization step round-trip and exact masking
     x = torch.rand(4, 16, cfg.d_c, device=DEVICE) * 2 - 1
+    b4 = fixed_mask(4, 16, 4)
+    _, v4, _ = pool(torch.zeros(4, 16, 1, device=DEVICE), b4)
     q = cfg.levels
     step = 2.0 / q
-    mu = torch.zeros_like(x)
-    sig = torch.ones_like(x)
-    ctx = torch.randn(4, 16, cfg.d + 2 * cfg.d_c + cfg.rank, device=DEVICE)
-    yq, k, rate, _ = (
-        ScalarQ(cfg).to(DEVICE).quantize(x, mu, torch.zeros_like(x), sig, ctx, False)
-    )
+    yq, k, rate, _ = ScalarQ(cfg).to(DEVICE).quantize(x, b4, v4, None, False)
     assert yq.shape == x.shape and torch.isfinite(rate).all()
     u = torch.tanh(x)
-    k = torch.floor((u + 1) / step).clamp(0, q - 1).long()
-    dq = (k.float() + 0.5) * step - 1
+    kk = torch.floor((u + 1) / step).clamp(0, q - 1).long()
+    dq = (kk.float() + 0.5) * step - 1
     assert float((u - dq).abs().max()) <= step / 2 + 1e-5
-    assert k.min() >= 0 and k.max() < q
+    assert torch.equal(k, kk) and k.min() >= 0 and k.max() < q
+    assert rate.shape == (4,) and (rate > 0).all()
+    # the rate and the info ignore the padded tail
+    ent = ScalarQ(cfg).to(DEVICE).ent
+    tail = k.clone()
+    tail[~v4] = torch.randint(0, q, tuple(tail[~v4].shape), device=DEVICE)
+    assert torch.allclose(ent(k, v4, b4, None), ent(tail, v4, b4, None), atol=1e-6)
+    u1, i1 = code_info(k, v4, q)
+    u2, i2 = code_info(tail, v4, q)
+    assert abs(u1 - u2) < 1e-6 and abs(i1 - i2) < 1e-6
     # codec shapes and finite loss
     model = Codec(cfg).to(DEVICE)
     x = torch.randint(0, 256, (3, cfg.L), device=DEVICE)
     b = fixed_mask(3, cfg.L, cfg.fixed_len)
-    loss, rec, code, k, _ = model(x, b, True)
+    loss, rec, code, k, _, _ = model(x, b, True)
     assert loss.shape == (3,) and torch.isfinite(loss).all()
     assert rec.shape == (3,) and code.shape == (3,)
+    # the decoder never reads the padded tail: one code per span
+    with torch.no_grad():
+        H = model.enc(x)
+        z, valid, _ = pool(H, b)
+        mu, h, _ = model.prior(z, valid, False)
+        yq, _, _, _ = model.quant.quantize(mu, b, valid, h, False)
+        tail = yq.clone()
+        tail[~valid] = torch.randn_like(tail[~valid])
+        assert torch.allclose(
+            model.dec(yq, b, h, False), model.dec(tail, b, h, False), atol=0
+        )
+    # the decoder must see the span geometry
+    with torch.no_grad():
+        t1 = fixed_mask(1, cfg.L, 4)
+        t2 = fixed_mask(1, cfg.L, 8)
+        assert not torch.allclose(
+            model.dec(torch.zeros(1, cfg.L, cfg.d_c, device=DEVICE), t1, None),
+            model.dec(torch.zeros(1, cfg.L, cfg.d_c, device=DEVICE), t2, None),
+        )
     # no absolute position in span mode
     assert model.dec.abs.weight.shape[0] == cfg.L
     # fingerprint changes with cfg
