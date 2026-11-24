@@ -74,6 +74,37 @@ tiling is not (the DP uses only costs). Next: build the vocabulary without
 onsets (a suffix automaton / BPE / a learned candidate generator), then test the
 solving claim on an overlapping word+phrase vocabulary where the greedy is myopic.
 
+## Step 1 (2026-11-24): the model is charged, and it is the frontier
+
+The v7 dictionary is data, so it is charged: `512 + sum(len+3)` bytes, amortized
+over the stream (train+val), and every arm pays the same index costs. The
+dictionary is pruned by train frequency (`min_count`), so the model/rate trade is
+explicit (`runs/v7/results.json`):
+
+| corpus | unigram | gzip | DP rate | model | DP charged | crossover (gzip) |
+|---|---:|---:|---:|---:|---:|---:|
+| synseg | 4.640 | 2.225 | 1.288 | 0.041 | **1.329** | 0.05 MB |
+| syngrid | 3.911 | 2.886 | 2.051 | 0.018 | **2.068** | 0.03 MB |
+| shakespeare | 4.777 | 3.218 | 3.004 | 0.341 | 3.345 | 1.78 MB |
+
+The win survives where the model is small (synseg/syngrid, 6.1/2.6 kB) and does
+not survive on shakespeare at 1.1 MB: the best prune is 5,127 spans (47.6 kB) and
+the charged total loses to gzip by 0.127 bpb, tying it at 1.78 MB. The budget
+curve (shakespeare): min_count 1 -> 4,985; 2 -> 3,635; 4 -> 3,345; 8 -> 3,368;
+16 -> 3,469; 32 -> 3,756. The optimum is a compromise, and the frontier is set by
+the stream size.
+
+The tiling stays decisive under the charge: the fixed grid costs
+4.63/2.07/5.07. On syngrid the grid *is* the oracle (`align=1.000`), so the fixed
+arm ties the DP: the negative control holds. The DP beats the oracle on synseg
+(1.288 vs 1.347) by splitting rare words into the cheaper byte fallback. The
+solver is *not* the win: `DP == greedy` on synseg/syngrid and 0.001 bpb apart on
+shakespeare, so the falsifier is confirmed on a word dictionary.
+
+Next: an unsupervised vocabulary; then an overlapping (word+phrase) vocabulary
+where the greedy is myopic; then strong baselines (brotli/xz) and enwik8 with the
+model charged; then the parallelism measurement at matched bpb.
+
 Diagnostics only (no claim is established). The v6 R-D curve, honest, seed 0, 300
 steps, `eval_windows=128`, synseg:
 

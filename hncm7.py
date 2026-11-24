@@ -73,6 +73,7 @@ class Dict:
     cost: list[float]
     byte_cost: np.ndarray
     trie: dict
+    model_bytes: int
 
     def cost_of(self, s: bytes) -> float:
         i = self.ids.get(s)
@@ -83,31 +84,37 @@ class Dict:
         )
 
 
-def build_dict(tr: bytes, on: np.ndarray, bc: np.ndarray) -> Dict:
+def build_dict(tr: bytes, on: np.ndarray, bc: np.ndarray, min_count: int = 1) -> Dict:
+    """A free dictionary, pruned by train frequency.
+
+    `min_count` trades model bytes for index rate: a singleton word costs 4 bytes
+    of model and saves nothing when it recurs once. The single bytes are always
+    present, so every span has a token.
+    """
     words = spans(tr, on)
-    ids: dict[bytes, int] = {}
-    strings: list[bytes] = []
-    for w in words:
-        if len(w) <= CAP and w not in ids:
-            ids[w] = len(strings)
-            strings.append(w)
+    counts = collections.Counter(w for w in words if len(w) <= CAP)
+    keep = [w for w in counts if counts[w] >= min_count]
+    ids = {w: i for i, w in enumerate(keep)}
+    strings = list(keep)
     for b in range(256):
         s = bytes([b])
         if s not in ids:
             ids[s] = len(strings)
             strings.append(s)
-    cnt = collections.Counter(ids[w] for w in words if w in ids)
-    n = sum(cnt.values())
+    n = sum(counts[w] for w in keep)
     cost = [float(sum(bc[b] for b in s)) for s in strings]
-    for i, c in cnt.items():
-        cost[i] = -math.log2(c / n)
+    for w in keep:
+        cost[ids[w]] = -math.log2(counts[w] / n)
     trie: dict = {}
     for s, i in ids.items():
         node = trie
         for b in s:
             node = node.setdefault(b, {})
         node["#"] = i
-    return Dict(ids, strings, cost, bc, trie)
+    # the model is data: 1 byte length + 2 bytes count per word string, plus the
+    # 256-entry byte table (2 bytes each). Single bytes are that table.
+    model_bytes = 512 + sum(len(s) + 3 for s in strings if len(s) > 1)
+    return Dict(ids, strings, cost, bc, trie, model_bytes)
 
 
 # %%
@@ -228,7 +235,7 @@ def gates(res: dict) -> list[dict]:
         rows = collections.defaultdict(dict)
         for r in e["runs"]:
             rows[r["arm"]][r["lambda"]] = r
-        uni = e["unigram"]
+        uni, gz = e["unigram"], e["gzip"]
         for lam in LAMBDAS:
             dp = rows["DP"].get(lam)
             if not dp:
@@ -242,6 +249,23 @@ def gates(res: dict) -> list[dict]:
                     "corpus": name,
                     "value": f"DP={dp['total_bpb']:.3f} unigram={uni:.3f} lam={lam:.1f}",
                     "status": "pass" if dp["total_bpb"] < uni else "fail",
+                }
+            )
+            out.append(
+                {
+                    "id": "G1",
+                    "corpus": name,
+                    "value": f"DP={dp['total_bpb']:.3f} gzip={gz:.3f} lam={lam:.1f}",
+                    "status": "pass" if dp["total_bpb"] < gz else "fail",
+                }
+            )
+            out.append(
+                {
+                    "id": "G0b",
+                    "corpus": name,
+                    "value": f"charged DP={dp['charged_bpb']:.3f} gzip={gz:.3f} "
+                    f"(model={e['model_bpb']:.3f} bpb at {e['stream_bytes'] / 1e6:.2f} MB)",
+                    "status": "pass" if dp["charged_bpb"] < gz else "fail",
                 }
             )
             out.append(
@@ -280,26 +304,43 @@ def gates(res: dict) -> list[dict]:
 
 
 def report(res: dict, path: Path) -> None:
-    lines = ["# H-NCM v7 - solved tiling over a free span dictionary", ""]
+    lines = ["# H-NCM v7 - solved tiling over a pruned span dictionary", ""]
     for name, e in res["corpora"].items():
+        cross = {
+            k: (f"{v / 1e6:.2f} MB" if v else "never")
+            for k, v in e["crossing_bytes"].items()
+        }
         lines += [
             f"## {name}",
             "",
-            f"dictionary: {e['dict']} spans (<= {CAP} bytes), free; "
-            f"byte unigram: {e['unigram']:.3f} bpb; gzip: {e['gzip']:.3f} bpb",
+            f"stream {e['stream_bytes'] / 1e6:.2f} MB; chosen min_count {e['min_count']}; "
+            f"dictionary {e['dict']} spans, {e['model_bytes'] / 1e3:.1f} kB "
+            f"({e['model_bpb']:.3f} bpb); byte unigram {e['unigram']:.3f} bpb; "
+            f"gzip {e['gzip']:.3f} bpb; crossover unigram {cross['unigram']}, "
+            f"gzip {cross['gzip']}",
             "",
-            "| arm | lambda | total | tokens | bytes/token | align |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| min_count | dict | model kB | rate | charged |",
+            "|---:|---:|---:|---:|---:|",
+        ]
+        for b in e["budget"]:
+            lines.append(
+                f"| {b['min_count']} | {b['dict']} | {b['model_bytes'] / 1e3:.1f} | "
+                f"{b['rate']:.3f} | {b['charged']:.3f} |"
+            )
+        lines += [
+            "",
+            "| arm | lambda | rate | charged | tokens | bytes/token | align |",
+            "|---|---:|---:|---:|---:|---:|---:|",
         ]
         for r in sorted(e["runs"], key=lambda r: (r["arm"], r["lambda"])):
             lines.append(
                 f"| {r['arm']} | {r['lambda']:.1f} | {r['total_bpb']:.3f} | "
-                f"{r['tokens']} | {r['bytes_per_token']:.2f} | {r['align']:.3f} |"
+                f"{r['charged_bpb']:.3f} | {r['tokens']} | "
+                f"{r['bytes_per_token']:.2f} | {r['align']:.3f} |"
             )
         lines.append("")
     lines += ["## Gates", "", "| gate | corpus | value | status |", "|---|---|---|---|"]
-    gs = gates(res)
-    for g in gs:
+    for g in gates(res):
         lines.append(
             f"| {g['id']} | {g['corpus']} | {g['value']} | **{g['status']}** |"
         )
@@ -317,28 +358,73 @@ def run(names: list[str], out: Path) -> dict:
         va = corpus["va"].cpu().numpy().astype(np.uint8).tobytes()
         va = va[: len(va) // 16 * 16]
         bc = byte_costs(tr)
-        d = build_dict(tr, base.onsets(name, np.frombuffer(tr, np.uint8)), bc)
+        on = base.onsets(name, np.frombuffer(tr, np.uint8))
+        stream = len(tr) + len(va)
+        best = None
+        budget = []
+        for mc in (1, 2, 4, 8, 16, 32):
+            d = build_dict(tr, on, bc, mc)
+            rate = bits_of(cover(va, d, 0.0), d) / len(va)
+            charged = rate + 8 * d.model_bytes / stream
+            budget.append(
+                {
+                    "min_count": mc,
+                    "dict": len(d.strings),
+                    "model_bytes": d.model_bytes,
+                    "rate": rate,
+                    "charged": charged,
+                }
+            )
+            if best is None or charged < best[2]:
+                best = (mc, d, charged, rate)
+            print(
+                f"  {name:11s} min_count={mc:2d} dict={len(d.strings):5d} "
+                f"model={d.model_bytes / 1e3:7.1f} kB rate={rate:.3f} charged={charged:.3f}",
+                flush=True,
+            )
+        mc, d, charged, rate = best
         runs = evaluate(name, va, d)
         cnt = np.bincount(np.frombuffer(tr, np.uint8), minlength=256) + 1
         pb = cnt / cnt.sum()
         uni = float(-(pb * np.log2(pb)).sum())
+        gz = len(zlib.compress(va)) * 8 / len(va)
+        mb = 8 * d.model_bytes / stream
+        dp = next(r for r in runs if r["arm"] == "DP")
+        crossings = {}
+        for key, cond in (("unigram", uni), ("gzip", gz)):
+            gap = cond - dp["total_bpb"]
+            crossings[key] = d.model_bytes * 8 / gap if gap > 1e-9 else None
+        for r in runs:
+            r["charged_bpb"] = r["total_bpb"] + mb
         res["corpora"][name] = {
+            "min_count": mc,
             "dict": len(d.strings),
+            "model_bytes": d.model_bytes,
+            "stream_bytes": stream,
+            "model_bpb": mb,
             "unigram": uni,
-            "gzip": len(zlib.compress(va)) * 8 / len(va),
+            "gzip": gz,
+            "crossing_bytes": crossings,
+            "budget": budget,
             "runs": runs,
         }
+        print(
+            f"{name:11s} chosen min_count={mc} dict={len(d.strings):5d} "
+            f"model={d.model_bytes / 1e3:7.1f} kB "
+            f"({mb:.3f} bpb at {stream / 1e6:.2f} MB) unigram={uni:.3f} gzip={gz:.3f}",
+            flush=True,
+        )
         for r in runs:
-            print(
-                f"{name:11s} {r['arm']:7s} lam={r['lambda']:.1f} "
-                f"total={r['total_bpb']:.3f} tokens={r['tokens']} "
-                f"align={r['align']:.3f}",
-                flush=True,
-            )
+            if r["arm"] in ("DP", "greedy", "oracle", "fixed4") or r["lambda"] == 0.0:
+                print(
+                    f"  {r['arm']:7s} lam={r['lambda']:.1f} rate={r['total_bpb']:.3f} "
+                    f"charged={r['charged_bpb']:.3f} align={r['align']:.3f}",
+                    flush=True,
+                )
     gs = gates(res)
     for g in gs:
         print(
-            f"  {g['id']:4s} {g['status']:4s} {g['corpus']}: {g['value']}", flush=True
+            f"  {g['id']:5s} {g['status']:4s} {g['corpus']}: {g['value']}", flush=True
         )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(res, indent=1))
