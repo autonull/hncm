@@ -324,11 +324,11 @@ is the cost of the rule. The table is refitted on the DP's own path (2 EM
 rounds, chosen on the same 10%). The model is charged 6 bytes per bigram entry
 over train+val. v7's `gzip` column is zlib/deflate; here both are measured.
 
-| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle | vs zlib | vs best | zlib crossing |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| shakespeare | 1.12 MB | 3.218 | 3.199 | **2.635** | 2.943 | 2.984 | 2.825 | 3.227 | 3.087 | −0.131 | +0.451 | 0.62 MB |
+| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | ppmd | rule | oracle | vs zlib | vs best | zlib crossing |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shakespeare | 1.12 MB | 3.218 | 3.199 | 2.635 | 2.947 | 2.984 | 2.825 | **2.504** | 3.227 | 3.087 | −0.131 | +0.583 | 0.62 MB |
 | synseg | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | **1.325** | **1.323** | −0.901 | −0.190 | 0.06 MB |
-| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **1.999** | 2.453 | 2.295 | **1.939** | **1.939** | −0.947 | −0.060 | 0.32 MB |
+| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **2.005** | 2.453 | 2.295 | 2.063 | **1.939** | **1.939** | −0.947 | −0.066 | 0.32 MB |
 
 **M1, the charge.** The dictionary (6.4 kB at 512 spans to 25.4 kB at 2,048) pays
 above 0.06 MB (synseg), 0.32 MB (syngrid) and 0.62 MB (shakespeare) of stream.
@@ -349,10 +349,11 @@ the grid *is* the dictionary (the negative control). DP < fixed-4 everywhere
 everywhere (3.49/1.29/2.05): solving beats guessing, but at 1 MB the solver's
 prize is smaller than the table's charge.
 
-**M3, the strong codecs.** bz2 is the baseline that matters: it wins
-shakespeare (2.635 vs the oracle 3.087; brotli 2.825, lzma 2.943, zstd 2.984) and
-synseg (1.513 vs 1.323), and lzma wins syngrid by 0.06 only (1.999 vs 1.939).
-zlib/gzip are weak everywhere (3.2/2.2/2.9 against 3.09/1.32/1.94).
+**M3, the strong codecs.** PPMd is the text bar: it wins shakespeare (2.504
+against the oracle 3.087; bz2 2.635, brotli 2.825, lzma 2.947, zstd 2.984) and
+synseg (1.500 vs 1.323), and xz wins syngrid by 0.066 (2.005 vs 1.939).
+zlib/gzip are weak everywhere. So on real text the concept LM is 0.58 behind
+PPMd at 1.12 MB.
 
 **The decision.** The dictionary index pays its charge against *every* real
 codec exactly where the source has a small exact vocabulary (synseg, syngrid:
@@ -433,18 +434,18 @@ its own, and the concept LM tiles every shard with the *same* dictionary and
 table. `archive` charges the model over train + the K shards (the §8 convention),
 `per-file` makes each shard pay it alone.
 
-| corpus | zlib K=1 -> 16 | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses archive at |
-|---|---|---|---:|---:|---:|---:|
-| shakespeare | 3.218 -> 4.016 | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
-| synseg | 2.225 -> 3.348 | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 -> 1.326 | 1.757 -> 8.991 | K = 1 |
-| syngrid | 2.886 -> 3.415 | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 -> 1.940 | 5.045 -> 56.817 | K = 1 |
+| corpus | PPMd K=1 -> 16 | bz2 K=1 -> 16 | concept rate | archive | per-file | PPMd / bz2 cross at (no tail) |
+|---|---|---|---:|---:|---:|---|
+| shakespeare | 2.504 -> 3.429 | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 / 8 |
+| synseg | 1.500 -> 3.296 | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 -> 1.326 | 1.757 -> 8.991 | K = 1 / 1 |
+| syngrid | 2.063 -> 2.940 | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 -> 1.940 | 5.045 -> 56.817 | K = 1 / 1 |
 
 - **The shared model's curve is flat** (rate 2.921 -> 2.922; archive 3.087 ->
   3.087 from K=1 to 16) because the model is paid once. Every codec's curve
   rises (bz2 2.635 -> 3.443), because it pays its model per file.
-- **So the K=1 comparison flatters bz2.** On shakespeare the crossing is K = 8:
-  above eight 14 kB files the shared concept model is cheaper than compressing
-  each file with bz2. On synseg and syngrid it is K = 1 already.
+- **So the K=1 comparison flatters every codec.** On shakespeare the crossing is
+  K = 8 for PPMd and bz2: PPMd's per-file mean is 2.857 at K=4 and 3.113 at K=8
+  against the archive charge 3.087. On synseg and syngrid it is K = 1 already.
 - **The deploy convention is the harsh one:** if the model must be paid by the
   111 kB of shards alone, it is 1.65 bpb and nothing pays; the model needs a
   stream ~10x its own size. That is M7's question (10/100 MB), not a defect of

@@ -107,18 +107,18 @@ sees the last 10% of the train, and charges 6 bytes per bigram entry over
 train+val. `oracle` is the val-optimal grid point plus the header that sends the
 choice: the envelope, and the gap from the rule is the cost of the rule.
 
-| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle | vs zlib | vs best | zlib crossing |
+| corpus | stream | zlib | bz2 | lzma | zstd | brotli | ppmd | rule | oracle | vs zlib | vs best | zlib crossing |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| shakespeare | 1.12 MB | 3.218 | 3.199 | **2.635** | 2.943 | 2.984 | 2.825 | 3.227 | 3.087 | -0.131 | +0.451 | 0.62 MB |
+| shakespeare | 1.12 MB | 3.218 | 2.635 | 2.947 | 2.984 | 2.825 | **2.504** | 3.227 | 3.087 | -0.131 | +0.583 | 0.62 MB |
 | synseg | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | **1.325** | **1.323** | -0.901 | -0.190 | 0.06 MB |
-| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **1.999** | 2.453 | 2.295 | **1.939** | **1.939** | -0.947 | -0.060 | 0.32 MB |
+| syngrid | 1.20 MB | 2.886 | 2.129 | **2.005** | 2.453 | 2.295 | 2.063 | **1.939** | **1.939** | -0.947 | -0.066 | 0.32 MB |
 
 Read it literally:
 
 - **Where the source is a dictionary, the index pays against every codec.** On
-  synseg and syngrid the charged concept LM is 0.9 bpb below zlib and 0.19/0.06
-  below bz2/lzma, with a 9-52 kB model. brotli (2.825) and zstd (2.984) do not
-  beat bz2 on shakespeare.
+  synseg it is 0.18 bpb below PPMd (the strongest text codec) and 0.9 below
+  zlib; on syngrid 0.066 below xz. On shakespeare PPMd wins (2.504 against the
+  envelope 3.087): the gap is 0.58, not the 0.37 that bz2 (2.635) suggested.
 - **On real text at 1.1 MB it is at best at parity.** The envelope (3.087, a
   0.13 win against zlib) needs a budget chosen on the target stream; the
   held-out rule lands at 3.227, a 0.01 loss, because at 1 MB the budget choice
@@ -179,30 +179,37 @@ The val is split into K shards; every codec compresses each shard on its own,
 and the concept LM tiles every shard with the same model. `archive` charges the
 model over train + the shards; `per-file` makes each shard pay it alone.
 
-| corpus | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses at |
-|---|---|---|---:|---:|---:|
-| shakespeare | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
-| synseg | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 |
-| syngrid | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 |
+| corpus | PPMd K=1 -> 16 | bz2 K=1 -> 16 | concept rate | archive | per-file | PPMd / bz2 cross at (no tail) |
+|---|---|---|---:|---:|---:|---|
+| shakespeare | 2.504 -> 3.429 | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 / 8 |
+| synseg | 1.500 -> 3.296 | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 / 1 |
+| syngrid | 2.063 -> 2.940 | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 / 1 |
 
 The shared model's curve is flat and every codec's curve rises, because a codec
-pays its model per file. With the tail coder the whole pipeline is rate 2.723 /
-archive 3.006, so bz2's crossing moves to K ~ 5: above five 22 kB files the
-shared concept model is cheaper than bz2 per file. The deploy convention (the
-111 kB of shards paying a 39.5 kB model) is 2.84 bpb of charge: the model needs
-a stream ~10x its size (M7).
+pays its model per file. (The table is the concept LM alone; the tail comes next.)
+With the tail coder the whole pipeline is rate 2.723 /
+archive 3.006: bz2's per-file mean passes it between K=4 (2.942) and K=8 (3.158),
+PPMd's between 2.857 and 3.113, so the crossings are K≈5 (bz2) and K≈6 (PPMd):
+above ~six 22 kB files the shared concept model is cheaper than PPMd per file.
+The deploy convention (the 111 kB of shards paying a 39.5 kB model) is 2.84 bpb
+of charge: the model needs a stream ~10x its size (N1).
 
 ## Next
 
-`TODO3.md` is the end-to-end plan, in the order the measurements pay:
+`TODO3.md` (rev 2) is the end-to-end plan. **PPMd** (`7z -m0=PPMd -mx9`, measured
+2.504/1.500/2.063) is the text bar, not bz2, and it is in `codecs()` now.
 
-1. **N0 the bitstream** (`codec.py`): a real encoder/decoder, the model packed
-   and charged, the recorded size reconciled with the charge. The artifact.
-2. **N1 scale**: coverage is 51.8% at 1.1 MB and the tail's 71% share is a
-   coverage artifact; at 10 MB the same pipeline should reach 1.8 bpb or less.
-3. **N2 the tail's context** at the same 16.4 kB (a second letter, a class
-   table, a concept bias): the tail bytes are 71% of the bits.
-4. **N3 the concept table's sharing**, **N4 the boundary** (0.30 bpb), **N5 the
+1. **N0 the bitstream** (`codec.py`): a range coder over the token indices, the
+   model packed and charged, the CDF derived from the charged counts, `--try 3`
+   (the per-file budget, transmitted), the recorded size reconciled with the
+   charge. The artifact.
+2. **N1a the coverage probe** (15 min): fit, tile, report coverage — it decides
+   the scale run.
+3. **N1b scale** (enwik8 10/100 MB): coverage is 51.8% at 1.1 MB and the tail's
+   71% share is a coverage artifact; target ≤ 1.80 charged at 10 MB, within 0.10
+   of PPMd.
+4. **N2 the tail's context** at the same 16.4 kB, **N3 the concept table's
+   sharing plus a second-order context**, **N4 the boundary**, **N5 the
    lattice**, **N6 the factorial** `I_perf`.
 
 ## Commands

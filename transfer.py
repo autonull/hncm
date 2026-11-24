@@ -45,9 +45,7 @@ def measure(name: str, rect: dict, ks: tuple[int, ...] = KS) -> dict:
     rows = []
     for k in ks:
         parts = shards(va, k)
-        rates = {
-            w: sum(len(f(p)) for p in parts) * 8 / len(va) for w, f in codec.items()
-        }
+        rates = {w: sum(f(p) for p in parts) * 8 / len(va) for w, f in codec.items()}
         bits = sum(c.viterbi(p, d, bg, uni)[1] for p in parts)
         rate = bits / len(va)
         row = {
@@ -132,15 +130,18 @@ def report(res: dict, path: Path) -> None:
             f"## {name} (dict {e['dict']}, table {e['table']}, "
             f"model {e['model_bytes'] / 1e3:.1f} kB)",
             "",
-            "| K | shard B | zlib | bz2 | lzma | rate | archive | shared | per-file |",
-            "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
+        names = list(next(iter(res["corpora"].values()))["rows"][0]["codec"])
+        cols = ["K", "shard B"] + names + ["rate", "archive", "shared", "per-file"]
+        align = ["---:", "---:"] + ["---:"] * len(names) + ["---:"] * 4
+        lines += ["| " + " | ".join(cols) + " |", "|" + "|".join(align) + "|"]
         for r in e["rows"]:
             cc = r["codec"]
             lines.append(
-                f"| {r['k']} | {r['shard_bytes']:.0f} | {cc['zlib']:.3f} | "
-                f"{cc['bz2']:.3f} | {cc['lzma']:.3f} | {r['rate']:.3f} | "
-                f"{r['archive']:.3f} | {r['shared']:.3f} | {r['per_file']:.3f} |"
+                f"| {r['k']} | {r['shard_bytes']:.0f} | "
+                + " | ".join(f"{cc[w]:.3f}" for w in names)
+                + f" | {r['rate']:.3f} | {r['archive']:.3f} | "
+                f"{r['shared']:.3f} | {r['per_file']:.3f} |"
             )
         lines.append("")
     lines += ["## Gates", "", "| gate | corpus | value | status |", "|---|---|---|---|"]

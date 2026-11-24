@@ -43,6 +43,9 @@ import lzma
 import math
 import sys
 import zlib
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -59,28 +62,48 @@ PRUNES = (256, 512, 1024, 2048, 4096, 8192, 16384, 32768, None)
 ENTRY_BYTES = 6
 
 
-def codecs() -> dict[str, Callable[[bytes], bytes]]:
-    """The real codecs on the same bytes. Each is self-contained: its model is in
-    the stream, so it is already charged. zstd and brotli are optional."""
-    out: dict[str, Callable[[bytes], bytes]] = {
-        "zlib": lambda bs: zlib.compress(bs),
-        "gzip": lambda bs: gzip.compress(bs, 9),
-        "bz2": lambda bs: bz2.compress(bs, 9),
-        "lzma": lambda bs: lzma.compress(bs),
+def codecs() -> dict[str, Callable[[bytes], int]]:
+    """The real codecs on the same bytes, as their compressed size.
+
+    Each is self-contained: its model is in the stream, so it is already charged.
+    zstd, brotli and PPMd are optional. PPMd (`7z -m0=PPMd -mx9`) is the text bar:
+    measured 2.504 bpb on shakespeare, 1.500 on synseg, 2.063 on syngrid.
+    """
+    out: dict[str, Callable[[bytes], int]] = {
+        "zlib": lambda bs: len(zlib.compress(bs)),
+        "gzip": lambda bs: len(gzip.compress(bs, 9)),
+        "bz2": lambda bs: len(bz2.compress(bs, 9)),
+        "lzma": lambda bs: len(lzma.compress(bs, preset=9 | lzma.PRESET_EXTREME)),
     }
     try:
         import zstandard
 
-        out["zstd"] = lambda bs: zstandard.ZstdCompressor(level=19).compress(bs)
+        out["zstd"] = lambda bs: len(zstandard.ZstdCompressor(level=19).compress(bs))
     except ImportError:
         pass
     try:
         import brotli
 
-        out["brotli"] = lambda bs: brotli.compress(bs, quality=11)
+        out["brotli"] = lambda bs: len(brotli.compress(bs, quality=11))
     except ImportError:
         pass
+    if shutil.which("7z"):
+        out["ppmd"] = lambda bs: _ppmd(bs)
     return out
+
+
+def _ppmd(bs: bytes) -> int:
+    """PPMd via 7z: the archive's size on disk, the header included."""
+    with tempfile.TemporaryDirectory(prefix="hncm-") as d:
+        src = Path(d) / "x"
+        src.write_bytes(bs)
+        arc = Path(d) / "p.7z"
+        subprocess.run(
+            ["7z", "a", "-m0=PPMd", "-mx9", str(arc), str(src)],
+            check=True,
+            capture_output=True,
+        )
+        return arc.stat().st_size
 
 
 # %%
@@ -270,7 +293,7 @@ def measure(name: str, vocab: str) -> dict:
     s = split(name, vocab)
     fit, sel, va, bc = s["fit"], s["sel"], s["va"], s["bc"]
     usage, top, stream = s["usage"], s["top"], s["stream"]
-    codec = {c: 8 * len(f(va)) / len(va) for c, f in codecs().items()}
+    codec = {c: 8 * f(va) / len(va) for c, f in codecs().items()}
 
     grid = []
     for k in sorted({min(k, len(top)) for k in DICTS}):
@@ -435,18 +458,30 @@ def report(res: dict, path: Path) -> None:
         f"The model is charged {ENTRY_BYTES} bytes per bigram entry and amortised over "
         "train+val. The rate is the exact first-order Viterbi.",
         "",
-        "| corpus | vocab | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle (vocab, dict, table) | oracle | vs zlib | vs best | crossing zlib |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|",
     ]
+    names = list(next(iter(res["corpora"].values()))["codec"])
+    cols = (
+        ["corpus", "vocab", "stream"]
+        + names
+        + [
+            "rule",
+            "oracle (vocab, dict, table)",
+            "oracle",
+            "vs zlib",
+            "vs best",
+            "x zlib",
+        ]
+    )
+    align = ["---", "---", "---:"] + ["---:"] * len(names) + ["---:"] * 5
+    lines += ["| " + " | ".join(cols) + " |", "|" + "|".join(align) + "|"]
     for name, e in res["corpora"].items():
         c, fit, orc = e["codec"], e["fitted"], e["oracle"]
         x = orc["crossing"]
         zc = f"{x['zlib'] / 1e6:.2f} MB" if x["zlib"] else "never"
         lines.append(
             f"| {name} | {e['vocab']} | {e['stream_bytes'] / 1e6:.2f} MB | "
-            f"{c['zlib']:.3f} | {c['gzip']:.3f} | {c['bz2']:.3f} | {c['lzma']:.3f} | "
-            f"{c.get('zstd', float('nan')):.3f} | {c.get('brotli', float('nan')):.3f} | "
-            f"{fit['charged']:.3f} | {orc['vocab']}, {orc['dict']}, {orc['table']} | "
+            + " | ".join(f"{c[w]:.3f}" for w in names)
+            + f" | {fit['charged']:.3f} | {orc['vocab']}, {orc['dict']}, {orc['table']} | "
             f"{orc['charged']:.3f} | {orc['charged'] - c['zlib']:+.3f} | "
             f"{orc['charged'] - e['best_codec_bpb']:+.3f} | {zc} |"
         )

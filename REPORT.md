@@ -94,11 +94,11 @@ train+val. `oracle` is the val-optimal grid point plus the header that sends the
 choice: the envelope, and the gap from the rule is the cost of the rule. v7's
 `gzip` column above is zlib/deflate; here both are measured.
 
-| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle | vs zlib | vs best | crossing zlib |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| shakespeare | 1.12 MB | 3.218 | 3.199 | **2.635** | 2.943 | 2.984 | 2.825 | 3.227 | 3.087 | -0.131 | +0.451 | 0.62 MB |
+| corpus | stream | zlib | gzip | bz2 | lzma | zstd | brotli | ppmd | rule | oracle | vs zlib | vs best | crossing zlib |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shakespeare | 1.12 MB | 3.218 | 3.199 | 2.635 | 2.947 | 2.984 | 2.825 | **2.504** | 3.227 | 3.087 | -0.131 | +0.583 | 0.62 MB |
 | synseg | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | **1.325** | **1.323** | -0.901 | -0.190 | 0.06 MB |
-| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **1.999** | 2.453 | 2.295 | **1.939** | **1.939** | -0.947 | -0.060 | 0.32 MB |
+| syngrid | 1.20 MB | 2.886 | 2.866 | 2.129 | **2.005** | 2.453 | 2.295 | 2.063 | **1.939** | **1.939** | -0.947 | -0.066 | 0.32 MB |
 
 - **M1, the charge.** The dictionary (6.4-25.4 kB) pays above 0.06/0.32/0.62 MB
   of stream. At 1.12 MB the affordable table is 1,024-2,048 entries on real text
@@ -112,9 +112,11 @@ choice: the envelope, and the gap from the rule is the cost of the rule. v7's
   syngrid, where the grid *is* the dictionary (the negative control). DP <
   fixed-4 everywhere (3.05/1.27/1.59 against 4.73/4.59/1.59) and DP < the
   unigram everywhere (3.49/1.29/2.05).
-- **M3, the strong codecs.** bz2 wins shakespeare (2.635 against the envelope
-  3.087; brotli 2.825, lzma 2.943, zstd 2.984), bz2 wins synseg but loses to the
-  index (1.513 vs 1.323), lzma wins syngrid by 0.06 (1.999 vs 1.939).
+- **M3, the strong codecs.** PPMd is the text bar: 2.504 on shakespeare (against
+  the envelope 3.087), then bz2 2.635, brotli 2.825, lzma 2.947, zstd 2.984. PPMd
+  also wins synseg (1.500) but loses to the index (1.323); xz wins syngrid by
+  0.066 (2.005 vs 1.939). So on real text the concept LM is 0.58 behind PPMd at
+  1.12 MB, not 0.37 behind bz2.
 - **The decision.** The index pays against *every* codec where the source has a
   vocabulary smaller than the stream (synseg, syngrid), and is at best at parity
   with zlib on real text at 1 MB (a 0.13 win at the envelope, a 0.01 loss under
@@ -168,17 +170,17 @@ once. K contiguous shards of the val; every codec compresses each shard alone,
 the concept LM tiles each shard with the same model. `archive` charges the model
 over train + the K shards; `per-file` makes each shard pay it alone.
 
-| corpus | bz2 K=1 -> 16 | concept rate | archive | per-file | bz2 crosses at |
-|---|---|---|---:|---:|---:|
-| shakespeare | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 |
-| synseg | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 |
-| syngrid | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 |
+| corpus | PPMd K=1 -> 16 | bz2 K=1 -> 16 | concept rate | archive | per-file | PPMd / bz2 cross at (no tail) |
+|---|---|---|---:|---:|---:|---|
+| shakespeare | 2.504 -> 3.429 | 2.635 -> 3.443 | 2.921 -> 2.922 | 3.087 | 4.575 -> 29.385 | K = 8 / 8 |
+| synseg | 1.500 -> 3.296 | 1.513 -> 3.130 | 1.275 -> 1.278 | 1.323 | 1.757 -> 8.991 | K = 1 / 1 |
+| syngrid | 2.063 -> 2.940 | 2.129 -> 2.956 | 1.594 -> 1.595 | 1.939 | 5.045 -> 56.817 | K = 1 / 1 |
 
 The shared curve is flat and every codec's curve rises. So the K=1 comparison
 flatters bz2: on shakespeare the crossing is K=8, i.e. above eight 14 kB files
 the shared concept model is cheaper than bz2 per file, and on synseg/syngrid it
 is K=1. With the tail coder the whole pipeline is rate 2.723 / archive 3.006, so
-bz2's crossing moves to K ~ 5 (above five 22 kB files). The deploy convention
+bz2's crossing moves to K≈5 and PPMd's to K≈6 (above six 22 kB files). The deploy convention
 (the 111 kB of shards paying a 39.5 kB model) is 2.84 bpb of charge: the model
 needs a stream ~10x its size.
 
@@ -206,13 +208,13 @@ needs a stream ~10x its size.
 
 ## Next
 
-1. The tail model on enwik8 and at 10/100 MB, where its 16.4 kB charge falls
-   below 0.02 bpb.
-2. M4: does the learned bigram generalize the concept table the way the tail's
-   low-rank model generalizes the bytes?
-3. M6: the factorial `I_perf = (D-C) - (B-A)` with clean controls.
-4. M7: enwik8 at 10/100 MB, where the table's crossing and the deploy charge
-   say a bigger budget becomes affordable.
+`TODO3.md` (rev 2): the bitstream (`codec.py`), the coverage probe, scale
+(enwik8 10/100 MB), the tail's context at the same 16.4 kB, the concept table's
+sharing, the boundary, the factorial.
+
+PPMd (`7z -m0=PPMd -mx9`) is the text bar — 2.504 on shakespeare, 1.500 on
+synseg, 2.063 on syngrid — and it is now in `codecs()`, so every table of record
+reports it.
 
 ## Artifacts
 

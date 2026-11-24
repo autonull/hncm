@@ -1,31 +1,47 @@
-# TODO3 — H-NCM v8: end to end, then scale
+# TODO3 — H-NCM v8: end to end, then scale (rev 2)
 
-Status: v7 is measured end to end as a *rate* (`TODO2.md` §8-§9): the dictionary
-index pays where it covers, the shared low-rank tail model pays where it does
-not, both are charged, the model is paid once, and the decoder makes 6.5x fewer
-calls. What is missing is the thing itself: **a bitstream that round-trips**,
-and the one lever that the measurements point at hardest: **scale** (coverage is
-51.8% at 1.1 MB, and the tail's 71% share of the bits is a coverage artifact).
+Status: v7 is measured as a *rate* (`TODO2.md` §8-§9): the dictionary index pays
+where it covers, the shared low-rank tail model pays where it does not, both are
+charged, the model is paid once, and the decoder makes 6.5x fewer calls. What is
+missing is the artifact — **a bitstream that round-trips** — and the lever the
+measurements point at hardest: **coverage** (51.8% at 1.1 MB).
 
-The target is not a better tokenizer. It is a working hierarchical codec whose
-recorded output size beats bz2/xz on real text, with every model charged and
-selected on held-out splits, and whose decoder needs 6-20x fewer calls.
+Rev 2 changes, all from measurement:
 
-## 0. One paragraph
+1. **PPMd is the text bar, not bz2.** Measured on the same val bytes:
+   shakespeare 1.12 MB: PPMd 2.504, bz2 2.641, brotli 2.825, xz 2.948; synseg:
+   PPMd 1.500, bz2 1.520; syngrid: PPMd 2.063, xz 2.006. The concept LM's 3.006
+   on shakespeare is 0.50 behind PPMd, not 0.37 behind bz2. Every target is now
+   stated against PPMd, and `7z -m0=PPMd -mx9` joins the codecs.
+2. **A coverage probe before the scale run** (15 min): fit the dictionary, tile
+   the val, report coverage and the covered rate. It decides whether N1 is a
+   dictionary story or a tail story.
+3. **The codec's accounting is specified** (the CDF is derived from the charged
+   counts; the token counts are stored log-quantized to 2 bytes; the model is the
+   charge). Without this, the recorded size cannot reconcile with the rate.
+4. **A per-file budget choice** (`--try 3`, 2 transmitted bits) recovers the 0.14
+   bpb that the held-out rule costs on shakespeare. The *choice* is transmitted,
+   so it is not a selection leak.
+5. **Efficiency**: one cached candidate pass per (corpus, vocab), a probe before
+   a grid, sequential budget curves, three corpora as three processes.
+6. **A risk register** (§5) with the cheap check for each way the claim can fail.
 
-**Best possible end-to-end result.** A single command compresses a file to a
-bitstream and decodes it back byte-exactly, with a model artifact (dictionary +
-concept table + shared tail model) that is charged at its packed size. At 1.12 MB
-of shakespeare it charges ≤ 2.50 bpb (stretch 2.30, bz2 2.635); at 10 MB it
-charges ≤ 1.80 bpb (stretch 1.60) against bz2/xz measured on the same bytes (the
-codec numbers at 10 MB are unknown until N1 runs; the targets are the plan, not
-measurements); on synseg/syngrid it stays 0.06-0.19 bpb below the best codec; and
-above K ≈ 5 files the shared model beats bz2 per file by construction. Every
-number is the *file size on disk*, not a rate estimate.
+## 0. The targets (revised, against PPMd)
 
-## 1. Where the bits are, and what each lever can buy
+| corpus | size | concept LM now | **PPMd** | bz2 | target |
+|---|---:|---:|---:|---:|---:|
+| shakespeare | 1.12 MB | 3.006 | **2.504** | 2.641 | ≤ 2.50 (parity) |
+| synseg | 1.20 MB | **1.323** | 1.500 | 1.520 | keep ≤ 1.32 |
+| syngrid | 1.20 MB | **1.939** | 2.063 | 2.138 | keep ≤ 1.94 |
+| shakespeare 10 MB | 10 MB | – | measure | – | ≤ 2.20 |
+| enwik8 10 MB | 10 MB | – | ~1.9-2.0 (measure) | – | ≤ 2.10 |
 
-shakespeare, 1.12 MB, current: **rate 2.723, charged 3.006**.
+The *structural* claims are the ones that scale, and they are already measured:
+the model is paid once (flat in K, bz2 crosses at K≈5), the decoder needs 6.5x
+fewer calls at 1 MB (20x+ at 10 MB), and the charge curve is flat. The *rate*
+claim on text is against PPMd, at 10 MB, and it is the hard one.
+
+## 1. Where the bits are (1.12 MB shakespeare, 2.723 rate / 3.006 charged)
 
 | part | bytes | bpb | bits | share |
 |---|---:|---:|---:|---:|
@@ -34,206 +50,246 @@ shakespeare, 1.12 MB, current: **rate 2.723, charged 3.006**.
 | tail boundary | 8,263 spans | 0.616 | 33,100 | 11% |
 | model charge (on top) | 39.5 kB | 0.283 | 31,500 | 9.4% |
 
-So 1 bpb on the tail bytes is 0.48 bpb on the total; the boundary is 0.30; 1 bpb
-on the covered part is 0.09. But the largest end-to-end lever is not in this
-table at all: **coverage**. At 1.1 MB the dictionary covers half the bytes
-because the val's rare words are not in a 1 MB train. At 10 MB the same dictionary
-covers ~85%, and the total moves toward the covered rate (~0.7-1.0 bpb).
-
-| lever | mechanism | expected at 1.12 MB | expected at 10 MB |
-|---|---|---:|---:|
-| **N0 the bitstream** | the artifact; <= 4 bits of coder flush | +0.0003 | +0.0003 |
-| **N1 scale** | coverage 0.52 -> ~0.85 | n/a | **-1.0 to -1.4** |
-| **N2 the tail's context** | two letters at the same 16 kB | -0.10 to -0.20 | -0.10 |
-| **N3 the concept table** | the same low-rank sharing; the dict budget shifts | -0.05 to -0.10 | -0.10 |
-| **N4 the boundary** | the space, or a space-suffixed tiling | -0.05 to -0.30 | -0.10 |
-| **N5 the lattice** | the tail span as a first-class DP option | -0.03 to -0.10 | -0.03 |
-| **N6 the factorial** | the estimand `I_perf`, the claim's evidence | 0 | 0 |
+The tail's 71% share is a **coverage artifact**: at 10 MB the same dictionary
+covers ~85% and the total moves toward the covered rate. So the plan's order is:
+prove the artifact (N0), raise coverage (N1), then cut the tail (N2-N4), then the
+estimand (N6). The tokenizer is one lever of six (N4).
 
 ## 2. What is established (do not re-derive)
 
 1. A dense pooled code cannot carry order (v6): `total` is monotone in the code
-   rate, and the optimum is to collapse it.
-2. A dictionary *index* has an exact inverse: residual zero, and the model is the
+   rate; the optimum is to collapse it.
+2. A dictionary *index* has an exact inverse: residual zero; the model is the
    only charge (`runs/v7/concept.json`).
-3. The first-order concept LM over the indices cuts 0.4-0.67 bpb unpaid; at
-   1.12 MB only a 1-2k-entry table is affordable, and the held-out rule costs
-   0.14 bpb on shakespeare (`runs/v7/CONCEPT.md`).
-4. The tail is 48% of the val and 80% of the bits; a **rank-16 shared model of
-   the 257x256 byte table (16.4 kB)** reaches 4.020 bpb there, 1.03 below the
-   byte unigram and 0.43 below a 256.5 kB count table (`runs/v7/TAIL.md`).
-5. The tail now pays: 3.006 charged against 3.087; the boundary is 0.616 bpb as
-   a length and 0.522 as a trailing space (a bound).
-6. The shared model's charge curve is flat in K and every codec's rises; bz2
-   crosses at K ~ 5 with the tail, K = 8 without (`runs/v7/TRANSFER.md`).
-7. A *hard* concept code with counts is a negative on the tail (`prev` 4.795,
-   k-means 4.974 against `ar` 4.480). The positive is the *shared* low-rank
+3. The first-order concept LM cuts 0.4-0.67 bpb unpaid; at 1.12 MB only a 1-2k
+   table is affordable; the held-out rule costs 0.14 bpb (`runs/v7/CONCEPT.md`).
+4. The tail is 48% of the val and 80% of the bits; a rank-16 shared model of the
+   257x256 byte table (16.4 kB) reaches 4.020 bpb, 1.03 below the byte unigram and
+   0.43 below a 256.5 kB count table (`runs/v7/TAIL.md`).
+5. The tail pays: 3.006 against 3.087; the boundary is 0.616 as a length, 0.522
+   as a trailing space (a bound).
+6. The shared model's charge curve is flat in K, the codecs' rise; bz2 crosses at
+   K≈5 with the tail (`runs/v7/TRANSFER.md`).
+7. A hard concept code with counts is a negative on the tail (`prev` 4.795,
+   k-means 4.974 against `ar` 4.480). The positive is the *shared low-rank*
    model, not a discrete code.
+8. **PPMd is the text bar** (2.504 on shakespeare, 1.500 on synseg, 2.063 on
+   syngrid), and it is now in `codecs()` (7z -m0=PPMd -mx9), so every run reports
+   it. It is a context-mixing codec with no per-file model to share: its
+   per-file mean rises with K like bz2's.
 
 ## 3. The work, in order
 
-### N0 — the bitstream, and the round-trip (~2-3 h) — **do this first**
+### N0 — the bitstream (~3-4 h) — **do this first**
 
 *Question:* does the accounting survive an actual encoder and decoder?
-*How:* one file, `codec.py`:
+*How:* one file, `codec.py`.
 
-- `model`: the dictionary (lengths, quantised costs), the concept table (2-byte
-  indices and counts) and the tail model (two 16-bit float matrices), packed and
-  compressed with the byte model. It is 39.5 kB today, and it is the charge.
-- `encode --shared MODEL`: the stream only (the model is sent once for K files);
-  `encode --self`: the model inside the file (the archive convention). Both are
-  reported; the charge follows the convention.
-- `encode`: the DP over the shard with the concept costs; each token is coded as
-  its index with a range coder on the *bigram* CDF; a tail token is coded as its
-  length (the length prior) and then its bytes under the tail model's CDF.
-- `decode`: the inverse. The decoder has the model file and the stream; it never
-  reruns the encoder's DP, it decodes the token sequence (this is what makes the
-  calls count true).
-- `check`: the round-trip on shakespeare, synseg, syngrid, plus a fuzz of random
-  slices; the *recorded* size must equal the charged bpb within 0.005 bpb (that
-  equality is the proof of the accounting, including the space and header bits).
-- Selftest: a round-trip on a 1 kB slice for every corpus, a model pack/unpack
-  round-trip, and the token index -> cost tables.
+- **The model** (`model`): the dictionary strings with a length and a
+  **log-quantized count** (2 bytes: 8-bit exponent, 8-bit mantissa; the cost is
+  recomputed from it, so the model stores *counts*, not costs); the concept
+  table (2-byte indices, 2-byte counts); the tail model (two 16-bit matrices,
+  16.4 kB). Packed and compressed with the byte model.
+- **The CDF is derived, never stored**: weights `w_i = round(2^20 * p_i)` from
+  the model's costs, a Fenwick tree of `uint32` weights, a 32-bit range coder.
+  The decoder computes the same tree from the same model, so the CDF costs zero
+  extra bits and the quantization loss is `< 1e-4` bpb per token (verify).
+- **`encode`**: the DP gives the token sequence; each token is coded with the
+  *bigram* CDF (the state is the previous token); a tail token sends its length
+  (the length prior, 16 symbols) then its bytes under the tail CDF.
+- **`decode`**: the inverse. The decoder never reruns the DP; it decodes the
+  token sequence. That is what makes the calls count true.
+- **`--self` / `--shared`**: the model inside the file (the archive convention)
+  or sent once (`--shared`, the K-file convention). The charge follows the
+  convention; both are reconciled.
+- **`--try N`**: encode with N budgets (2-3), keep the smallest, send 2 bits.
+  This recovers the 0.14 bpb the held-out rule costs; the choice is transmitted,
+  so it is not a leak.
+- **`check`**: round-trip on shakespeare, synseg, syngrid, a 200-slice fuzz, and
+  the reconciliation: the recorded size equals the charged bpb within 0.005 bpb
+  in both conventions. Selftest: a round-trip on a 1 kB slice, the model
+  pack/unpack, the quantized-count round-trip (`|cost - cost_q| < 0.01` bpb), and
+  the Fenwick CDF (`sum(p) == 1` within 1e-9 for random costs).
 
-*Gate:* every corpus round-trips; the recorded size equals the reported charge
-within 0.005 bpb, in *both* conventions; the model file is <= 45 kB (today
-39.5 kB).
+*Gate:* every corpus round-trips; the recorded size equals the charge within
+0.005 bpb in both conventions; the model is ≤ 45 kB today; encode ≥ 0.3 MB/s,
+decode ≥ 1 MB/s (report the wall clock).
 *Stop:* if the recorded size exceeds the charge by more than 0.02 bpb, the
 accounting is wrong: fix it before any new model.
 
-### N1 — scale: the coverage lever (~1-2 h, plus runs) — **the headline**
+### N1 — the coverage probe, then scale
 
-*Question:* does coverage turn the parity of §0 into a win?
-*How:* add `load_enwik8` to `hncm6.py` (the 100 MB dump from
-`mattmahoney.net/dc/enwik8.zip`, cached like shakespeare; the 10 MB slice is
-`data[:10_000_000]`), then run the same pipeline at 10 MB and 100 MB. The
-substring candidates are `O(CAP x N)` numpy: budget 3-5 min per corpus at 10 MB
-and cache them. The budget and the rank are chosen on a held-out 10% of the
-*static train*; the codecs are measured on the same val. Report: coverage, the
-covered/tail split, the rate, the charge, the recorded size, the calls, and the
-codec curve at 1/10/100 MB.
-*Gate:* at 10 MB the charged total <= 1.80 bpb (stretch 1.60) and <= the best
-codec; the calls ratio >= 20x.
-*Stop:* if the covered rate does not fall with the dictionary (i.e. the coverage
-gain is eaten by the charge), the *budget* is the story and N3 (the table) is the
-next lever; report the curve either way.
+*N1a, the probe (~15 min).* Fit the dictionary at 2-4 sizes on the static 10 MB
+train, tile the 1 MB val with the DP, and report coverage, the covered rate, and
+the charge. This decides the scale run's budget and whether the tail is the
+story. *Gate:* coverage is measured, not assumed; the predicted total is
+`cov*covered + (1-cov)*tail + charge`.
+*N1b, the run (~1-2 h, plus 5-10 min per corpus).* Add `load_enwik8` to
+`hncm6.py` (the 100 MB dump from `mattmahoney.net/dc/enwik8.zip`, cached like
+shakespeare; the 10 MB slice is `data[:10_000_000]`). Run enwik8 at 10 MB and
+100 MB, shakespeare at 10 MB if a larger source is reachable (the complete works
+at Project Gutenberg, ~5.5 MB, cached), and every codec (zlib, gzip, bz2, xz/7z,
+brotli, zstd, **PPMd**) on the same val. Report coverage, the split, the rate,
+the charge, the recorded size, the calls, the throughput, and the codec curves at
+1/10/100 MB.
+*Gate:* at 10 MB the charged total ≤ 1.80 (stretch 1.60) and within 0.10 of
+PPMd; the calls ratio ≥ 20x.
+*Stop:* if the coverage gain is eaten by the charge, the budget is the story and
+N3 comes first; report the curve either way.
 
-### N2 — the tail's context at the same 16.4 kB (~45 min)
+### N2 — the tail's context at the same 16.4 kB (~1 h)
 
-*Question:* does a second letter of context beat the rank-16 bigram inside the
-same parameter budget?
-*How:* three arms, all fitted on the train tail by counts + SVD, all charged:
+*Question:* does a second letter of context beat the rank-16 bigram in the same
+parameter budget?
+*How:* three arms, fitted on the train tail, all charged:
 
-- `cls`: the previous byte bucketed to 32 frequency classes -> a 32x256 table
+- `cls`: the previous byte bucketed to 32 frequency classes → a 32x256 table
   (8 kB) plus the bigram (16 kB).
-- `tri`: a rank-r *trigram*: the sparse (prev2, prev1, next) counts, a randomised
-  SVD on the 65k x 256 table, rows renormalised, backoff to the rank-16 bigram.
-- `bias`: the *concept* class of the previous dictionary token as a rank-1 bias on
-  the logits (65 x 256 = 16 kB): the slow tier shaping the fast tier, which the
-  count version could not do.
+- `tri`: a rank-r *trigram* on the sparse (prev2, prev1, next) counts (a dense
+  65k x 256 table is 16.9M entries: use the sparse counts and a randomised SVD,
+  two 65k x 32 products per iteration); rows renormalised, backoff to the rank-16
+  bigram.
+- `bias`: the *concept class* of the previous dictionary token as a rank-1 bias
+  on the logits (65 x 256 = 16 kB): the slow tier shaping the fast tier, which
+  the count version could not do.
 
-Select r on the held-out 10%; report the captured size, the rate and the charge.
+Select r and the arm on the held-out 10%; report the captured size, the rate and
+the charge.
 *Gate:* the tail bytes < 4.020 at the same or smaller charged total; target 3.80.
 *Stop:* if none wins, the letter model is at its bigram limit at this budget;
-record it and move to N3.
+record it and move on.
 
-### N3 — the concept table's sharing (~45 min)
+### N3 — the concept table's sharing, and a second-order context (~1 h)
 
 *Question:* does the rank-r sharing that won for the bytes win for the concept
-bigram?
-*How:* the 2k x 2k transition counts (sparse), rank r = 4..64 by SVD, the rows
-renormalised with the unigram backoff, the same budget curve, r and the dict size
-selected on the held-out 10%. Endpoint: the charged total at 1.12 MB and the
-affordable dict size.
-*Gate:* the charged total < 3.006 (target 2.90) *and* the affordable dict size
-grows, so N1's coverage gain compounds.
-*Stop:* if the shared concept table loses to the counts, the concept alphabet is
-too sparse to share; report it.
+bigram — and does a second concept of context pay?
+*How:* the 2k x 2k transition counts (dense is 32 MB, fine), rank r = 4..64 by
+SVD, rows renormalised with the unigram backoff; the same budget curve; r and the
+dict size selected on the held-out 10%. Then a *second-order* arm: the counts
+`P(s | p2, p1)` factorised the same way (a sparse 2k x 2k x 2k tensor: use *two*
+low-rank factors, `P(s | p1)` plus a rank-r residual on `(p2, p1)`), which is where
+the covered part gains at 10 MB (it is 80% of the bits there).
+*Gate:* the charged total at 1.12 MB < 3.006 (target 2.90) and the affordable
+dict size grows, so N1's coverage compounds; the second-order arm < the
+first-order one at 10 MB.
+*Stop:* if the shared table loses to the counts, the concept alphabet is too
+sparse to share; report it.
 
-### N4 — the boundary (~1-1.5 h, after N2)
+### N4 — the boundary (~1-1.5 h, after N2) — *only if N0 shows it binds*
 
 *Question:* can the 0.616 bpb boundary be removed by the tiling's structure?
-*How:* retokenise so that a dictionary token ends *with* its space (the space
-joins the preceding token, and a tail token ends at the space), rebuild the
-dictionary on the retokenised train, re-run the DP, the tail, and the charge.
-Arms: v7 (space-prefixed) against v8 (space-suffixed) at the same budget; the
-decoder stops a tail token when it decodes a space, so no length is sent.
-*Gate:* the recorded size <= the tail-side bound (2.677 rate, 2.960 charged).
-*Stop:* if the covered rate rises by more than the boundary falls, report it and
-keep the length boundary; the codec (N0) is unaffected.
+*How:* retokenise so that a dictionary token ends *with* its space and a tail
+token ends at the space; rebuild the dictionary on the retokenised train, re-run
+the DP, the tail and the charge. The decoder stops a tail token when it decodes a
+space, so no length is sent. Arms: v7 (space-prefixed) against v8
+(space-suffixed) at the same budget.
+*Gate:* the recorded size ≤ the tail-side bound (2.677 rate, 2.960 charged).
+*Stop:* if the covered rate rises by more than the boundary falls, keep the
+length boundary; the codec is unaffected.
 
 ### N5 — the consistent lattice (~1 h, optional)
 
-*Question:* does the DP gain when the tail span is a lattice option?
-*How:* the state collapses to (a dictionary span) or `TAIL`; the tail span's cost
-is the shared model's bits + `H(L)`; one DP per MB, no EM rounds; the budget and
-r on the held-out 10%. The plain path is a subset, so the optimum cannot be worse.
-*Gate:* the recorded size <= the two-stage size and still exact.
-*Stop:* a gain < 0.02 bpb does not pay for the extra lattice: keep two-stage.
+The state collapses to (a dictionary span) or `TAIL`; the tail span's cost is the
+shared model's bits + `H(L)`; one DP per MB; the budget and r on the held-out
+10%. The plain path is a subset, so the optimum cannot be worse.
+*Gate:* the recorded size ≤ the two-stage size, still exact.
+*Stop:* a gain < 0.02 bpb does not pay for the lattice.
 
 ### N6 — the factorial (`I_perf`), the claim's evidence (~1 h)
 
-*Question:* is the gain an interaction or two main effects?
-*How:* A a byte-AR arm (an order-3 count model, or `hncm6.py`'s byte arm at the
-same budget), B the dense code (v6), C the dictionary + unigram + DP, D the
-dictionary + concept LM + shared tail, at a matched budget, 3 seeds, on the same
-val. `I_perf = (D-C) - (B-A)` in bpb, per seed.
+A a byte-AR arm (an order-3 count model, or `hncm6.py`'s byte arm at the same
+budget), B the dense code (v6), C the dictionary + unigram + DP, D the dictionary
++ concept LM + shared tail, at a matched budget, 3 seeds, on the same val.
+`I_perf = (D-C) - (B-A)` in bpb, per seed.
 *Gate:* `I_perf > 0` with clean controls; report the per-seed spread.
 
 ### N7 — delivery (~1 h)
 
-The table of record: recorded size, charge, calls, coverage, for 5 corpora
-(synseg, syngrid, shakespeare, shakespeare-10MB, enwik8-10MB) and 6 codecs; the
-README headline and `REPORT.md`; the artifact (`runs/v8/`), the model files, and
-one command. Every claim cites a file.
+The table of record: recorded size, charge, calls, coverage, encode/decode
+throughput, for 5 corpora and 7 codecs (PPMd included), both conventions; the
+README headline, `REPORT.md`, `runs/v8/` with the model files, the config JSON
+and the hashes; one command. The v7 tables were re-run with PPMd in `codecs()`,
+so their `vs best` column is against PPMd on text (`runs/v7/*.md`).
 
-## 4. What would make this a result
+## 4. Efficiency (the plan's own cost)
 
-- **The bitstream exists** and its size equals the charge: no fantasy, the
-  decoder has every input by construction (`N0`).
-- **It wins where it should**: structured corpora by 0.06-0.19 bpb against the
-  best codec; real text at 10 MB by >= 0.2 bpb against bz2/xz; per file above
-  K ~ 5.
-- **It is cheap to decode**: 6.5x fewer calls at 1 MB, >= 20x at 10 MB.
-- **It is honest**: every model charged, every budget selected on a held-out
-  split, the codecs on the same bytes, the pitfalls in TODO2 §5 and §9.
+1. **Cache the candidate counts** per (corpus, vocab) as `.npz`
+   (`runs/v8/counts-<corpus>-<vocab>-<sha>.npz`): the substring scan is
+   `O(CAP x N)` and dominates a 10 MB run (3-5 min); every rerun after it is
+   seconds.
+2. **Probe before a grid**: one running point (the 1 MB optimum scaled by 8)
+   plus the geometric neighbours (x2), stop when the charge rises.
+3. **Sequence the budgets**: 2k → 4k → 8k → … on the held-out split; each step
+   is one DP, and the curve is unimodal in practice.
+4. **Three corpora, three processes** (the box has 16 cores); the DP is
+   single-threaded Python.
+5. **One counts pass per (corpus, vocab)**: `split()` computes it once and
+   `rebuild()` reuses it (already the case).
+6. **The SVD is cheap**: 257x256 is instant; the 2k x 2k concept table is a 32 MB
+   dense SVD (fine); use a randomised SVD only above 10k symbols.
+7. **Wall clock is a metric**: report MB/s encode and decode, not only bpb.
+8. **The DP is O(L) dicts today** (`best = [dict() for _ in range(L+1)]`): at
+   10 MB that is ~640 MB of empty dicts. Before the scale run, keep the scores in
+   a rolling window of `CAP+1` positions and the backpointers in one array
+   (`prev` token id as `int32`, length as `uint8`): 10 MB is then ~80 MB and
+   faster. That change is required for 10 MB and 100 MB to be safe.
+9. **Scope the lattice (N5) to 1 MB**: the tail lattice is ~10x the plain DP; a
+   10 MB sweep is 20+ min per point and buys 0.03-0.10 bpb.
+10. **Cross-corpus tail transfer** (optional, in N2): fit the 16.4 kB on one
+    corpus, apply it to another's tail. It removes the model from the per-corpus
+    charge and is the "one model, many corpora" version of the K-file result.
 
-## 5. Rules to add (each already cost a run)
+## 5. Risk register (each has a cheap check)
+
+| risk | check | cost |
+|---|---|---|
+| coverage at 10 MB is low (enwik8's vocabulary is huge) | the N1a probe | 15 min |
+| the tail's rate at 10 MB is worse than 4.0 | the probe + one tail fit | 15 min |
+| PPMd wins on text at every size | the codec table (it is in the runs) | free |
+| the CDF quantization costs more than 0.005 bpb | N0's reconciliation | free |
+| the model at 10 MB is bigger than the stream pays for | the charge column at each size | free |
+| the val block is unrepresentative | the 10 MB val (1 MB, not 111 kB) | N1 |
+| a hidden leak (selection on the val) | every budget from the held-out 10%; `--try N` transmits its choice | by construction |
+
+## 6. Rules to add (each already cost a run)
 
 12. The model's *size* is a hyperparameter of every tier: select it on a
     held-out split, never on the val, and charge it at its packed size.
-13. A hard code (k-means, VQ) is not a shared model. The low-rank factorization
-    is what generalizes; the hard code was a measured negative.
+13. A hard code (k-means, VQ) is not a shared model; the low-rank factorization
+    is what generalizes.
 14. Factorize the *counts*, not the log probabilities; keep the discount floored
     (Good-Turing, 0.25-0.95).
 15. A boundary is information: pay it, or remove it with the tiling's structure.
-    It is 11% of the bits at 1 MB.
-16. Coverage is the largest lever (`51.8%` at 1.1 MB): measure at 10 MB before
-    tuning anything below 0.1 bpb.
+16. Coverage is the largest lever: measure it before tuning below 0.1 bpb.
 17. The recorded size is the judge; a rate estimate is not. Reconcile the two.
-
-## 6. Commands (as they land)
-
-```bash
-python codec.py selftest
-python codec.py encode --corpus shakespeare --model runs/v8/model.bin --out /tmp/s.bin
-python codec.py decode --model runs/v8/model.bin --in /tmp/s.bin --out /tmp/s.txt
-python tail_coder.py run                 # the tail arms (N2)
-python concept_lm.py run                 # the concept budget (N3)
-python transfer.py run                   # K files
-```
+18. Store *counts*, derive the costs and the CDF; a stored CDF is a second table
+    (a defect) and a selection leak when it is fitted on the val.
 
 ## 7. Time
 
 | step | cost | why |
 |---|---|---|
-| N0 the bitstream | 2-3 h | the artifact; validates every number |
-| N1 scale | 1-2 h + runs | the biggest lever (coverage) |
-| N2 the tail's context | 45 min | 71% of the bits at 1 MB |
-| N3 the concept table | 45 min | shifts the budget; compounds with N1 |
-| N4 the boundary | 1-1.5 h | 11% of the bits, 0.30 bpb |
+| N0 the bitstream | 3-4 h | the artifact; validates every number |
+| N1a the probe | 15 min | decides the scale run |
+| N1b scale | 1-2 h + runs | the biggest lever (coverage) |
+| N2 the tail's context | 1 h | 71% of the bits at 1 MB |
+| N3 the concept table | 1 h | shifts the budget; compounds with N1 |
+| N4 the boundary | 1-1.5 h | 11% of the bits |
 | N5 the lattice | 1 h | 0.03-0.10 bpb |
 | N6 the factorial | 1 h | the claim's evidence |
 | N7 delivery | 1 h | the table of record |
 
-Minimal end-to-end run: **N0 + N1 + N2 (~4-5 h)**. Then N3, N4, N6.
+Minimal end-to-end run: **N0 + N1a + N1b + N2 (~6-7 h)**. Then N3, N4, N6.
+
+## 8. Commands (as they land)
+
+```bash
+python codec.py selftest
+python codec.py encode --corpus shakespeare --shared runs/v8/model.bin --try 3 --out /tmp/s.bin
+python codec.py decode --shared runs/v8/model.bin --in /tmp/s.bin --out /tmp/s.txt
+python codec.py check --corpora shakespeare,synseg,syngrid
+python concept_lm.py probe --corpus enwik8_10m     # N1a: coverage and the covered rate
+python concept_lm.py run --corpus enwik8_10m       # N1b: the budget curve
+python tail_coder.py run                           # N2: the tail arms
+python transfer.py run                             # K files
+```

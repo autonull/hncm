@@ -2,11 +2,11 @@
 
 The vocabulary (word onsets or text substrings) and the budget (dict size x table size) are chosen by the *rule*: the charged total on the last 10% of the train, which the model never fitted, never on the val. `oracle` is the best grid point on the val plus the header that transmits the choice (a lower bound for any budget rule; the gap to `rule` is the cost of the rule). The table is refitted on the path the DP searches (2 EM rounds, chosen on the same 10%). The model is charged 6 bytes per bigram entry and amortised over train+val. The rate is the exact first-order Viterbi.
 
-| corpus | vocab | stream | zlib | gzip | bz2 | lzma | zstd | brotli | rule | oracle (vocab, dict, table) | oracle | vs zlib | vs best | crossing zlib |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|
-| shakespeare | onsets | 1.12 MB | 3.218 | 3.199 | 2.635 | 2.943 | 2.984 | 2.825 | 3.227 | substr, 1024, 2048 | 3.087 | -0.131 | +0.451 | 0.62 MB |
-| synseg | onsets | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.948 | 1.941 | 1.954 | 1.325 | onsets, 512, 256 | 1.323 | -0.901 | -0.190 | 0.06 MB |
-| syngrid | onsets | 1.20 MB | 2.886 | 2.866 | 2.129 | 1.999 | 2.453 | 2.295 | 1.939 | onsets, 302, 8192 | 1.939 | -0.947 | -0.060 | 0.32 MB |
+| corpus | vocab | stream | zlib | gzip | bz2 | lzma | zstd | brotli | ppmd | rule | oracle (vocab, dict, table) | oracle | vs zlib | vs best | x zlib |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| shakespeare | onsets | 1.12 MB | 3.218 | 3.199 | 2.635 | 2.947 | 2.984 | 2.825 | 2.504 | 3.227 | substr, 1024, 2048 | 3.087 | -0.131 | +0.583 | 0.62 MB |
+| synseg | onsets | 1.20 MB | 2.225 | 2.220 | 1.513 | 1.951 | 1.941 | 1.954 | 1.500 | 1.325 | onsets, 512, 256 | 1.323 | -0.901 | -0.177 | 0.06 MB |
+| syngrid | onsets | 1.20 MB | 2.886 | 2.866 | 2.129 | 2.005 | 2.453 | 2.295 | 2.063 | 1.939 | onsets, 302, 8192 | 1.939 | -0.947 | -0.066 | 0.32 MB |
 
 ## shakespeare (vocab onsets, dict 2048, 1024 bigram entries)
 
@@ -88,9 +88,10 @@ crossings of the envelope (MB of stream, versus each codec):
 - zlib: 0.62 MB
 - gzip: 0.66 MB
 - bz2: never
-- lzma: 8.53 MB
+- lzma: 7.11 MB
 - zstd: 2.93 MB
 - brotli: never
+- ppmd: never
 
 ## synseg (vocab onsets, dict 512, 512 bigram entries)
 
@@ -139,6 +140,7 @@ crossings of the envelope (MB of stream, versus each codec):
 - lzma: 0.09 MB
 - zstd: 0.09 MB
 - brotli: 0.09 MB
+- ppmd: 0.26 MB
 
 ## syngrid (vocab onsets, dict 302, 8192 bigram entries)
 
@@ -175,24 +177,25 @@ crossings of the envelope (MB of stream, versus each codec):
 - zlib: 0.32 MB
 - gzip: 0.33 MB
 - bz2: 0.77 MB
-- lzma: 1.02 MB
+- lzma: 1.01 MB
 - zstd: 0.48 MB
 - brotli: 0.59 MB
+- ppmd: 0.88 MB
 
 ## Gates
 
 | gate | corpus | value | status |
 |---|---|---|---|
 | G1 | shakespeare | rule=3.227 oracle=3.087 zlib=3.218 | **fail** |
-| G1a | shakespeare | rule=3.227 oracle=3.087 bz2=2.635 | **fail** |
+| G1a | shakespeare | rule=3.227 oracle=3.087 ppmd=2.504 | **fail** |
 | G2 | shakespeare | DP=3.045 greedy=3.046 gain=+0.001 | **pass** |
 | G3 | shakespeare | DP=3.045 fixed4=4.726 unigram=3.488 | **pass** |
 | G1 | synseg | rule=1.325 oracle=1.323 zlib=2.225 | **pass** |
-| G1a | synseg | rule=1.325 oracle=1.323 bz2=1.513 | **pass** |
+| G1a | synseg | rule=1.325 oracle=1.323 ppmd=1.500 | **pass** |
 | G2 | synseg | DP=1.266 greedy=1.266 gain=+0.000 | **pass** |
 | G3 | synseg | DP=1.266 fixed4=4.592 unigram=1.290 | **pass** |
 | G1 | syngrid | rule=1.939 oracle=1.939 zlib=2.886 | **pass** |
-| G1a | syngrid | rule=1.939 oracle=1.939 lzma=1.999 | **pass** |
+| G1a | syngrid | rule=1.939 oracle=1.939 lzma=2.005 | **pass** |
 | G2 | syngrid | DP=1.594 greedy=1.594 gain=+0.000 | **pass** |
 | G3 | syngrid | DP=1.594 fixed4=1.594 unigram=2.051 | **pass** |
 
