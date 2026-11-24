@@ -79,6 +79,8 @@
      "total_bpb": 1.8795595106651963,
      "tokens": 35640,
      "bytes_per_token": 3.367003367003367,
+     "covered": 0.778675,
+     "fallback_calls": 26560,
      "align": 0.46784195439983517,
      "charged_bpb": 2.3426635819171047
     },
@@ -88,6 +90,8 @@
      "total_bpb": 1.8795595106651963,
      "tokens": 35640,
      "bytes_per_token": 3.367003367003367,
+     "covered": 0.778675,
+     "fallback_calls": 26560,
      "align": 0.46784195439983517,
      "charged_bpb": 2.3426635819171047
     },
@@ -97,6 +101,8 @@
      "total_bpb": 1.8795595106651963,
      "tokens": 35640,
      "bytes_per_token": 3.367003367003367,
+     "covered": 0.778675,
+     "fallback_calls": 26560,
      "align": 0.46784195439983517,
      "charged_bpb": 2.3426635819171047
     },
@@ -106,6 +112,8 @@
      "total_bpb": 1.8795595106651963,
      "tokens": 35640,
      "bytes_per_token": 3.367003367003367,
+     "covered": 0.778675,
+     "fallback_calls": 26560,
      "align": 0.46784195439983517,
      "charged_bpb": 2.3426635819171047
     },
@@ -115,6 +123,8 @@
      "total_bpb": 1.9778417719306551,
      "tokens": 37822,
      "bytes_per_token": 3.1727565966897573,
+     "covered": 0.7612333333333333,
+     "fallback_calls": 28653,
      "align": 0.4628233049550928,
      "charged_bpb": 2.4409458431825635
     },
@@ -124,6 +134,8 @@
      "total_bpb": 1.9778417719306551,
      "tokens": 37822,
      "bytes_per_token": 3.1727565966897573,
+     "covered": 0.7612333333333333,
+     "fallback_calls": 28653,
      "align": 0.4628233049550928,
      "charged_bpb": 2.4409458431825635
     },
@@ -133,6 +145,8 @@
      "total_bpb": 1.9778417719306551,
      "tokens": 37822,
      "bytes_per_token": 3.1727565966897573,
+     "covered": 0.7612333333333333,
+     "fallback_calls": 28653,
      "align": 0.4628233049550928,
      "charged_bpb": 2.4409458431825635
     },
@@ -142,6 +156,8 @@
      "total_bpb": 1.9778417719306551,
      "tokens": 37822,
      "bytes_per_token": 3.1727565966897573,
+     "covered": 0.7612333333333333,
+     "fallback_calls": 28653,
      "align": 0.4628233049550928,
      "charged_bpb": 2.4409458431825635
     },
@@ -151,6 +167,8 @@
      "total_bpb": 2.7705760071609813,
      "tokens": 17737,
      "bytes_per_token": 6.765518407848002,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 3.2336800784128896
     },
@@ -160,6 +178,8 @@
      "total_bpb": 4.625718100112552,
      "tokens": 30000,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.18857489997276744,
      "charged_bpb": 5.08882217136446
     },
@@ -169,6 +189,8 @@
      "total_bpb": 4.52152889334977,
      "tokens": 15000,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.1374591440877295,
      "charged_bpb": 4.984632964601678
     },
@@ -178,6 +200,8 @@
      "total_bpb": 4.561747616640927,
      "tokens": 7500,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.09010579704402268,
      "charged_bpb": 5.024851687892835
     },
@@ -187,6 +211,8 @@
      "total_bpb": 4.573270324121461,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 5.036374395373369
     },
@@ -196,6 +222,8 @@
      "total_bpb": 4.573270324121461,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 5.036374395373369
     },
@@ -205,6 +233,8 @@
      "total_bpb": 4.573270324121461,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 5.036374395373369
     },
@@ -214,6 +244,8 @@
      "total_bpb": 4.573270324121461,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 5.036374395373369
     }
@@ -296,6 +328,8 @@
      "total_bpb": 2.5727667949209594,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590404913521642
     },
@@ -305,6 +339,8 @@
      "total_bpb": 2.5727667949209594,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590404913521642
     },
@@ -314,6 +350,8 @@
      "total_bpb": 2.5727667949209594,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590404913521642
     },
@@ -323,6 +361,8 @@
      "total_bpb": 2.5727667949209594,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590404913521642
     },
@@ -332,6 +372,8 @@
      "total_bpb": 2.5727778095198035,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590415928120486
     },
@@ -341,6 +383,8 @@
      "total_bpb": 2.5727778095198035,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590415928120486
     },
@@ -350,6 +394,8 @@
      "total_bpb": 2.5727778095198035,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590415928120486
     },
@@ -359,6 +405,8 @@
      "total_bpb": 2.5727778095198035,
      "tokens": 69966,
      "bytes_per_token": 1.7153474544778893,
+     "covered": 0.5542844287428343,
+     "fallback_calls": 53494,
      "align": 0.2699609882964889,
      "charged_bpb": 2.590415928120486
     },
@@ -368,6 +416,8 @@
      "total_bpb": 3.905731326068095,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 3.9233694446687775
     },
@@ -377,6 +427,8 @@
      "total_bpb": 3.905731326068095,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 3.9233694446687775
     },
@@ -386,6 +438,8 @@
      "total_bpb": 3.9057313260680946,
      "tokens": 15002,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.6666666666666666,
      "charged_bpb": 3.923369444668777
     },
@@ -395,6 +449,8 @@
      "total_bpb": 3.9057313260680946,
      "tokens": 7501,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.4,
      "charged_bpb": 3.923369444668777
     },
@@ -404,6 +460,8 @@
      "total_bpb": 3.8648928687454607,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.882530987346143
     },
@@ -413,6 +471,8 @@
      "total_bpb": 3.8648928687454607,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.882530987346143
     },
@@ -422,6 +482,8 @@
      "total_bpb": 3.8648928687454607,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.882530987346143
     },
@@ -431,6 +493,8 @@
      "total_bpb": 3.8648928687454607,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.882530987346143
     }
@@ -513,6 +577,8 @@
      "total_bpb": 3.298693584629117,
      "tokens": 57702,
      "bytes_per_token": 1.932965928390697,
+     "covered": 0.6065306268828001,
+     "fallback_calls": 43887,
      "align": 0.2234153233575236,
      "charged_bpb": 3.4549728345403588
     },
@@ -522,6 +588,8 @@
      "total_bpb": 3.298693584629117,
      "tokens": 57702,
      "bytes_per_token": 1.932965928390697,
+     "covered": 0.6065306268828001,
+     "fallback_calls": 43887,
      "align": 0.2234153233575236,
      "charged_bpb": 3.4549728345403588
     },
@@ -531,6 +599,8 @@
      "total_bpb": 3.298693584629117,
      "tokens": 57702,
      "bytes_per_token": 1.932965928390697,
+     "covered": 0.6065306268828001,
+     "fallback_calls": 43887,
      "align": 0.2234153233575236,
      "charged_bpb": 3.4549728345403588
     },
@@ -540,6 +610,8 @@
      "total_bpb": 3.298693584629117,
      "tokens": 57702,
      "bytes_per_token": 1.932965928390697,
+     "covered": 0.6065306268828001,
+     "fallback_calls": 43887,
      "align": 0.2234153233575236,
      "charged_bpb": 3.4549728345403588
     },
@@ -549,6 +621,8 @@
      "total_bpb": 3.3823666599821447,
      "tokens": 59244,
      "bytes_per_token": 1.8826547836067788,
+     "covered": 0.5942027686128246,
+     "fallback_calls": 45262,
      "align": 0.2419990679748605,
      "charged_bpb": 3.5386459098933862
     },
@@ -558,6 +632,8 @@
      "total_bpb": 3.3823666599821447,
      "tokens": 59244,
      "bytes_per_token": 1.8826547836067788,
+     "covered": 0.5942027686128246,
+     "fallback_calls": 45262,
      "align": 0.2419990679748605,
      "charged_bpb": 3.5386459098933862
     },
@@ -567,6 +643,8 @@
      "total_bpb": 3.3823666599821447,
      "tokens": 59244,
      "bytes_per_token": 1.8826547836067788,
+     "covered": 0.5942027686128246,
+     "fallback_calls": 45262,
      "align": 0.2419990679748605,
      "charged_bpb": 3.5386459098933862
     },
@@ -576,6 +654,8 @@
      "total_bpb": 3.3823666599821447,
      "tokens": 59244,
      "bytes_per_token": 1.8826547836067788,
+     "covered": 0.5942027686128246,
+     "fallback_calls": 45262,
      "align": 0.2419990679748605,
      "charged_bpb": 3.5386459098933862
     },
@@ -585,6 +665,8 @@
      "total_bpb": 4.798449807408553,
      "tokens": 20153,
      "bytes_per_token": 5.534461370515556,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 4.954729057319795
     },
@@ -594,6 +676,8 @@
      "total_bpb": 4.647156724489669,
      "tokens": 27884,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.20963007681578782,
      "charged_bpb": 4.8034359744009105
     },
@@ -603,6 +687,8 @@
      "total_bpb": 4.807173990347749,
      "tokens": 13942,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.14782226132864057,
      "charged_bpb": 4.963453240258991
     },
@@ -612,6 +698,8 @@
      "total_bpb": 4.829384646762005,
      "tokens": 6971,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.09239050287568205,
      "charged_bpb": 4.9856638966732465
     },
@@ -621,6 +709,8 @@
      "total_bpb": 4.798910728982714,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 4.955189978893956
     },
@@ -630,6 +720,8 @@
      "total_bpb": 4.798910728982714,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 4.955189978893956
     },
@@ -639,6 +731,8 @@
      "total_bpb": 4.798910728982714,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 4.955189978893956
     },
@@ -648,6 +742,8 @@
      "total_bpb": 4.798910728982714,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 4.955189978893956
     }

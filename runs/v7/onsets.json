@@ -79,6 +79,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -88,6 +90,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -97,6 +101,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -106,6 +112,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -115,6 +123,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -124,6 +134,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -133,6 +145,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -142,6 +156,8 @@
      "total_bpb": 1.2900579243596355,
      "tokens": 18219,
      "bytes_per_token": 6.586530545035402,
+     "covered": 0.9959666666666667,
+     "fallback_calls": 485,
      "align": 0.9865947268884192,
      "charged_bpb": 1.328003832108147
     },
@@ -151,6 +167,8 @@
      "total_bpb": 1.376099653679408,
      "tokens": 17737,
      "bytes_per_token": 6.765518407848002,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 1.4140455614279195
     },
@@ -160,6 +178,8 @@
      "total_bpb": 4.591810742903512,
      "tokens": 30000,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.18857489997276744,
      "charged_bpb": 4.629756650652023
     },
@@ -169,6 +189,8 @@
      "total_bpb": 4.5566651556365265,
      "tokens": 15000,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.1374591440877295,
      "charged_bpb": 4.594611063385038
     },
@@ -178,6 +200,8 @@
      "total_bpb": 4.636491328056561,
      "tokens": 7500,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.09010579704402268,
      "charged_bpb": 4.6744372358050725
     },
@@ -187,6 +211,8 @@
      "total_bpb": 4.6151940657670645,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 4.653139973515576
     },
@@ -196,6 +222,8 @@
      "total_bpb": 4.6151940657670645,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 4.653139973515576
     },
@@ -205,6 +233,8 @@
      "total_bpb": 4.6151940657670645,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 4.653139973515576
     },
@@ -214,6 +244,8 @@
      "total_bpb": 4.6151940657670645,
      "tokens": 19275,
      "bytes_per_token": 6.22568093385214,
+     "covered": 0.9680833333333333,
+     "fallback_calls": 3831,
      "align": 0.14968118448070894,
      "charged_bpb": 4.653139973515576
     }
@@ -296,6 +328,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -305,6 +339,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -314,6 +350,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -323,6 +361,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -332,6 +372,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -341,6 +383,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -350,6 +394,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -359,6 +405,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -368,6 +416,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -377,6 +427,8 @@
      "total_bpb": 2.0508494347799666,
      "tokens": 30004,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 2.0683542342680212
     },
@@ -386,6 +438,8 @@
      "total_bpb": 3.9057313260680946,
      "tokens": 15002,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.6666666666666666,
      "charged_bpb": 3.923236125556149
     },
@@ -395,6 +449,8 @@
      "total_bpb": 3.9057313260680946,
      "tokens": 7501,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.4,
      "charged_bpb": 3.923236125556149
     },
@@ -404,6 +460,8 @@
      "total_bpb": 3.846657711763951,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.8641625112520055
     },
@@ -413,6 +471,8 @@
      "total_bpb": 3.846657711763951,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.8641625112520055
     },
@@ -422,6 +482,8 @@
      "total_bpb": 3.846657711763951,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.8641625112520055
     },
@@ -431,6 +493,8 @@
      "total_bpb": 3.846657711763951,
      "tokens": 19276,
      "bytes_per_token": 6.226188005810334,
+     "covered": 0.9681042527662979,
+     "fallback_calls": 3829,
      "align": 0.19017857142857142,
      "charged_bpb": 3.8641625112520055
     }
@@ -513,6 +577,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -522,6 +588,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -531,6 +599,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -540,6 +610,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -549,6 +621,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -558,6 +632,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -567,6 +643,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -576,6 +654,8 @@
      "total_bpb": 3.0617963891953,
      "tokens": 52978,
      "bytes_per_token": 2.105326739401261,
+     "covered": 0.6667712666762301,
+     "fallback_calls": 37168,
      "align": 0.5511479399980856,
      "charged_bpb": 3.346683800571431
     },
@@ -585,6 +665,8 @@
      "total_bpb": 3.1258371576745154,
      "tokens": 20153,
      "bytes_per_token": 5.534461370515556,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 1.0,
      "charged_bpb": 3.4107245690506462
     },
@@ -594,6 +676,8 @@
      "total_bpb": 4.725483150275306,
      "tokens": 27884,
      "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.20963007681578782,
      "charged_bpb": 5.0103705616514365
     },
@@ -603,6 +687,8 @@
      "total_bpb": 4.81445609451732,
      "tokens": 13942,
      "bytes_per_token": 8.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.14782226132864057,
      "charged_bpb": 5.099343505893451
     },
@@ -612,6 +698,8 @@
      "total_bpb": 4.829384646762005,
      "tokens": 6971,
      "bytes_per_token": 16.0,
+     "covered": 1.0,
+     "fallback_calls": 1,
      "align": 0.09239050287568205,
      "charged_bpb": 5.114272058138136
     },
@@ -621,6 +709,8 @@
      "total_bpb": 4.812200436765167,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 5.097087848141298
     },
@@ -630,6 +720,8 @@
      "total_bpb": 4.812200436765167,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 5.097087848141298
     },
@@ -639,6 +731,8 @@
      "total_bpb": 4.812200436765167,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 5.097087848141298
     },
@@ -648,6 +742,8 @@
      "total_bpb": 4.812200436765167,
      "tokens": 17935,
      "bytes_per_token": 6.218901589071647,
+     "covered": 0.968082054224645,
+     "fallback_calls": 3561,
      "align": 0.16860953581180424,
      "charged_bpb": 5.097087848141298
     }

@@ -295,6 +295,7 @@ def evaluate(name: str, va: bytes, d: Dict) -> list[dict]:
         ):
             toks = arm_tokens(arm, va, d, lam)
             bits = bits_of(toks, d)
+            single = sum(len(s) for s in toks if len(s) == 1)
             if arm == "oracle":
                 ref = mask_of(toks, n)
             out.append(
@@ -304,6 +305,8 @@ def evaluate(name: str, va: bytes, d: Dict) -> list[dict]:
                     "total_bpb": bits / n,
                     "tokens": len(toks),
                     "bytes_per_token": n / len(toks),
+                    "covered": 1 - single / n,
+                    "fallback_calls": 1 + single,
                     "toks": toks,
                 }
             )
@@ -414,14 +417,15 @@ def report(res: dict, path: Path) -> None:
             )
         lines += [
             "",
-            "| arm | lambda | rate | charged | tokens | bytes/token | align |",
-            "|---|---:|---:|---:|---:|---:|---:|",
+            "| arm | lambda | rate | charged | tokens | bytes/token | covered | calls | align |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for r in sorted(e["runs"], key=lambda r: (r["arm"], r["lambda"])):
             lines.append(
                 f"| {r['arm']} | {r['lambda']:.1f} | {r['total_bpb']:.3f} | "
                 f"{r['charged_bpb']:.3f} | {r['tokens']} | "
-                f"{r['bytes_per_token']:.2f} | {r['align']:.3f} |"
+                f"{r['bytes_per_token']:.2f} | {r['covered']:.3f} | "
+                f"{r['fallback_calls']:.0f} | {r['align']:.3f} |"
             )
         lines.append("")
     lines += ["## Gates", "", "| gate | corpus | value | status |", "|---|---|---|---|"]
