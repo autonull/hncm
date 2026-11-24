@@ -194,12 +194,16 @@ a stream ~10x its size (M7).
 
 ## Next
 
-`TODO2.md` is the self-contained plan; §8 is M1-M3 and §9 is M5 plus the
-amortization. The claim is source- and scale-conditioned: it pays where the
-vocabulary is smaller than the stream. Next: the tail model with shared
-parameters (10-20 kB) and a boundary from the dictionary's structure; M6 (the
-factorial `I_perf`); M7 (enwik8 at 10/100 MB, where the table's crossing and the
-deploy charge say a bigger budget becomes affordable).
+`TODO3.md` is the end-to-end plan, in the order the measurements pay:
+
+1. **N0 the bitstream** (`codec.py`): a real encoder/decoder, the model packed
+   and charged, the recorded size reconciled with the charge. The artifact.
+2. **N1 scale**: coverage is 51.8% at 1.1 MB and the tail's 71% share is a
+   coverage artifact; at 10 MB the same pipeline should reach 1.8 bpb or less.
+3. **N2 the tail's context** at the same 16.4 kB (a second letter, a class
+   table, a concept bias): the tail bytes are 71% of the bits.
+4. **N3 the concept table's sharing**, **N4 the boundary** (0.30 bpb), **N5 the
+   lattice**, **N6 the factorial** `I_perf`.
 
 ## Commands
 

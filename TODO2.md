@@ -180,7 +180,11 @@ bits/chunk ≈ 9 bpb at 3.4 bytes/chunk. `hncm.q4.md` measures D at 10.6 bpb and
 its code at 9.07: the same rate wall as v6. A concept must be *cheap*. Its
 interaction is −0.85 at 400 steps: do not read it as evidence.
 
-## 4. Remaining work (the measurements, in order)
+## 4. Remaining work (the measurements, in order) — superseded by `TODO3.md`
+
+The measurements below are done (§8-§9). The next plan is `TODO3.md`: the
+bitstream, scale, the tail's context, the concept table, the boundary, the
+lattice, the factorial.
 
 ### M1 — charged bigram budget curve (~30 min) — done (§8)
 
