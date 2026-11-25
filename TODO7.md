@@ -38,6 +38,47 @@ real customer: a repo assistant.
 The first claim to earn: **a 5M unit model + a 90 kB lexicon ≤ a 5.5M byte
 model on held-out Python at equal total bytes**, recorded end-to-end.
 
+## 1a. The budget that forces the pointer head
+
+A vocab softmax does not fit: at d=256, 6 layers, an 8k unit vocabulary costs
+2×2.11M for the embedding and the head, and 4.72M for the blocks — 8.9M, not
+5M. And a trained row per entry means a new lexicon needs a gradient step, which
+kills the install.
+
+The sketches' answer (r3 "pointer", r6 "tied embeddings", r1 "content, not ID")
+is a **pointer head**: each installed span gets `e_c = Enc(bytes_c)` from a tiny
+local encoder, and the head scores `(W_q h_t)·e_c`. Then:
+
+| part | params |
+|---|---:|
+| blocks, 6 × 12d² at d=256 | 4.72M |
+| local span encoder (2 layers, d=64) | 0.05M |
+| `W_q` (d×d) + byte head (256×d) + gate | 0.14M |
+| **total** | **≈4.9M** |
+
+A new entry costs zero parameters: install = encode its bytes once. This is the
+one sketch idea the plan must adopt *before* M3, because it changes the head,
+the coder's alphabet (installed spans, not ids) and Q1 (a pack the model never
+trained on). Note carefully: P0's linchpin tested `W_q = I` on a *frozen* base
+with a *classifier* gate; it did not test a trained pointer over installed
+spans. Do not inherit that negative here.
+
+## 1b. Ideas from r1-r7 that the plan dropped and should take back
+
+| idea | sketch | why it belongs now | slot | cost |
+|---|---|---|---|---|
+| lexicon-agnostic training: rotate the pack per step (2-4 parses, held-out packages) | r3 | install = data only if the model can read a pack it never saw | M3 | +1 h |
+| local copy symbols: repeat from the last 1-4 kB (LZ-style distance+length codes) | r2 copy bypass | code repeats identifiers inside a file; a static pack cannot | M3 | +1 h |
+| re-parse with the model's prices (Viterbi over spans under the pointer's log-probs) | r4/r1 DP | longer units where the model is confident; the parse is the headroom | M4 | +1.5 h |
+| market admission: admit a span iff measured saving > its charge | r5 | picks the pack at fixed bytes instead of a count heuristic | M4 | +1.5 h |
+| two clocks readout: steps/byte, FLOPs/byte vs pack size | r6/r5 | the speed half of "smaller model"; it is a measurement, not a build | M4 | +0.5 h |
+| librarian: anti-unification lifts a template with a hole from repeated lines | r7 | Q1 needs a template, not a hand-written slot split | M7 | +1 d |
+
+Left out on purpose: the charge term in the training loss (r2) — the equal-bytes
+table does the selection for now; safe-mode verification (r3/r1) — a generation
+concern, not a codec one; joint EM with parse sampling (r4) — the single
+re-parse above is the 80%; alignment KL (r5) — a PPL regularizer, no codec role.
+
 ## 2. Efficiency rules for this build
 
 - **Encode at scale, decode a proof slice.** Encoding is batched (286k units/s,
@@ -74,11 +115,11 @@ train. Record `corpus_sha` in every header and metrics.
 | M0 | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`, `cml coder --test` | 10k random symbols round-trip; 200 kB byte codec round-trip | 1.5 h |
 | M1 | byte arm: order-2 counts, escape to order-1; `cml codec --arm byte --corpus code` | exact round-trip; recorded bpb on 1 MB | 1.5 h |
 | M2 | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
-| M3 | small unit trunk (5M: d256, 6 layers, 8 heads, seq 256) trained 2000-4000 steps on the code parse; `--arm concept`; top-k CDF | exact round-trip on 50k units; recorded bpb < byte arm | 2.5 h |
-| M4 | the equal-bytes table: 5M byte, 5.5M byte, 5M unit + 90 kB lexicon; `cml recorded`; gates read it | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 1.5 h |
+| M3 | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
+| M4 | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
 | M5 | ops: `pack verify/trace/diff/merge/rm`; Q2/Q3 demos; the adapter arm as a 30-min negative control (flag+index+byte) to confirm −2.2 in a real codec; a rent λ sweep on the pack | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
 | M6 | text control: the P1 trunk concept codec on the 10 MB parse (recorded, vs PPMd 1.992) | recorded bpb within 0.05 of 1.920 + header | 2 h |
-| M7 | library with holes: slots filled by other units; Q1 | ≥0.1 bpb on slot tokens vs the byte arm | 1-2 d |
+| M7 | library with holes: the librarian lifts a template by anti-unification; slots fill from other units; Q1 | ≥0.1 bpb on slot tokens vs the byte arm | 1-2 d |
 
 Do not start M7 before M4 prints a table. Do not tune M3 before M1 records a
 number.
@@ -124,9 +165,10 @@ read `recorded`/`shared`/`self`; the CE metrics stay in the run store as
 
 ## 7. The qualitative tests (the new qualities)
 
-- **Q1 install.** Hold out one file from the repo. Fit the lexicon and the
-  model on the rest, attach the pack, encode the held-out file with no
-  gradient: report bpb vs the byte model. Bar: ≥0.2 bpb at equal total bytes.
+- **Q1 install.** Two packs: one the model trained with, one induced on a
+  package it never saw. Encode a held-out file with each, no gradient: report
+  bpb vs the byte model and the *pack-agreement* gap. Bar: ≥0.2 bpb at equal
+  total bytes, and the unseen pack within 0.15 bpb of the seen one.
 - **Q2 provenance.** Every decoded byte has `byte → unit id → pack offset`;
   `trace A:B` prints it; 100% coverage. This is the auditable-memory claim, and
   no byte codec can produce it.
@@ -150,6 +192,10 @@ read `recorded`/`shared`/`self`; the CE metrics stay in the run store as
 - **The timing trap.** P0d repeats 2.2-4.3x (synseg) and 1.05-1.40x (code); use
   ≥3 repeats and the median, or no speed claim.
 - **The CE trap.** `eval_bits` is a scheduler; only `recorded` is a claim.
+- **The identity-cosine trap.** P0's cos AUC 0.427 measured `W_q = I` on a
+  frozen base with a *classifier* gate. A trained pointer over installed spans
+  is a different object; do not cite the linchpin against it, and do not build
+  the pointer with the identity map either.
 
 ## 9. Start
 
