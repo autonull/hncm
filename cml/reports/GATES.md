@@ -2,6 +2,7 @@
 
 | run | train MB | params | steps | payload | bigram | gates |
 |---|---:|---:|---:|---:|---:|---|
+| `p0-adapter-75cb215f-s0` | 9.0 | 21.9M | 0 | 0.997 | — | P0a:✓ P0b:✓ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✓ |
 | `p1-check-8m-9237d73f-s0` | 8.0 | 20.5M | 6000 | 1.992 | 2.709 | P1a:✓ P1b:✓ |
 | `p1-class-10m-289cc414-s0` | 9.0 | 39.9M | 2000 | 2.096 | 2.667 | P1a:✓ P1b:✓ P1c:— P1d:— P1e:— |
 | `p1-class-10m-3084fd95-s0` | 9.0 | 20.5M | 6000 | 1.920 | 2.667 | P1a:✓ P1b:✓ P1c:— P1d:— P1e:— |
@@ -15,6 +16,8 @@
 ## Verdict
 
 The seed-0 P1 payload is **1.920 bpb** at 20.5M parameters and 6000 steps (`p1-class-10m-3084fd95-s0`); seeds 0-2 at that point are **1.912 ± 0.008**. The same-slice count bigram is 2.667; the v9 reference on the 10 MB block is 2.696 (2.729 is the 10 MB-prefix rate).
+
+P0: base 1.827 → adapter 0.997 bpb; rate saved +0.830, pack charge 0.072, net **+0.758**; accept 79.4%, coverage 79.6%, pack 90.1 kB (`p0-adapter-75cb215f-s0`).
 
 The second split is the `p1-check-8m` row: train 8 MB and test the 8-9 MB slice, so the win is not one easy slice.
 

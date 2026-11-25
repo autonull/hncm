@@ -10,19 +10,19 @@ gate table. The plan holds the design; this page maps the ideas to files.
 
 | original idea | bet | experiment | where in `cml` | status |
 |---|---|---|---|---|
-| r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-g | manifest + gates; v0 in P0 |
+| r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-g | P0 core measured; P0d + baselines next |
 | r2 C2LM; hybrid output; copy bypass; charge in loss | B3 | P3 | `Arm.LEDGER`, `GATES` P3a-d | manifest; P3 |
 | r3 PhraseLM; lexicon-agnostic; three heads; safe mode | B1/B2 | P0, P1 | `Arm.ADAPTER`/`CONCEPT`, `GATES` | manifests; P0/P1 |
 | r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | P1 measured; P2 next |
 | r5 LedgerLM; persistence; market; alignment; dual pathway; learning curve; editing | B3 | P3, P4 | `Arm.LEDGER`, `GATES` P3a-d/P4a-f | manifests; P3/P4 |
-| r6 CMT; tied embeddings; pack; provenance; constrained; telemetry; two clocks | B3 | P0, P1, P2, P4 | `Pack`, `GATES` P0/P1/P2/P4 | manifests; P0/P1/P2/P4 |
+| r6 CMT; tied embeddings; pack; provenance; constrained; telemetry; two clocks | B3 | P0, P1, P2, P4 | `Pack`, `GATES` P0/P1/P2/P4 | P0/P1 measured; P2/P4 next |
 | r7 CoLib; holes; librarian; composition; planning; auditable thought | B4 | P5 | `Arm.LIBRARY`, `GATES` L-G0…L-G5, P5e-g | manifest; P5 |
 
 The four bets, and where they live:
 
 | bet | experiments | plan | status |
 |---|---|---|---|
-| B1 the adapter | P0 | §4 B1 | manifest + gates; v0 next |
+| B1 the adapter | P0 | §4 B1 | P0 core measured; P0d + equal-charge baselines next |
 | B2 the vocabulary | P1, P2 | §4 B2 | P1 measured (1.920 bpb); P2 next |
 | B3 the ledger | P3, P4 | §4 B3 | manifests |
 | B4 the library | P5 | §4 B4 | manifest |
@@ -115,10 +115,16 @@ The four bets, and where they live:
   the 9 MB train / 1 MB test split, the CE-to-bpb judge, the checkpoint.
 - `fit_curve`, `curve`, `gates_report`: the scaling curve, `P1c`, and
   `reports/GATES.md`.
+- `run_base`, `cml base`: the frozen byte base (21.9M, 6000 steps, 1.827 bpb).
+- `substring_counts`, `induce_pack`, `make_trie`, `longest_match`: `D` and the
+  exact-span pack (4096 spans, 90.1 kB, provenance offsets).
+- `span_embeddings`, `stream_nll`, `fit_gate`, `adapter_eval`, `run_p0`: the
+  frozen encoder state, the 3-parameter gate, verification, and the copy codec.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,
-  windows/split, the trunk, the curve, and the parse round-trip.
+  windows/split, the trunk, the curve, the parse round-trip, the pack
+  round-trip, and the stream judge.
 - `pyproject.toml` + `uv.lock`; `ruff` clean.
 
 P1 is measured: 1.920 bpb at 20.5M params/6000 steps on the held-out 1 MB
@@ -127,11 +133,14 @@ fit is 1.919. The same-slice count bigram is 2.667, so the neural margin is
 0.75 bpb. P1a/P1b/P1c pass. The second split (8-9 MB) gives 1.992, so the win
 is not one slice.
 
-Not built yet: the byte base, `D` induction, the 3-parameter gate, the pack,
-the adapter, kNN/LoRA, and the structured latency suite (P0); the 100 MB
-verdict (P2); the ledger/gate (P3); the ops (P4); the library (P5). `cml
-run` dispatches P1 and raises the TODO for P0 and the later stages. The
-search `--simulate` is a scheduler test, not evidence.
+P0 core is measured: base 1.827 → adapter 0.997 bpb (net +0.758 after the
+0.072 pack charge), acceptance 79.4%, coverage 80%, provenance 100%.
+P0a/b/c/e/f/g pass; P0d, kNN/LoRA/no-D at equal charge, P1d and P1e are next.
+
+Not built yet: P0d structured latency, the equal-charge kNN/LoRA/no-D
+baselines; the 100 MB verdict (P2); the ledger/gate (P3); the ops (P4); the
+library (P5). `cml run` dispatches P0/P1 and raises the TODO for the later
+stages. The search `--simulate` is a scheduler test, not evidence.
 
 ## The experiment system
 
@@ -178,8 +187,8 @@ uv run cml run experiments/p1-class-10m.toml --params 40_000_000 --steps 6000
 uv run cml run experiments/p1-check-8m.toml
 uv run cml curve P1 --steps 6000 --update
 uv run cml gates
-uv run cml run experiments/p0-adapter.toml --dry
-uv run cml run experiments/p0-adapter.toml   # after P0 is built
+uv run cml base --params 20_000_000 --steps 6000 --seq 256
+uv run cml run experiments/p0-adapter.toml
 ```
 
 `run-id = <manifest>-<sha8(config)>-s<seed>`; runs write to

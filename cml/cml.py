@@ -877,6 +877,14 @@ def preset(params: int) -> tuple[int, int, int]:
     return 512, 10, 8
 
 
+def byte_preset(params: int) -> tuple[int, int, int]:
+    if params <= 12_000_000:
+        return 320, 7, 8
+    if params <= 26_000_000:
+        return 448, 9, 8
+    return 576, 10, 8
+
+
 class Block(nn.Module):
     def __init__(self, d: int, heads: int):
         super().__init__()
@@ -911,13 +919,16 @@ class Trunk(nn.Module):
         nn.init.normal_(self.tok.weight, std=0.02)
         nn.init.normal_(self.pos.weight, std=0.02)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def hidden(self, x: torch.Tensor) -> torch.Tensor:
         if x.size(1) > self.pos.num_embeddings:
             raise ValueError("sequence is longer than the position table")
         h = self.tok(x) + self.pos.weight[: x.size(1)]
         for block in self.blocks:
             h = block(h)
-        return F.linear(self.ln(h), self.tok.weight)
+        return self.ln(h)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return F.linear(self.hidden(x), self.tok.weight)
 
 
 def lm_loss(model: Trunk, x: torch.Tensor) -> torch.Tensor:
@@ -1138,17 +1149,542 @@ def run_p1(cfg: Config, gates: list[str], out: Path) -> dict:
     return metrics
 
 
-PIPELINES: dict[str, Callable[[Config, list[str], Path], dict]] = {"p1": run_p1}
+# ---------------------------------------------------------------------------
+# P0: the adapter on a frozen byte base
+# ---------------------------------------------------------------------------
+
+CACHE = Path(os.environ.get("HNCM_CACHE", str(Path.home() / ".cache/hncm")))
+PACK_MAGIC = b"CMLP"
+CAP = 16
+
+
+def corpus_bytes(name: str) -> bytes:
+    raw = (CACHE / "enwik8").read_bytes()
+    n = {"enwik8_10m": 10_000_000, "enwik8_100m": 100_000_000}.get(name, 10_000_000)
+    return raw[:n]
+
+
+def train_loop(
+    model: Trunk, train_win: torch.Tensor, steps: int, batch: int, lr: float
+) -> float:
+    opt = torch.optim.AdamW(
+        model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.1
+    )
+    warmup = max(1, min(100, steps // 20))
+    span = max(1, steps - warmup)
+
+    def lr_at(step: int) -> float:
+        if step < warmup:
+            return (step + 1) / warmup
+        p = min(1.0, (step - warmup) / span)
+        return 0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * p))
+
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_at)
+    model.train()
+    started = time.time()
+    loss = torch.zeros(())
+    for step in range(steps):
+        idx = torch.randint(0, train_win.size(0), (batch,))
+        x = train_win[idx].cuda(non_blocking=True)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            loss = lm_loss(model, x)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        if step % 100 == 0 or step == steps - 1:
+            print(
+                f"  step {step:5d}/{steps} loss {float(loss.detach()):.4f} "
+                f"lr {sched.get_last_lr()[0]:.2e}",
+                flush=True,
+            )
+    torch.cuda.synchronize()
+    return time.time() - started
+
+
+def run_base(params: int, steps: int, seed: int, seq: int, corpus: str) -> int:
+    raw = corpus_bytes(corpus)
+    split = len(raw) * 9 // 10
+    ids = torch.frombuffer(bytearray(raw), dtype=torch.uint8).long()
+    train_win = windows(ids[:split], seq)
+    test_win = windows(ids[split:], seq)
+    lens = torch.ones_like(test_win[:, 1:])
+    d, layers, heads = byte_preset(params)
+    torch.manual_seed(seed)
+    model = Trunk(256, d, layers, heads, seq).cuda()
+    nparams = sum(p.numel() for p in model.parameters())
+    out = RUNS / f"base-byte-{params // 1_000_000}m-s{seed}"
+    print(
+        f"BASE {out.name}: bytes={len(raw)} params={nparams / 1e6:.1f}M "
+        f"d={d} layers={layers} seq={seq}",
+        flush=True,
+    )
+    secs = train_loop(model, train_win, steps, 32, 3e-4)
+    bits, nbytes = eval_bits(model, test_win, lens, 16)
+    payload = bits / nbytes
+    metrics = {
+        "id": out.name,
+        "payload": payload,
+        "params": nparams,
+        "steps": steps,
+        "seq": seq,
+        "d": d,
+        "layers": layers,
+        "heads": heads,
+        "secs": secs,
+        "test_bytes": int((len(raw) - split)),
+        "corpus_sha": hashlib.sha256(raw).hexdigest(),
+        "gates": {},
+    }
+    art = out / "artifacts"
+    art.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "params": nparams,
+            "d": d,
+            "layers": layers,
+            "heads": heads,
+            "seq": seq,
+        },
+        art / "model.pt",
+    )
+    write_json(out / "config.json", {"config": metrics, "git": git_sha()})
+    write_json(out / "metrics.json", metrics)
+    print(f"base bpb {payload:.3f} · {secs:.1f}s", flush=True)
+    return 0
+
+
+def base_path(cfg: Config) -> Path:
+    return RUNS / f"base-{cfg.base}-s{cfg.seed}" / "artifacts/model.pt"
+
+
+def substring_counts(
+    data: bytes, cap: int, min_count: int
+) -> tuple[dict[bytes, int], dict[bytes, int]]:
+    a = np.frombuffer(data, np.uint8).astype(np.uint64)
+    counts: dict[bytes, int] = {}
+    offsets: dict[bytes, int] = {}
+    for ell in range(2, cap + 1):
+        m = len(a) - ell + 1
+        if m <= 0:
+            break
+        h = np.zeros(m, dtype=np.uint64)
+        for j in range(ell):
+            h *= np.uint64(257)
+            h += a[j : j + m]
+        _, idx, cnt = np.unique(h, return_index=True, return_counts=True)
+        keep = cnt >= min_count
+        for i, c in zip(idx[keep].tolist(), cnt[keep].tolist()):
+            s = bytes(data[i : i + ell])
+            counts[s] = int(c)
+            offsets[s] = int(i)
+        print(
+            f"  span len={ell:2d} kept={int(keep.sum())} total={len(counts)}",
+            flush=True,
+        )
+    return counts, offsets
+
+
+def pack_bytes(pack: Pack) -> bytes:
+    out = bytearray(PACK_MAGIC + struct.pack("<II", 1, len(pack.entries)))
+    for entry in pack.entries:
+        offset = int(entry.provenance[0].rsplit(":", 1)[1])
+        out += struct.pack("<HIQ", len(entry.data), entry.count, offset)
+        out += entry.data
+    return bytes(out)
+
+
+def read_pack(path: Path) -> tuple[Entry, ...]:
+    data = path.read_bytes()
+    if data[:4] != PACK_MAGIC:
+        raise ValueError(f"pack: bad magic: {path}")
+    count = struct.unpack_from("<I", data, 8)[0]
+    pos = 12
+    entries = []
+    for _ in range(count):
+        n, c, offset = struct.unpack_from("<HIQ", data, pos)
+        pos += 14
+        entries.append(Entry(data[pos : pos + n], c, 0, (f"fit:{offset}",)))
+        pos += n
+    return tuple(entries)
+
+
+def induce_pack(cfg: Config, train: bytes, out: Path) -> tuple[Pack, int, int]:
+    counts, offsets = substring_counts(train, CAP, cfg.min_count)
+    total = max(sum(counts.values()), 1)
+    scored = []
+    for s, c in counts.items():
+        gain = c * (len(s) - 1) - (len(s) + 6)
+        if gain > 0:
+            scored.append((gain, c, s, offsets[s]))
+    scored.sort(key=lambda x: (-x[0], x[2]))
+    chosen = scored[: cfg.dict_size]
+    entries = tuple(Entry(s, c, 0, (f"fit:{o}",)) for _, c, s, o in chosen)
+    pack = Pack(entries, cfg)
+    data = pack_bytes(pack)
+    pack = Pack(entries, cfg, hashlib.sha256(data).hexdigest())
+    art = out / "artifacts"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "pack.bin").write_bytes(data)
+    print(
+        f"  pack {len(entries)} spans · {len(data) / 1e3:.1f} kB · "
+        f"{len(counts)} candidates",
+        flush=True,
+    )
+    return pack, len(data), total
+
+
+def make_trie(entries: tuple[Entry, ...]) -> dict:
+    root: dict = {}
+    for i, entry in enumerate(entries):
+        node = root
+        for b in entry.data:
+            node = node.setdefault(b, {})
+        node["#"] = i
+    return root
+
+
+def longest_match(trie: dict, data: bytes, t: int, cap: int = CAP) -> tuple[int, int]:
+    node = trie
+    hit = (0, -1)
+    for e in range(t, min(len(data), t + cap)):
+        node = node.get(data[e])
+        if node is None:
+            break
+        i = node.get("#")
+        if i is not None:
+            hit = (e - t + 1, i)
+    return hit
+
+
+@torch.no_grad()
+def span_embeddings(model: Trunk, entries: tuple[Entry, ...]) -> torch.Tensor:
+    d = model.tok.embedding_dim
+    out = torch.empty((len(entries), d))
+    batch = 512
+    for a in range(0, len(entries), batch):
+        chunk = entries[a : a + batch]
+        width = max(len(e.data) for e in chunk)
+        x = torch.zeros((len(chunk), width), dtype=torch.long, device="cuda")
+        lens = []
+        for i, entry in enumerate(chunk):
+            x[i, : len(entry.data)] = torch.frombuffer(
+                bytearray(entry.data), dtype=torch.uint8
+            )
+            lens.append(len(entry.data))
+        h = model.hidden(x)
+        rows = torch.arange(len(chunk), device="cuda")
+        z = h[rows, torch.tensor(lens, device="cuda") - 1]
+        out[a : a + len(chunk)] = F.normalize(z, dim=-1).cpu()
+    return out
+
+
+@torch.no_grad()
+def stream_nll(
+    model: Trunk, ids: torch.Tensor, batch: int = 16
+) -> tuple[torch.Tensor, torch.Tensor, int]:
+    seq = model.pos.num_embeddings
+    win = windows(ids, seq)
+    n = len(ids)
+    nll = torch.full((n,), float("nan"))
+    hs = torch.empty((n, model.tok.embedding_dim), dtype=torch.float16)
+    for a in range(0, win.size(0), batch):
+        x = win[a : a + batch].cuda()
+        h = model.hidden(x[:, :-1])
+        logits = F.linear(h, model.tok.weight)
+        ce = F.cross_entropy(
+            logits.reshape(-1, logits.size(-1)),
+            x[:, 1:].reshape(-1),
+            reduction="none",
+        ).view(x.size(0), -1)
+        rows = torch.arange(a, a + x.size(0))[:, None] * seq
+        at = (rows + torch.arange(1, seq + 1)[None]).reshape(-1)
+        nll[at] = ce.cpu().reshape(-1)
+        hs[at] = h.cpu().half().reshape(-1, h.size(-1))
+    return nll, hs, win.size(0) * seq + 1
+
+
+def match_score(
+    h: torch.Tensor, e: torch.Tensor, count: int, total: int, alpha: float
+) -> float:
+    hn = h.float()
+    hn = hn / (hn.norm() + 1e-9)
+    return float(hn @ e) + alpha * math.log(count / total)
+
+
+def entropy(p: float) -> float:
+    p = min(max(p, 1e-9), 1 - 1e-9)
+    return -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
+
+
+def fit_gate(
+    model: Trunk,
+    entries: tuple[Entry, ...],
+    trie: dict,
+    train: bytes,
+    total: int,
+    e_c: torch.Tensor,
+    nll: torch.Tensor,
+    hs: torch.Tensor,
+    n_eval: int,
+    samples: int = 250_000,
+) -> dict:
+    rng = np.random.default_rng(0)
+    picks = rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
+    feats, means = [], []
+    count = torch.tensor([e.count for e in entries])
+    for t in sorted(picks.tolist()):
+        length, idx = longest_match(trie, train, t)
+        if length < 2 or t + length > n_eval:
+            continue
+        logc = math.log(float(count[idx]) / total)
+        feats.append(
+            [
+                match_score(hs[t], e_c[idx], int(count[idx]), total, 0.5),
+                length / CAP,
+                logc,
+            ]
+        )
+        means.append(float(nll[t : t + length].mean()))
+    if not feats:
+        return {
+            "w": [0.0, 0.0, 0.0],
+            "b": 8.0,
+            "mu": [0.0] * 3,
+            "sd": [1.0] * 3,
+            "tau": 1e9,
+            "alpha": 0.5,
+        }
+    tau = float(np.percentile(means, 95))
+    y = torch.tensor([float(m <= tau) for m in means])
+    x = torch.tensor(feats, dtype=torch.float32)
+    mu = x.mean(0)
+    sd = x.std(0) + 1e-6
+    z = (x - mu) / sd
+    w = torch.zeros(3, requires_grad=True)
+    b = torch.zeros(1, requires_grad=True)
+    opt = torch.optim.Adam([w, b], lr=0.1)
+    for _ in range(300):
+        opt.zero_grad()
+        loss = F.binary_cross_entropy_with_logits(z @ w + b, y)
+        loss.backward()
+        opt.step()
+    return {
+        "w": w.detach().tolist(),
+        "b": float(b.detach()),
+        "mu": mu.tolist(),
+        "sd": sd.tolist(),
+        "tau": tau,
+        "alpha": 0.5,
+        "samples": len(feats),
+    }
+
+
+def adapter_eval(
+    model: Trunk,
+    entries: tuple[Entry, ...],
+    trie: dict,
+    total: int,
+    e_c: torch.Tensor,
+    gate: dict,
+    data: bytes,
+    nll: torch.Tensor,
+    hs: torch.Tensor,
+    n_eval: int,
+    pack_size: int,
+    stream_bytes: int,
+) -> dict:
+    count = torch.tensor([e.count for e in entries])
+    w = torch.tensor(gate["w"])
+    b = torch.tensor(float(gate["b"]))
+    mu = torch.tensor(gate["mu"])
+    sd = torch.tensor(gate["sd"])
+    tau = float(gate["tau"])
+    alpha = float(gate["alpha"])
+    bits = 0.0
+    copies = matches = fallbacks = verify_fail = 0
+    copy_bytes = 0
+    t = 1
+    while t < n_eval:
+        length, idx = longest_match(trie, data, t)
+        pi = 0.0
+        feat = None
+        if length >= 2 and t + length <= n_eval:
+            matches += 1
+            logc = math.log(float(count[idx]) / total)
+            feat = [
+                match_score(hs[t], e_c[idx], int(count[idx]), total, alpha),
+                length / CAP,
+                logc,
+            ]
+            pi = float(torch.sigmoid(((torch.tensor(feat) - mu) / sd) @ w + b))
+            passes = float(nll[t : t + length].mean()) <= tau
+            if pi >= 0.5 and passes:
+                bits += entropy(pi)
+                copies += 1
+                copy_bytes += length
+                t += length
+                continue
+            if pi >= 0.5 and not passes:
+                verify_fail += 1
+        bits += float(nll[t]) / math.log(2) + entropy(pi)
+        fallbacks += 1
+        t += 1
+    base_bits = float(nll[1:n_eval].sum()) / math.log(2)
+    base_bpb = base_bits / (n_eval - 1)
+    adapter_bpb = bits / (n_eval - 1)
+    charge = 8.0 * pack_size / stream_bytes
+    saved = base_bpb - adapter_bpb - charge
+    provenance = float(all(entry.provenance for entry in entries))
+    metrics = {
+        "base_bpb": base_bpb,
+        "adapter_bpb": adapter_bpb,
+        "rate_saved": base_bpb - adapter_bpb,
+        "charge": charge,
+        "saved": saved,
+        "accept": copies / matches if matches else 0.0,
+        "copies": copies,
+        "matches": matches,
+        "copy_bytes": copy_bytes,
+        "coverage": copy_bytes / max(n_eval - 1, 1),
+        "fallbacks": fallbacks,
+        "verify_fail": verify_fail,
+        "delta": 0.0,
+        "text_delta": 0.0,
+        "pack_mb": pack_size / 1e6,
+        "pack_bytes": pack_size,
+        "provenance": provenance,
+        "structured_x": None,
+        "n_eval": n_eval,
+        "gate": gate,
+    }
+    return metrics
+
+
+def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
+    path = base_path(cfg)
+    if not path.exists():
+        raise SystemExit(
+            f"P0: missing frozen base {path}; run "
+            f"`cml base --params {cfg.params}` first"
+        )
+    ckpt = torch.load(path, map_location="cuda", weights_only=False)
+    model = Trunk(256, ckpt["d"], ckpt["layers"], ckpt["heads"], ckpt["seq"]).cuda()
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    print(
+        f"P0 {out.name}: base={cfg.base} "
+        f"{ckpt['params'] / 1e6:.1f}M d={ckpt['d']} seq={ckpt['seq']}",
+        flush=True,
+    )
+    raw = corpus_bytes(cfg.corpus)
+    split = cfg.stream_bytes - cfg.val_bytes
+    ids = torch.frombuffer(bytearray(raw), dtype=torch.uint8).long()
+    train = raw[:split]
+    test = raw[split : split + cfg.val_bytes]
+    train_ids, test_ids = ids[:split], ids[split : split + cfg.val_bytes]
+    pack, pack_size, total = induce_pack(cfg, train, out)
+    trie = make_trie(pack.entries)
+    e_c = span_embeddings(model, pack.entries)
+    print(f"  encodings {len(pack.entries)} spans", flush=True)
+
+    fit_bytes = train[:1_000_000]
+    fit_ids = train_ids[:1_000_000]
+    train_nll, train_hs, train_n = stream_nll(model, fit_ids)
+    gate = fit_gate(
+        model,
+        pack.entries,
+        trie,
+        fit_bytes,
+        total,
+        e_c,
+        train_nll,
+        train_hs,
+        train_n,
+    )
+    del train_nll, train_hs
+    torch.cuda.empty_cache()
+    test_nll, test_hs, test_n = stream_nll(model, test_ids)
+    m = adapter_eval(
+        model,
+        pack.entries,
+        trie,
+        total,
+        e_c,
+        gate,
+        test,
+        test_nll,
+        test_hs,
+        test_n,
+        pack_size,
+        cfg.stream_bytes,
+    )
+    metrics = {
+        "id": out.name,
+        "arm": cfg.arm.value,
+        "seed": cfg.seed,
+        "params": ckpt["params"],
+        "base": cfg.base,
+        "steps": cfg.steps,
+        "vocab": 256,
+        "train_bytes": len(train),
+        "test_bytes": len(test),
+        "pack_bytes": pack_size,
+        "pack_sha": pack.sha,
+        "corpus_sha": hashlib.sha256(raw).hexdigest(),
+        "tokens_per_byte": 1.0,
+        **m,
+    }
+    metrics["payload"] = metrics["adapter_bpb"]
+    metrics["unigram"] = metrics["base_bpb"]
+    metrics["gates"] = gate_rows(gates, metrics)
+    checked = [
+        row["pass"] for row in metrics["gates"].values() if row["pass"] is not None
+    ]
+    metrics["skipped"] = [
+        name for name, row in metrics["gates"].items() if row["pass"] is None
+    ]
+    metrics["passed"] = bool(checked) and all(checked)
+    metrics["gate"] = gate
+    return metrics
+
+
+PIPELINES: dict[str, Callable[[Config, list[str], Path], dict]] = {
+    "p0": run_p0,
+    "p1": run_p1,
+}
 
 
 def print_metrics(metrics: dict) -> None:
-    print(
-        f"payload {metrics['payload']:.3f} bpb · "
-        f"unigram {metrics['unigram']:.3f} · "
-        f"bigram {metrics['bigram']:.3f} · "
-        f"saved {metrics['saved']:+.3f}",
-        flush=True,
-    )
+    if "bigram" in metrics:
+        print(
+            f"payload {metrics['payload']:.3f} bpb · "
+            f"unigram {metrics['unigram']:.3f} · "
+            f"bigram {metrics['bigram']:.3f} · "
+            f"saved {metrics['saved']:+.3f}",
+            flush=True,
+        )
+    else:
+        print(
+            f"base {metrics['base_bpb']:.3f} bpb · "
+            f"adapter {metrics['adapter_bpb']:.3f} · "
+            f"rate saved {metrics['rate_saved']:+.3f} · "
+            f"charge {metrics['charge']:.3f} · "
+            f"net saved {metrics['saved']:+.3f}",
+            flush=True,
+        )
+        print(
+            f"  pack {metrics['pack_bytes'] / 1e3:.1f} kB · "
+            f"accept {metrics['accept']:.1%} · "
+            f"copies/matches {metrics['copies']}/{metrics['matches']} · "
+            f"coverage {metrics['coverage']:.1%} · "
+            f"verify fail {metrics['verify_fail']}",
+            flush=True,
+        )
     for name, row in metrics["gates"].items():
         value = "—" if row["value"] is None else f"{row['value']:.3f}"
         mark = "·" if row["pass"] is None else ("✓" if row["pass"] else "✗")
@@ -1232,7 +1768,9 @@ def gates_report() -> int:
     rows = []
     for path in sorted(RUNS.glob("*/metrics.json")):
         m = json.loads(path.read_text())
-        if "payload" not in m or m.get("steps", 0) < 100:
+        if "payload" not in m or m["id"].startswith("base-") or "gates" not in m:
+            continue
+        if not m["id"].startswith("p0-") and m.get("steps", 0) < 100:
             continue
         rows.append(m)
     lines = [
@@ -1246,10 +1784,11 @@ def gates_report() -> int:
             f"{name}:{'—' if row['pass'] is None else ('✓' if row['pass'] else '✗')}"
             for name, row in m["gates"].items()
         )
+        bigram = f"{m['bigram']:.3f}" if "bigram" in m else "—"
         lines.append(
             f"| `{m['id']}` | {m['train_bytes'] / 1e6:.1f} | "
             f"{m['params'] / 1e6:.1f}M | {m['steps']} | "
-            f"{m['payload']:.3f} | {m.get('bigram', 0.0):.3f} | {gate_text} |"
+            f"{m['payload']:.3f} | {bigram} | {gate_text} |"
         )
     lines += [
         "",
@@ -1257,55 +1796,69 @@ def gates_report() -> int:
         "",
     ]
     if rows:
-        main = [m for m in rows if m["id"].startswith("p1-class")]
-        seed0 = [m for m in main if m.get("seed") == 0]
-        best = min(seed0 or main or rows, key=lambda m: float(m["payload"]))
-        same = [
-            m
-            for m in main
-            if m["params"] == best["params"] and m["steps"] == best["steps"]
-        ]
-        values = [float(m["payload"]) for m in same]
-        mean = sum(values) / len(values)
-        sd = (sum((v - mean) ** 2 for v in values) / max(len(values) - 1, 1)) ** 0.5
-        lines.append(
-            f"The seed-0 P1 payload is **{best['payload']:.3f} bpb** at "
-            f"{best['params'] / 1e6:.1f}M parameters and {best['steps']} steps "
-            f"(`{best['id']}`); seeds 0-{len(values) - 1} at that point are "
-            f"**{mean:.3f} ± {sd:.3f}**. The same-slice count bigram is "
-            f"{best.get('bigram', 0.0):.3f}; the v9 reference on the 10 MB block "
-            f"is 2.696 (2.729 is the 10 MB-prefix rate)."
-        )
-        lines.append("")
-        evidence = [m for m in rows if not m["id"].startswith("p1-class")]
+        p1 = [m for m in rows if m["id"].startswith("p1-class")]
+        p0 = [m for m in rows if m["id"].startswith("p0-")]
+        main = [m for m in p1 if m.get("seed") == 0]
+        if p1:
+            best = min(main or p1, key=lambda m: float(m["payload"]))
+            same = [
+                m
+                for m in p1
+                if m["params"] == best["params"] and m["steps"] == best["steps"]
+            ]
+            values = [float(m["payload"]) for m in same]
+            mean = sum(values) / len(values)
+            sd = (sum((v - mean) ** 2 for v in values) / max(len(values) - 1, 1)) ** 0.5
+            lines.append(
+                f"The seed-0 P1 payload is **{best['payload']:.3f} bpb** at "
+                f"{best['params'] / 1e6:.1f}M parameters and {best['steps']} steps "
+                f"(`{best['id']}`); seeds 0-{len(values) - 1} at that point are "
+                f"**{mean:.3f} ± {sd:.3f}**. The same-slice count bigram is "
+                f"{best.get('bigram', 0.0):.3f}; the v9 reference on the 10 MB block "
+                f"is 2.696 (2.729 is the 10 MB-prefix rate)."
+            )
+            lines.append("")
+        if p0:
+            b0 = min(p0, key=lambda m: float(m["saved"]))
+            lines.append(
+                f"P0: base {b0['base_bpb']:.3f} → adapter "
+                f"{b0['adapter_bpb']:.3f} bpb; rate saved "
+                f"{b0['rate_saved']:+.3f}, pack charge {b0['charge']:.3f}, "
+                f"net **{b0['saved']:+.3f}**; accept {b0['accept']:.1%}, "
+                f"coverage {b0.get('coverage', 0.0):.1%}, "
+                f"pack {b0['pack_bytes'] / 1e3:.1f} kB (`{b0['id']}`)."
+            )
+            lines.append("")
+        evidence = [m for m in rows if m["id"].startswith("p1-check")]
         if evidence:
             lines.append(
                 "The second split is the `p1-check-8m` row: train 8 MB and test "
                 "the 8-9 MB slice, so the win is not one easy slice."
             )
             lines.append("")
-        lines.append(
-            f"Provenance: lexicon {best.get('lexicon_bytes', 0) / 1e3:.1f} kB "
-            f"`{best.get('lexicon_sha', '')[:12]}`; corpus "
-            f"`{best.get('corpus_sha', '')[:12]}`."
-        )
-        lines.append("")
-        lines.append(
-            "The 10 MB parse is the 90-100 MB enwik8 val block; the lexicon is "
-            "the v9 shared pack. The first 9 MB is the train and the last 1 MB "
-            "is the test."
-        )
-        lines.append("")
-        lines.append(
-            "P1a ≤2.60, P1b ≤2.293 and P1c ≤2.29 at 60M are measured; P1d and "
-            "P1e need P0 and are pending."
-        )
-        lines.append("")
-        lines.append(
-            "The 40M point is 0.006 bpb above the 20.5M point; the curve is "
-            "flat, so the 10 MB pilot is data-bound and P1c passes by "
-            "saturation, not by a capacity slope."
-        )
+        if p1:
+            lines.append(
+                f"Provenance: lexicon {best.get('lexicon_bytes', 0) / 1e3:.1f} kB "
+                f"`{best.get('lexicon_sha', '')[:12]}`; corpus "
+                f"`{best.get('corpus_sha', '')[:12]}`."
+            )
+            lines.append("")
+            lines.append(
+                "The 10 MB parse is the 90-100 MB enwik8 val block; the lexicon is "
+                "the v9 shared pack. The first 9 MB is the train and the last 1 MB "
+                "is the test."
+            )
+            lines.append("")
+            lines.append(
+                "P1a ≤2.60, P1b ≤2.293 and P1c ≤2.29 at 60M are measured; P1d and "
+                "P1e need P0 and are pending."
+            )
+            lines.append("")
+            lines.append(
+                "The 40M point is 0.006 bpb above the 20.5M point; the curve is "
+                "flat, so the 10 MB pilot is data-bound and P1c passes by "
+                "saturation, not by a capacity slope."
+            )
     else:
         lines.append("No runs yet.")
     path = REPORTS / "GATES.md"
@@ -1382,6 +1935,12 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--params", type=int)
     r.add_argument("--steps", type=int)
     r.add_argument("--dry", action="store_true")
+    b = sub.add_parser("base")
+    b.add_argument("--params", type=int, default=20_000_000)
+    b.add_argument("--steps", type=int, default=6000)
+    b.add_argument("--seed", type=int, default=0)
+    b.add_argument("--seq", type=int, default=256)
+    b.add_argument("--corpus", default="enwik8_10m")
     sub.add_parser("space")
     s = sub.add_parser("search")
     s.add_argument("stage", choices=("P0", "P1", "P2", "P3", "P4", "P5"))
@@ -1400,6 +1959,8 @@ def main(argv: list[str] | None = None) -> int:
         return selftest()
     if a.cmd == "run":
         return run(a.manifest, a.seed, a.params, a.steps, a.dry)
+    if a.cmd == "base":
+        return run_base(a.params, a.steps, a.seed, a.seq, a.corpus)
     if a.cmd == "space":
         return space()
     if a.cmd == "gates":

@@ -72,3 +72,39 @@ def test_p1_parse_roundtrip() -> None:
     parse = cml.read_parse(path, lexicon)
     assert b"".join(parse.units) == parse.raw
     assert len(lexicon.strings) > 16_000
+
+
+def test_byte_pack_roundtrip(tmp_path: Path) -> None:
+    assert cml.byte_preset(20_000_000) == (448, 9, 8)
+    entries = (
+        cml.Entry(b"the ", 5, 0, ("fit:1",)),
+        cml.Entry(b"of", 3, 0, ("fit:2",)),
+    )
+    pack = cml.Pack(entries, cml.Config())
+    data = cml.pack_bytes(pack)
+    assert data[:4] == cml.PACK_MAGIC
+    (tmp_path / "p.bin").write_bytes(data)
+    got = cml.read_pack(tmp_path / "p.bin")
+    assert [e.data for e in got] == [b"the ", b"of"]
+    trie = cml.make_trie(entries)
+    assert cml.longest_match(trie, b"xthe y", 1) == (4, 0)
+
+
+def test_stream_nll_and_span_embeddings() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("stream_nll needs a GPU")
+    model = cml.Trunk(256, 16, 1, 2, 32).cuda()
+    ids = torch.randint(0, 256, (100,))
+    nll, hs, n_eval = cml.stream_nll(model, ids, batch=2)
+    assert n_eval == 97
+    assert torch.isnan(nll[0])
+    assert torch.isfinite(nll[1:n_eval]).all()
+    assert hs.shape == (100, 16)
+    entries = (
+        cml.Entry(b"the ", 5, 0, ("fit:1",)),
+        cml.Entry(b"of", 3, 0, ("fit:2",)),
+        cml.Entry(b"and", 4, 0, ("fit:3",)),
+    )
+    e_c = cml.span_embeddings(model, entries)
+    assert e_c.shape == (3, 16)
+    assert torch.allclose(e_c.norm(dim=-1), torch.ones(3), atol=1e-5)
