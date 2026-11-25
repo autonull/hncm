@@ -24,9 +24,16 @@ P0 freezes a 21.9M byte base trained 6000 steps on the same 9 MB (base bpb
 copies exact spans. The adapter reaches **0.997 bpb**; the rate saving is
 +0.830, the pack charge is 0.072, and the **net saving is +0.758**. Acceptance
 is 79.4%, coverage 80%, and provenance 100%. P0a, P0b, P0c, P0e, P0f and P0g
-pass. P0d (structured latency), the equal-charge kNN/LoRA/no-D baselines, and
-P1d/P1e are next. The record is `reports/GATES.md` and
-`runs/<id>/metrics.json`; the base is a prerequisite, not a gate row.
+pass. P0d passes at **2.22x** wall-clock on an 8 kB synthetic structured
+stream (4.544 → 1.013 bpb, 81.4% accepted, copies verified exact), measured on
+a batch-1 KV-cache decoder: one trunk step per byte for the byte arm, one per
+span for the adapter. The equal-charge baselines at 90.1 kB each are measured:
+no-D +0.000, counts-only **+0.758**, kNN +0.516 (37.8% accept), LoRA (rank 1,
+48.4 kB) +0.006 rate at 0.039 charge → net **−0.033**. Counts-only ties the
+tied-embedding gate on *seen* spans (0.996 vs 0.997), so B1's linchpin is the
+held-out-span test, not the seen-span rate. P1d and P1e are next. The record is
+`reports/GATES.md` and `runs/<id>/metrics.json`; the base is a prerequisite,
+not a gate row. §11 lists the remaining runs, their blockers and their cost.
 
 ## 0. Start here
 
@@ -529,10 +536,18 @@ bytes, v0 is an inference technique, not an architecture.
 9 MB train. The gate is 3 parameters fit on a 1 MB train sample; verification
 is the base's span NLL against the 95th percentile. On the 1 MB test: adapter
 **0.997 bpb**, rate saved +0.830, charge 0.072, net **+0.758**; acceptance
-79.4%, coverage 80%, provenance 100%. P0a/b/c/e/f/g pass. P0d and the
-equal-charge kNN/LoRA/no-D baselines are not built; P0 is a core pass, not a
-full close. The result is a lossless copy codec, not a generative quality
-test.
+79.4%, coverage 80%, provenance 100%. P0a/b/c/e/f/g pass. P0d passes at
+**2.22x** on 8191 B of `synseg` generic records with its own 1024-span pack:
+the byte arm steps once per byte for 40.8 s, the adapter once per verified span
+for 18.4 s (a repeat run gave 2.75x; the ratio is step-count bound, not token
+work); 4.544 → 1.013 bpb, 81.4% accepted, 113 verification rollbacks,
+and the emitted bytes are exact (lossless). The equal-charge rows at the same
+90.1 kB are measured by `mode`: no-D +0.000, counts-only +0.758, kNN +0.516,
+LoRA (rank 1, 24,192 params = 48.4 kB, 2000 steps) +0.006 rate at 0.039 charge
+→ net −0.033. Counts-only ties the tied-embedding gate on seen spans
+(0.996 vs 0.997): `|S|` (a fixed 4096-span pack) dominates, so the linchpin
+must be measured on a held-out 10% of `D`, not on the seen-span rate. The
+result at this stage is a lossless copy codec, not a generative quality test.
 
 ### P1 — the class on 10 MB (4-6 h)
 
@@ -727,3 +742,31 @@ CODEC.md}`; the PPMd-over-parse 1.992 and the 0.67/0.16 decomposition are
 TODO5's measured accounting; the 10 MB parse is
 `../runs/v9/fit-seed-16384-16384-10000000.pkl` (`toks`, 3.73M units); the
 100 MB scan is `../runs/v9/scan100.npz`; the seed is 0.
+
+## 11. Next: the runs, the blockers, the cost
+
+Status: P1a-c pass, P0a-g pass (P0d included), the equal-charge table is
+measured, and the adapter beats no-D, kNN and LoRA at the same charged bytes.
+The open items, cheapest first; each is a run, not a re-score.
+
+| # | run | pass bar | blocker | cost |
+|---|---|---|---|---|
+| 1 | held-out-span linchpin | tied > counts by 0.05 bpb on unseen spans | a fold split in `fit_gate` (fit on 9 folds, eval on the 10th) | 1 h, no training |
+| 2 | P1d shared-trunk adapter | accept per pack byte ≥ P0 × 1.2 | the mixed schedule: one 20.5M trunk, 50% fixed parse and 50% rotating lexicon (`run_p1` reads only the fixed parse) | 3 h GPU |
+| 3 | P1e zero-shot lexicon | bpb(foreign pack) − bpb(tuned) ≤ 0.1 | a second induced pack; `decode_arm` already takes any pack | 30 min GPU |
+| 4 | P0d on code/JSON | ≥1.5x, exact copies | `corpus_bytes` needs a `json`/`src` reader; `synseg` already proves the loop | 1 h |
+| 5 | P2 class, 100 MB | P2a-d | parse the 90 MB train once; the DP parse is the cost, not the 60M training | 1 GPU-day |
+
+Two design notes from the measurements:
+
+- The gate's embedding term earns nothing on seen spans. The counts-only tie
+  says the pack's identity does the work; the embedding can only pay on unseen
+  spans. Run #1 decides B1; if it fails, the pack is a copy codec and B1's
+  "LoRA you can read" claim is the pack alone.
+- The 10 MB pilot is data-bound (40M is 0.006 above 20.5M at 6000 steps). A
+  bigger trunk on 9 MB is a null result; P1d and P2 spend the next GPU-hours,
+  not the scale axis.
+
+Unblocked now: #1, #3, #4. #2 and #5 are the two GPU-bound items. The record
+is `reports/GATES.md`; the arms are `experiments/p0-{none,counts,knn,lora,
+structured}.toml`.

@@ -10,7 +10,7 @@ gate table. The plan holds the design; this page maps the ideas to files.
 
 | original idea | bet | experiment | where in `cml` | status |
 |---|---|---|---|---|
-| r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-g | P0 core measured; P0d + baselines next |
+| r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-g | P0a-g + P0d measured; no-D/counts/kNN/LoRA measured; held-out-span linchpin next |
 | r2 C2LM; hybrid output; copy bypass; charge in loss | B3 | P3 | `Arm.LEDGER`, `GATES` P3a-d | manifest; P3 |
 | r3 PhraseLM; lexicon-agnostic; three heads; safe mode | B1/B2 | P0, P1 | `Arm.ADAPTER`/`CONCEPT`, `GATES` | manifests; P0/P1 |
 | r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | P1 measured; P2 next |
@@ -22,7 +22,7 @@ The four bets, and where they live:
 
 | bet | experiments | plan | status |
 |---|---|---|---|
-| B1 the adapter | P0 | §4 B1 | P0 core measured; P0d + equal-charge baselines next |
+| B1 the adapter | P0 | §4 B1 | P0 measured; held-out-span linchpin next |
 | B2 the vocabulary | P1, P2 | §4 B2 | P1 measured (1.920 bpb); P2 next |
 | B3 the ledger | P3, P4 | §4 B3 | manifests |
 | B4 the library | P5 | §4 B4 | manifest |

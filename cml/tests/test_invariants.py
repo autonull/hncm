@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import pytest
@@ -108,3 +109,84 @@ def test_stream_nll_and_span_embeddings() -> None:
     e_c = cml.span_embeddings(model, entries)
     assert e_c.shape == (3, 16)
     assert torch.allclose(e_c.norm(dim=-1), torch.ones(3), atol=1e-5)
+
+
+def test_synseg_and_pack_key() -> None:
+    assert cml.synseg_bytes(400) == cml.synseg_bytes(400)
+    assert cml.synseg_bytes(400) != cml.synseg_bytes(400, seed=1)
+    assert b"BEGIN req=" in cml.synseg_bytes(200)
+    cfg = cml.Config()
+    assert cml.pack_key(cfg) == cml.pack_key(cml.Config())
+    assert cml.pack_key(cfg) != cml.pack_key(cml.Config(dict_size=8192))
+
+
+def test_gate_modes() -> None:
+    knn = {"kind": "knn", "theta": 0.5, "tau": 1.0, "alpha": 0.5}
+    assert cml.gate_prob(knn, [0.6]) == 1.0
+    assert cml.gate_prob(knn, [0.4]) == 0.0
+    logistic = {
+        "kind": "logistic",
+        "w": [1.0, 0.0, 0.0],
+        "b": 0.0,
+        "mu": [0.0, 0.0, 0.0],
+        "sd": [1.0, 1.0, 1.0],
+        "tau": 1.0,
+        "alpha": 0.5,
+    }
+    assert cml.gate_prob(logistic, [10.0, 0.0, 0.0]) > 0.9
+    assert 0.4 < cml.gate_prob(logistic, [0.0, 0.0, 0.0]) < 0.6
+
+
+def test_decode_byte_matches_stream() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("decode needs a GPU")
+    torch.manual_seed(0)
+    model = cml.Trunk(256, 32, 1, 2, 16).cuda()
+    data = cml.synseg_bytes(600)
+    ids = torch.frombuffer(bytearray(data), dtype=torch.uint8).long()
+    nll, _, n = cml.stream_nll(model, ids, batch=4)
+    gate = {
+        "kind": "logistic",
+        "w": [0.0, 0.0, 0.0],
+        "b": 0.0,
+        "mu": [0.0, 0.0, 0.0],
+        "sd": [1.0, 1.0, 1.0],
+        "tau": 1e9,
+        "alpha": 0.5,
+    }
+    out = cml.decode_arm(
+        model, (), {}, 1, torch.zeros((0, 32)), gate, data, n, mode="byte"
+    )
+    want = float(nll[1:n].sum()) / math.log(2) / (n - 1)
+    assert abs(out["bpb"] - want) < 1e-3
+    assert out["secs"] > 0.0
+
+
+def test_decode_copy_and_fallback() -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("decode needs a GPU")
+    torch.manual_seed(0)
+    model = cml.Trunk(256, 32, 1, 2, 32).cuda()
+    data = cml.synseg_bytes(4_000)
+    entries, total = cml.small_pack(data[:2_000], size=64, min_count=4)
+    trie = cml.make_trie(entries)
+    e_c = cml.span_embeddings(model, entries)
+    ids = torch.frombuffer(bytearray(data), dtype=torch.uint8).long()
+    _, _, n = cml.stream_nll(model, ids, batch=4)
+    gate = {
+        "kind": "logistic",
+        "w": [0.0, 0.0, 0.0],
+        "b": 8.0,
+        "mu": [0.0, 0.0, 0.0],
+        "sd": [1.0, 1.0, 1.0],
+        "tau": 1e9,
+        "alpha": 0.5,
+    }
+    out = cml.decode_arm(model, entries, trie, total, e_c, gate, data, n)
+    assert out["copies"] > 0 and out["copy_bytes"] > 0
+    assert out["coverage"] > 0.2
+    strict = cml.decode_arm(
+        model, entries, trie, total, e_c, dict(gate, tau=0.0), data, n
+    )
+    assert strict["copies"] == 0 and strict["verify_fail"] > 0
+    assert abs(strict["bpb"] - out["bpb"]) > 0.1

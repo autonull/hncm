@@ -1,0 +1,22 @@
+[run]
+name = "p0-structured"
+seed = 0
+gates = ["P0a", "P0b", "P0c", "P0d", "P0e", "P0f", "P0g"]
+
+[data]
+corpus = "enwik8_10m"
+val_bytes = 1_000_000
+structured = "synseg"
+lexicon = "../runs/v9/fit-seed-16384-16384-10000000.pkl"
+
+[model]
+arm = "adapter"
+base = "byte-20m"
+params = 20_000_000
+dict_size = 4096
+min_count = 32
+
+[optim]
+steps = 0
+batch = 32
+lr = 0.0

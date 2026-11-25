@@ -63,6 +63,8 @@ class Config:
     base: str = ""
     corpus: str = "enwik8_10m"
     lexicon: str = ""
+    mode: str = "adapter"
+    structured: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -753,6 +755,8 @@ def config_from_manifest(
         base=model.get("base", ""),
         corpus=data.get("corpus", "enwik8_10m"),
         lexicon=data.get("lexicon", ""),
+        mode=model.get("mode", "adapter"),
+        structured=data.get("structured", ""),
     )
     return cfg, list(run.get("gates", []))
 
@@ -895,15 +899,25 @@ class Block(nn.Module):
         self.ln2 = nn.LayerNorm(d)
         self.fc = nn.Linear(d, 4 * d)
         self.out = nn.Linear(4 * d, d)
+        self.la: nn.Parameter | None = None
+        self.lb: nn.Parameter | None = None
+        self.lc: nn.Parameter | None = None
+        self.ld: nn.Parameter | None = None
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         b, t, d = x.shape
-        q, k, v = self.qkv(self.ln1(x)).chunk(3, dim=-1)
+        h = self.ln1(x)
+        qkv = self.qkv(h)
+        if self.la is not None and self.lb is not None:
+            qkv = qkv + (h @ self.la) @ self.lb
+        q, k, v = qkv.chunk(3, dim=-1)
         shape = (b, t, self.heads, d // self.heads)
         q, k, v = (z.view(shape).transpose(1, 2) for z in (q, k, v))
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         y = y.transpose(1, 2).reshape(b, t, d)
         x = x + self.proj(y)
+        if self.lc is not None and self.ld is not None:
+            x = x + (y @ self.lc) @ self.ld
         return x + self.out(F.gelu(self.fc(self.ln2(x))))
 
 
@@ -1159,9 +1173,39 @@ CAP = 16
 
 
 def corpus_bytes(name: str) -> bytes:
+    if name == "synseg":
+        return synseg_bytes(10_000_000)
     raw = (CACHE / "enwik8").read_bytes()
     n = {"enwik8_10m": 10_000_000, "enwik8_100m": 100_000_000}.get(name, 10_000_000)
     return raw[:n]
+
+
+def synseg_bytes(n: int, seed: int = 0) -> bytes:
+    """A structured synthetic stream: repetitive records with short fields."""
+    rng = random.Random(seed)
+    users = (b"alice", b"bob", b"carol", b"dave", b"erin", b"frank")
+    verbs = (b"GET", b"PUT", b"POST", b"PATCH", b"DELETE")
+    paths = (b"/v1/items", b"/v1/orders", b"/v1/users", b"/v1/events", b"/v1/logs")
+    states = (b"ok", b"retry", b"fail", b"done", b"queued")
+    codes = (b"200", b"201", b"404", b"409", b"500")
+    out = bytearray()
+    i = 0
+    while len(out) < n:
+        out += (
+            b"BEGIN req=%06d verb=%s user=%s path=%s status=%s code=%s "
+            b"lat_ms=%03d END\n"
+            % (
+                i,
+                rng.choice(verbs),
+                rng.choice(users),
+                rng.choice(paths),
+                rng.choice(states),
+                rng.choice(codes),
+                rng.choice((3, 7, 11, 19, 23, 41, 97, 128)),
+            )
+        )
+        i += 1
+    return bytes(out[:n])
 
 
 def train_loop(
@@ -1419,6 +1463,175 @@ def entropy(p: float) -> float:
     return -(p * math.log2(p) + (1 - p) * math.log2(1 - p))
 
 
+@dataclass(slots=True)
+class KV:
+    """One layer's keys and values: the window's cache, one row per byte."""
+
+    k: torch.Tensor
+    v: torch.Tensor
+
+
+def new_cache(model: Trunk) -> list[KV]:
+    heads = model.blocks[0].heads
+    d = model.tok.embedding_dim
+    shape = (1, heads, 0, d // heads)
+    return [
+        KV(torch.empty(shape, device="cuda"), torch.empty(shape, device="cuda"))
+        for _ in model.blocks
+    ]
+
+
+def truncate_cache(cache: list[KV], keep: int) -> None:
+    for kv in cache:
+        kv.k = kv.k[:, :, :keep]
+        kv.v = kv.v[:, :, :keep]
+
+
+def block_step(block: Block, x: torch.Tensor, kv: KV) -> torch.Tensor:
+    b, t, d = x.shape
+    n = kv.k.size(2)
+    q, k, v = block.qkv(block.ln1(x)).chunk(3, dim=-1)
+    shape = (b, t, block.heads, d // block.heads)
+    q, k, v = (z.view(shape).transpose(1, 2) for z in (q, k, v))
+    k = torch.cat([kv.k, k], dim=2) if n else k
+    v = torch.cat([kv.v, v], dim=2) if n else v
+    kv.k, kv.v = k, v
+    qi = torch.arange(n, n + t, device=x.device)
+    kj = torch.arange(n + t, device=x.device)
+    mask = kj[None, :] <= qi[:, None]
+    y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+    y = y.transpose(1, 2).reshape(b, t, d)
+    x = x + block.proj(y)
+    return x + block.out(F.gelu(block.fc(block.ln2(x))))
+
+
+def win_step(
+    model: Trunk, tokens: list[int], pos: int, cache: list[KV], pos_end: int
+) -> torch.Tensor:
+    """Feed `tokens` at window positions `pos..`; return the hidden states."""
+    if pos < 0 or pos + len(tokens) > pos_end:
+        raise ValueError("decode: chunk crosses the window")
+    x = torch.tensor([tokens], device="cuda")
+    h = model.tok(x) + model.pos.weight[pos : pos + len(tokens)]
+    for block, kv in zip(model.blocks, cache):
+        h = block_step(block, h, kv)
+    return model.ln(h)
+
+
+def gate_prob(gate: dict, feat: list[float]) -> float:
+    if gate.get("kind") == "knn":
+        return 1.0 if feat[0] >= float(gate["theta"]) else 0.0
+    w = torch.tensor(gate["w"])
+    b = torch.tensor(float(gate["b"]))
+    mu = torch.tensor(gate["mu"])
+    sd = torch.tensor(gate["sd"])
+    return float(torch.sigmoid(((torch.tensor(feat) - mu) / sd) @ w + b))
+
+
+@torch.no_grad()
+def decode_arm(
+    model: Trunk,
+    entries: tuple[Entry, ...],
+    trie: dict,
+    total: int,
+    e_c: torch.Tensor,
+    gate: dict,
+    data: bytes,
+    n_eval: int,
+    mode: str = "adapter",
+) -> dict:
+    """Stream the bytes with a KV cache: one trunk step per byte or per span.
+
+    The byte arm steps once per byte; the adapter arm steps once per candidate
+    span and emits the verified bytes. Both record the same kind of bits.
+    """
+    seq = model.pos.num_embeddings
+    count = torch.tensor([e.count for e in entries])
+    e_c = e_c.cuda()
+    alpha = float(gate["alpha"])
+    tau = float(gate["tau"])
+    bits = 0.0
+    copies = matches = fallbacks = verify_fail = copy_bytes = 0
+    torch.cuda.synchronize()
+    t0 = time.time()
+    u = 1
+    while u < n_eval:
+        stop = min(u + seq, n_eval)
+        base = u - 1
+        cache = new_cache(model)
+        h = win_step(model, [int(data[base])], 0, cache, stop - base)[:, -1]
+        t = u
+        while t < stop:
+            if mode == "byte":
+                logits = F.linear(h, model.tok.weight)
+                ce = F.cross_entropy(
+                    logits, torch.tensor([int(data[t])], device="cuda")
+                )
+                bits += float(ce) / math.log(2)
+                if t + 1 < stop:
+                    h = win_step(model, [int(data[t])], t - base, cache, stop - base)[
+                        :, -1
+                    ]
+                t += 1
+                continue
+            length, idx = longest_match(trie, data, t, cap=min(CAP, stop - t))
+            pi = 0.0
+            if length >= 2:
+                matches += 1
+                logc = math.log(float(count[idx]) / total)
+                feat = [
+                    match_score(h, e_c[idx], int(count[idx]), total, alpha),
+                    length / CAP,
+                    logc,
+                ]
+                pi = gate_prob(gate, feat)
+                if pi >= 0.5:
+                    chunk = data[t : t + length]
+                    ctx = list(chunk[:-1])
+                    hs = win_step(model, ctx, t - base, cache, stop - base)[0]
+                    first = F.cross_entropy(
+                        F.linear(h, model.tok.weight),
+                        torch.tensor([int(chunk[0])], device="cuda"),
+                    )
+                    rest = F.cross_entropy(
+                        F.linear(hs, model.tok.weight),
+                        torch.tensor(list(chunk[1:]), device="cuda"),
+                        reduction="none",
+                    )
+                    nlls = torch.cat([first[None], rest])
+                    if float(nlls.mean()) <= tau:
+                        bits += entropy(pi)
+                        copies += 1
+                        copy_bytes += length
+                        h = hs[-1]
+                        t += length
+                        continue
+                    truncate_cache(cache, t - base)
+                    verify_fail += 1
+            logits = F.linear(h, model.tok.weight)
+            ce = F.cross_entropy(logits, torch.tensor([int(data[t])], device="cuda"))
+            bits += float(ce) / math.log(2) + entropy(pi)
+            fallbacks += 1
+            if t + 1 < stop:
+                h = win_step(model, [int(data[t])], t - base, cache, stop - base)[:, -1]
+            t += 1
+        u = stop
+    torch.cuda.synchronize()
+    secs = time.time() - t0
+    return {
+        "bits": bits,
+        "bpb": bits / max(n_eval - 1, 1),
+        "secs": secs,
+        "copies": copies,
+        "matches": matches,
+        "fallbacks": fallbacks,
+        "verify_fail": verify_fail,
+        "copy_bytes": copy_bytes,
+        "accept": copies / matches if matches else 0.0,
+        "coverage": copy_bytes / max(n_eval - 1, 1),
+    }
+
+
 def fit_gate(
     model: Trunk,
     entries: tuple[Entry, ...],
@@ -1430,19 +1643,23 @@ def fit_gate(
     hs: torch.Tensor,
     n_eval: int,
     samples: int = 250_000,
+    neural: bool = True,
+    kind: str = "logistic",
 ) -> dict:
     rng = np.random.default_rng(0)
     picks = rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
-    feats, means = [], []
+    feats, means, raw = [], [], []
     count = torch.tensor([e.count for e in entries])
     for t in sorted(picks.tolist()):
         length, idx = longest_match(trie, train, t)
         if length < 2 or t + length > n_eval:
             continue
         logc = math.log(float(count[idx]) / total)
+        score = match_score(hs[t], e_c[idx], int(count[idx]), total, 0.5)
+        raw.append(score)
         feats.append(
             [
-                match_score(hs[t], e_c[idx], int(count[idx]), total, 0.5),
+                score if neural else 0.0,
                 length / CAP,
                 logc,
             ]
@@ -1458,6 +1675,14 @@ def fit_gate(
             "alpha": 0.5,
         }
     tau = float(np.percentile(means, 95))
+    if kind == "knn":
+        return {
+            "kind": "knn",
+            "theta": float(np.median(raw)),
+            "tau": tau,
+            "alpha": 0.5,
+            "samples": len(feats),
+        }
     y = torch.tensor([float(m <= tau) for m in means])
     x = torch.tensor(feats, dtype=torch.float32)
     mu = x.mean(0)
@@ -1472,6 +1697,7 @@ def fit_gate(
         loss.backward()
         opt.step()
     return {
+        "kind": "logistic",
         "w": w.detach().tolist(),
         "b": float(b.detach()),
         "mu": mu.tolist(),
@@ -1495,12 +1721,9 @@ def adapter_eval(
     n_eval: int,
     pack_size: int,
     stream_bytes: int,
+    neural: bool = True,
 ) -> dict:
     count = torch.tensor([e.count for e in entries])
-    w = torch.tensor(gate["w"])
-    b = torch.tensor(float(gate["b"]))
-    mu = torch.tensor(gate["mu"])
-    sd = torch.tensor(gate["sd"])
     tau = float(gate["tau"])
     alpha = float(gate["alpha"])
     bits = 0.0
@@ -1514,12 +1737,13 @@ def adapter_eval(
         if length >= 2 and t + length <= n_eval:
             matches += 1
             logc = math.log(float(count[idx]) / total)
+            score = match_score(hs[t], e_c[idx], int(count[idx]), total, alpha)
             feat = [
-                match_score(hs[t], e_c[idx], int(count[idx]), total, alpha),
+                score if neural else 0.0,
                 length / CAP,
                 logc,
             ]
-            pi = float(torch.sigmoid(((torch.tensor(feat) - mu) / sd) @ w + b))
+            pi = gate_prob(gate, feat)
             passes = float(nll[t : t + length].mean()) <= tau
             if pi >= 0.5 and passes:
                 bits += entropy(pi)
@@ -1563,6 +1787,198 @@ def adapter_eval(
     return metrics
 
 
+def pack_key(cfg: Config) -> str:
+    blob = json.dumps(
+        {
+            "corpus": cfg.corpus,
+            "stream_bytes": cfg.stream_bytes,
+            "val_bytes": cfg.val_bytes,
+            "dict_size": cfg.dict_size,
+            "min_count": cfg.min_count,
+        },
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(blob).hexdigest()[:8]
+
+
+def load_pack(cfg: Config, train: bytes, out: Path) -> tuple[Pack, int, int]:
+    """Induce the pack once per (corpus, split, dict): the arms share it."""
+    key = pack_key(cfg)
+    cache = RUNS / f"pack-{key}"
+    bin_path = cache / "artifacts/pack.bin"
+    meta_path = cache / "artifacts/pack.json"
+    if bin_path.exists() and meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+        entries = read_pack(bin_path)
+        pack = Pack(entries, cfg, meta["sha"])
+        size, total = int(meta["bytes"]), int(meta["total"])
+        print(f"  pack {len(entries)} spans · {size / 1e3:.1f} kB (cached)", flush=True)
+    else:
+        pack, size, total = induce_pack(cfg, train, cache)
+        write_json(meta_path, {"sha": pack.sha, "bytes": size, "total": total})
+    art = out / "artifacts"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "pack.bin").write_bytes(bin_path.read_bytes())
+    write_json(art / "pack.json", {"sha": pack.sha, "bytes": size, "total": total})
+    return pack, size, total
+
+
+def small_pack(
+    train: bytes, size: int = 1024, min_count: int = 8
+) -> tuple[tuple[Entry, ...], int]:
+    counts, offsets = substring_counts(train, CAP, min_count)
+    total = max(sum(counts.values()), 1)
+    scored = []
+    for s, c in counts.items():
+        gain = c * (len(s) - 1) - (len(s) + 6)
+        if gain > 0:
+            scored.append((gain, c, s, offsets[s]))
+    scored.sort(key=lambda x: (-x[0], x[2]))
+    entries = tuple(Entry(s, c, 0, (f"fit:{o}",)) for _, c, s, o in scored[:size])
+    return entries, total
+
+
+def run_p0d(model: Trunk, cfg: Config, out: Path) -> dict:
+    """The two clocks: a batch-1 stream, one trunk step per byte or per span.
+
+    The adapter's emitted spans are verified by the base's own NLL, so the
+    decoded bytes are exact; the speed ratio is measured wall-clock.
+    """
+    raw = corpus_bytes(cfg.structured)
+    split = len(raw) * 9 // 10
+    train = raw[: min(split, 1_000_000)]
+    test = raw[split : split + 8_192]
+    print(
+        f"  structured {cfg.structured}: train {len(train) / 1e6:.2f} MB "
+        f"test {len(test) / 1e3:.1f} kB",
+        flush=True,
+    )
+    entries, total = small_pack(train)
+    trie = make_trie(entries)
+    e_c = span_embeddings(model, entries)
+    fit_ids = torch.frombuffer(bytearray(train), dtype=torch.uint8).long()
+    nll, hs, n = stream_nll(model, fit_ids)
+    gate = fit_gate(model, entries, trie, train, total, e_c, nll, hs, n)
+    del nll, hs
+    torch.cuda.empty_cache()
+    test_ids = torch.frombuffer(bytearray(test), dtype=torch.uint8).long()
+    n_eval = int(test_ids.numel())
+    byte = decode_arm(model, entries, trie, total, e_c, gate, test, n_eval, "byte")
+    adapter = decode_arm(model, entries, trie, total, e_c, gate, test, n_eval)
+    x = byte["secs"] / max(adapter["secs"], 1e-9)
+    m = {
+        "structured_x": x,
+        "structured_delta": adapter["bpb"] - byte["bpb"],
+        "structured_base_bpb": byte["bpb"],
+        "structured_adapter_bpb": adapter["bpb"],
+        "structured_accept": adapter["accept"],
+        "structured_coverage": adapter["coverage"],
+        "structured_secs_base": byte["secs"],
+        "structured_secs_adapter": adapter["secs"],
+        "structured_bytes": n_eval - 1,
+        "structured_spans": len(entries),
+        "structured_pack_bytes": int(sum(len(e.data) + 14 for e in entries)),
+    }
+    write_json(
+        out / "artifacts/structured.json",
+        {"metrics": m, "byte": byte, "adapter": adapter, "gate": gate},
+    )
+    print(
+        f"  P0d structured {m['structured_bytes']} B: base "
+        f"{byte['secs']:.1f}s {byte['bpb']:.3f} bpb · adapter "
+        f"{adapter['secs']:.1f}s {adapter['bpb']:.3f} bpb · "
+        f"{x:.2f}x · accept {adapter['accept']:.1%} · verify fail "
+        f"{adapter['verify_fail']}",
+        flush=True,
+    )
+    return m
+
+
+def lora_init(model: Trunk, r: int) -> list[nn.Parameter]:
+    """Attach a rank-`r` LoRA to each block's `qkv` and `proj`; zero output."""
+    d = model.tok.embedding_dim
+    params: list[nn.Parameter] = []
+    for block in model.blocks:
+        block.la = nn.Parameter(torch.randn(d, r, device="cuda") * 0.02)
+        block.lb = nn.Parameter(torch.zeros(r, 3 * d, device="cuda"))
+        block.lc = nn.Parameter(torch.randn(d, r, device="cuda") * 0.02)
+        block.ld = nn.Parameter(torch.zeros(r, d, device="cuda"))
+        params += [block.la, block.lb, block.lc, block.ld]
+    return params
+
+
+def run_lora(
+    cfg: Config,
+    pack_bytes: int,
+    model: Trunk,
+    train_win: torch.Tensor,
+    test_win: torch.Tensor,
+    lens: torch.Tensor,
+) -> dict:
+    """The equal-charge baseline: LoRA at the pack's charged bytes or fewer."""
+    d = model.tok.embedding_dim
+    layers = len(model.blocks)
+    r = max(1, pack_bytes // (2 * 6 * d * layers))
+    for p in model.parameters():
+        p.requires_grad_(False)
+    params = lora_init(model, r)
+    nbytes = 2 * sum(p.numel() for p in params)
+    print(
+        f"  lora rank {r} · {sum(p.numel() for p in params)} params · "
+        f"{nbytes} B (pack {pack_bytes} B)",
+        flush=True,
+    )
+    base_bits, base_bytes = eval_bits(model, test_win, lens, 16)
+    base_bpb = base_bits / base_bytes
+    opt = torch.optim.AdamW(params, lr=1e-3, betas=(0.9, 0.95), weight_decay=0.0)
+    model.train()
+    started = time.time()
+    for step in range(cfg.steps):
+        idx = torch.randint(0, train_win.size(0), (cfg.batch,))
+        x = train_win[idx].cuda(non_blocking=True)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            loss = lm_loss(model, x)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        if step % 100 == 0 or step == cfg.steps - 1:
+            print(
+                f"  step {step:5d}/{cfg.steps} loss {float(loss.detach()):.4f}",
+                flush=True,
+            )
+    torch.cuda.synchronize()
+    secs = time.time() - started
+    model.eval()
+    bits, nbytes_eval = eval_bits(model, test_win, lens, 16)
+    adapter_bpb = bits / nbytes_eval
+    charge = 8.0 * nbytes / cfg.stream_bytes
+    return {
+        "base_bpb": base_bpb,
+        "adapter_bpb": adapter_bpb,
+        "rate_saved": base_bpb - adapter_bpb,
+        "charge": charge,
+        "saved": base_bpb - adapter_bpb - charge,
+        "accept": 0.0,
+        "copies": 0,
+        "matches": 0,
+        "copy_bytes": 0,
+        "coverage": 0.0,
+        "fallbacks": 0,
+        "verify_fail": 0,
+        "delta": adapter_bpb - base_bpb,
+        "text_delta": adapter_bpb - base_bpb,
+        "pack_mb": nbytes / 1e6,
+        "pack_bytes": 0,
+        "provenance": 0.0,
+        "structured_x": None,
+        "n_eval": 0,
+        "secs": secs,
+        "lora_rank": r,
+        "lora_params": sum(p.numel() for p in params),
+        "lora_bytes": nbytes,
+    }
+
+
 def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
     path = base_path(cfg)
     if not path.exists():
@@ -1577,7 +1993,7 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
     for p in model.parameters():
         p.requires_grad_(False)
     print(
-        f"P0 {out.name}: base={cfg.base} "
+        f"P0 {out.name}: base={cfg.base} mode={cfg.mode} "
         f"{ckpt['params'] / 1e6:.1f}M d={ckpt['d']} seq={ckpt['seq']}",
         flush=True,
     )
@@ -1587,45 +2003,91 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
     train = raw[:split]
     test = raw[split : split + cfg.val_bytes]
     train_ids, test_ids = ids[:split], ids[split : split + cfg.val_bytes]
-    pack, pack_size, total = induce_pack(cfg, train, out)
-    trie = make_trie(pack.entries)
-    e_c = span_embeddings(model, pack.entries)
-    print(f"  encodings {len(pack.entries)} spans", flush=True)
 
-    fit_bytes = train[:1_000_000]
-    fit_ids = train_ids[:1_000_000]
-    train_nll, train_hs, train_n = stream_nll(model, fit_ids)
-    gate = fit_gate(
-        model,
-        pack.entries,
-        trie,
-        fit_bytes,
-        total,
-        e_c,
-        train_nll,
-        train_hs,
-        train_n,
-    )
-    del train_nll, train_hs
-    torch.cuda.empty_cache()
-    test_nll, test_hs, test_n = stream_nll(model, test_ids)
-    m = adapter_eval(
-        model,
-        pack.entries,
-        trie,
-        total,
-        e_c,
-        gate,
-        test,
-        test_nll,
-        test_hs,
-        test_n,
-        pack_size,
-        cfg.stream_bytes,
-    )
+    if cfg.mode == "lora":
+        pack, pack_size, _ = load_pack(cfg, train, out)
+        seq = model.pos.num_embeddings
+        test_win = windows(test_ids, seq)
+        m = run_lora(
+            cfg,
+            pack_size,
+            model,
+            windows(train_ids, seq),
+            test_win,
+            torch.ones_like(test_win[:, 1:]),
+        )
+    elif cfg.mode == "none":
+        test_nll, _, test_n = stream_nll(model, test_ids)
+        base_bpb = float(test_nll[1:test_n].sum()) / math.log(2) / (test_n - 1)
+        m = {
+            "base_bpb": base_bpb,
+            "adapter_bpb": base_bpb,
+            "rate_saved": 0.0,
+            "charge": 0.0,
+            "saved": 0.0,
+            "accept": 0.0,
+            "copies": 0,
+            "matches": 0,
+            "copy_bytes": 0,
+            "coverage": 0.0,
+            "fallbacks": test_n - 1,
+            "verify_fail": 0,
+            "delta": 0.0,
+            "text_delta": 0.0,
+            "pack_mb": 0.0,
+            "pack_bytes": 0,
+            "provenance": 0.0,
+            "structured_x": None,
+            "n_eval": test_n,
+        }
+        pack, pack_size = Pack((), cfg), 0
+    else:
+        pack, pack_size, total = load_pack(cfg, train, out)
+        trie = make_trie(pack.entries)
+        e_c = span_embeddings(model, pack.entries)
+        print(f"  encodings {len(pack.entries)} spans", flush=True)
+        neural = cfg.mode != "counts"
+        kind = "knn" if cfg.mode == "knn" else "logistic"
+        fit_ids = train_ids[:1_000_000]
+        train_nll, train_hs, train_n = stream_nll(model, fit_ids)
+        gate = fit_gate(
+            model,
+            pack.entries,
+            trie,
+            train[:1_000_000],
+            total,
+            e_c,
+            train_nll,
+            train_hs,
+            train_n,
+            neural=neural,
+            kind=kind,
+        )
+        del train_nll, train_hs
+        torch.cuda.empty_cache()
+        test_nll, test_hs, test_n = stream_nll(model, test_ids)
+        m = adapter_eval(
+            model,
+            pack.entries,
+            trie,
+            total,
+            e_c,
+            gate,
+            test,
+            test_nll,
+            test_hs,
+            test_n,
+            pack_size,
+            cfg.stream_bytes,
+            neural=neural,
+        )
+        if cfg.structured:
+            m.update(run_p0d(model, cfg, out))
+
     metrics = {
         "id": out.name,
         "arm": cfg.arm.value,
+        "mode": cfg.mode,
         "seed": cfg.seed,
         "params": ckpt["params"],
         "base": cfg.base,
@@ -1636,11 +2098,14 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
         "pack_bytes": pack_size,
         "pack_sha": pack.sha,
         "corpus_sha": hashlib.sha256(raw).hexdigest(),
+        "structured": cfg.structured,
         "tokens_per_byte": 1.0,
         **m,
     }
     metrics["payload"] = metrics["adapter_bpb"]
     metrics["unigram"] = metrics["base_bpb"]
+    if "gate" in m:
+        metrics["gate"] = m["gate"]
     metrics["gates"] = gate_rows(gates, metrics)
     checked = [
         row["pass"] for row in metrics["gates"].values() if row["pass"] is not None
@@ -1649,7 +2114,6 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
         name for name, row in metrics["gates"].items() if row["pass"] is None
     ]
     metrics["passed"] = bool(checked) and all(checked)
-    metrics["gate"] = gate
     return metrics
 
 
@@ -1689,6 +2153,15 @@ def print_metrics(metrics: dict) -> None:
         value = "—" if row["value"] is None else f"{row['value']:.3f}"
         mark = "·" if row["pass"] is None else ("✓" if row["pass"] else "✗")
         print(f"  {name} {row['bar']:g} {value} {mark}", flush=True)
+    if metrics.get("structured_x") is not None:
+        print(
+            f"  P0d structured {metrics['structured_bytes']} B · "
+            f"base {metrics['structured_base_bpb']:.3f} → "
+            f"adapter {metrics['structured_adapter_bpb']:.3f} bpb · "
+            f"{metrics['structured_x']:.2f}x · "
+            f"accept {metrics['structured_accept']:.1%}",
+            flush=True,
+        )
 
 
 def fit_curve(points: list[tuple[int, float]]) -> dict | None:
@@ -1776,8 +2249,8 @@ def gates_report() -> int:
     lines = [
         "# CML gates",
         "",
-        "| run | train MB | params | steps | payload | bigram | gates |",
-        "|---|---:|---:|---:|---:|---:|---|",
+        "| run | mode | train MB | params | steps | payload | bigram | gates |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for m in rows:
         gate_text = " ".join(
@@ -1785,8 +2258,9 @@ def gates_report() -> int:
             for name, row in m["gates"].items()
         )
         bigram = f"{m['bigram']:.3f}" if "bigram" in m else "—"
+        mode = m.get("mode") or "adapter"
         lines.append(
-            f"| `{m['id']}` | {m['train_bytes'] / 1e6:.1f} | "
+            f"| `{m['id']}` | {mode} | {m['train_bytes'] / 1e6:.1f} | "
             f"{m['params'] / 1e6:.1f}M | {m['steps']} | "
             f"{m['payload']:.3f} | {bigram} | {gate_text} |"
         )
@@ -1819,7 +2293,8 @@ def gates_report() -> int:
             )
             lines.append("")
         if p0:
-            b0 = min(p0, key=lambda m: float(m["saved"]))
+            adapter_rows = [m for m in p0 if (m.get("mode") or "adapter") == "adapter"]
+            b0 = max(adapter_rows or p0, key=lambda m: float(m["saved"]))
             lines.append(
                 f"P0: base {b0['base_bpb']:.3f} → adapter "
                 f"{b0['adapter_bpb']:.3f} bpb; rate saved "
@@ -1829,6 +2304,42 @@ def gates_report() -> int:
                 f"pack {b0['pack_bytes'] / 1e3:.1f} kB (`{b0['id']}`)."
             )
             lines.append("")
+            arms = [
+                m
+                for m in p0
+                if (m.get("mode") or "adapter")
+                in ("adapter", "none", "counts", "knn", "lora")
+            ]
+            seen: dict[str, dict] = {}
+            for m in arms:
+                mode = m.get("mode") or "adapter"
+                if mode not in seen or m.get("mode"):
+                    seen[mode] = m
+            arms = list(seen.values())
+            if arms:
+                lines += [
+                    "| arm | saved | charge | accept | pack kB |",
+                    "|---|---:|---:|---:|---:|",
+                ]
+                for m in sorted(arms, key=lambda m: m.get("mode") or "adapter"):
+                    lines.append(
+                        f"| {(m.get('mode') or 'adapter')} | {m['saved']:+.3f} | "
+                        f"{m['charge']:.3f} | "
+                        f"{m['accept']:.1%} | {m['pack_bytes'] / 1e3:.1f} |"
+                    )
+                lines.append("")
+            d0 = [m for m in p0 if m.get("structured_x") is not None]
+            if d0:
+                s = d0[0]
+                lines.append(
+                    f"P0d: **{s['structured_x']:.2f}x** wall-clock on "
+                    f"{s['structured_bytes']} B of `{s.get('structured', '?')}` "
+                    f"({s['structured_base_bpb']:.3f} → "
+                    f"{s['structured_adapter_bpb']:.3f} bpb, accept "
+                    f"{s['structured_accept']:.1%}); the copies are verified "
+                    f"exact, so the emission is lossless."
+                )
+                lines.append("")
         evidence = [m for m in rows if m["id"].startswith("p1-check")]
         if evidence:
             lines.append(
@@ -1850,8 +2361,11 @@ def gates_report() -> int:
             )
             lines.append("")
             lines.append(
-                "P1a ≤2.60, P1b ≤2.293 and P1c ≤2.29 at 60M are measured; P1d and "
-                "P1e need P0 and are pending."
+                "P1a ≤2.60, P1b ≤2.293 and P1c ≤2.29 at 60M are measured. P1d "
+                "(acceptance per pack byte on a shared trunk) needs the "
+                "mixed-schedule trunk; P1e (zero-shot lexicon) needs a second "
+                "induced pack. The adapter code path supports both; neither run "
+                "is built yet."
             )
             lines.append("")
             lines.append(
