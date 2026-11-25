@@ -13,7 +13,7 @@ arm = "concept"
 params = 10_000_000
 
 [optim]
-steps = 2000
+steps = 6000
 batch = 32
 lr = 3e-4
 mix = 0.5

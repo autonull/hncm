@@ -8,6 +8,19 @@ changes two things: **the order of the evidence** (the 4-hour adapter and the
 one typed pipeline, manifests, a run store). The minimal verdict is 2 days, not
 5.
 
+**Status (2026-11-25).** P1 is built and measured before P0. The cached 10 MB
+parse makes P1 hours, and its trunk is the frozen base P0 re-runs on (§7 lever
+1). The 20.5M unit trunk reaches **1.920 bpb** at seed 0 (1.912 ± 0.008
+over seeds 0-2) on the held-out 1 MB slice (9 MB train), and the 40M decision
+point reaches 1.926; the 60M curve fit is 1.919. P1a (≤2.60), P1b (≤2.293) and
+P1c (≤2.29 at 60M) pass. The same-slice count bigram is 2.667; the neural
+trunk is 0.75 bpb lower. The v9 reference on the 10 MB block is 2.696 (the
+2.729 is the 10 MB-prefix rate); PPMd over the parse is 1.978. P0, P1d and
+P1e are next; the P1 record is
+`reports/GATES.md` and `runs/<id>/metrics.json`. The 40M point is 0.006 above
+the 20.5M point, so the 10 MB pilot is data-bound; P1c passes by saturation,
+not by a capacity slope.
+
 ## 0. Start here
 
 ```bash
@@ -21,6 +34,8 @@ uv run cml report
 uv run cml run experiments/p0-adapter.toml
 uv run cml run experiments/p1-class-10m.toml
 uv run cml run experiments/p1-class-10m.toml --params 40_000_000
+uv run cml curve P1 --steps 6000 --update
+uv run cml gates
 uv run cml run experiments/p2-class-100m.toml   # only if p1 crosses
 uv run cml run experiments/p3-gate.toml
 uv run cml run experiments/p4-ops.toml
@@ -515,6 +530,18 @@ PPMd-over-parse); P1c the 40M curve extrapolates ≤2.29 at 60M; P1d
 acceptance-per-pack-byte ≥20% over P0; P1e zero-shot new-lexicon within
 0.1 bpb of tuned (else residual-only tuning). **Stop:** >2.80 or a flat
 curve → the class is not fixed at 10 MB; record the negative.
+
+**Measured (fixed-only, 2026-11-25).** Train the first 9 MB of the 10 MB
+parse, test the last 1 MB; the parse is the 90-100 MB enwik8 val block and
+the lexicon is the v9 shared pack. The bits-per-byte payloads at 6000 steps are
+8.9M: 1.962, 20.5M: 1.920 (1.912 ± 0.008 over seeds 0-2), 39.9M: 1.926;
+the fitted 60M point is 1.919.
+The same-slice count bigram is 2.667, so the neural margin is 0.75 bpb.
+The 40M decision point passes P1a (2.60), P1b (2.293) and P1c (2.29 at
+60M). A second split (train 8 MB, test the 8-9 MB slice) gives 1.992, so
+the win is not one lucky slice. The mixed schedule is not built yet: this
+is the fixed-only control, and it does not yet test the one-trunk P1/P0
+claim. P1d and P1e need P0. The record is `reports/GATES.md`.
 
 ### P2 — the class on 100 MB (1 GPU-day)
 

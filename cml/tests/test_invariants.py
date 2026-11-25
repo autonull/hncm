@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+import torch
+
 import cml
 
 
@@ -38,3 +41,34 @@ def test_search_and_render() -> None:
     text = cml.render_state(d)
     assert "CML SEARCH" in text
     assert "leaderboard" in text
+
+
+def test_windows_and_split() -> None:
+    ids = torch.arange(20)
+    win = cml.windows(ids, 4)
+    assert win.shape == (4, 5)
+    assert win[0, 0] == 0 and win[0, 1] == 1
+    assert win[3, -1] == 16
+    assert cml.split_index(torch.ones(10, dtype=torch.long), 5) == 5
+    assert cml.split_index(torch.ones(10, dtype=torch.long), 100) == 10
+
+
+def test_trunk_and_curve() -> None:
+    model = cml.Trunk(64, 16, 1, 2, 8)
+    x = torch.randint(0, 64, (2, 9))
+    logits = model(x[:, :-1])
+    assert logits.shape == (2, 8, 64)
+    assert torch.isfinite(cml.lm_loss(model, x))
+    curve = cml.fit_curve([(10_000_000, 2.0), (20_000_000, 1.9)])
+    assert curve is not None
+    assert cml.curve_bpb(curve, 60_000_000) < 2.0
+
+
+def test_p1_parse_roundtrip() -> None:
+    path = cml.ROOT.parent / "runs/v9/fit-seed-16384-16384-10000000.pkl"
+    if not path.exists():
+        pytest.skip("the v9 10 MB parse is not present")
+    lexicon = cml.read_lexicon(path)
+    parse = cml.read_parse(path, lexicon)
+    assert b"".join(parse.units) == parse.raw
+    assert len(lexicon.strings) > 16_000

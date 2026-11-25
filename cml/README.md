@@ -13,7 +13,7 @@ gate table. The plan holds the design; this page maps the ideas to files.
 | r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-g | manifest + gates; v0 in P0 |
 | r2 C2LM; hybrid output; copy bypass; charge in loss | B3 | P3 | `Arm.LEDGER`, `GATES` P3a-d | manifest; P3 |
 | r3 PhraseLM; lexicon-agnostic; three heads; safe mode | B1/B2 | P0, P1 | `Arm.ADAPTER`/`CONCEPT`, `GATES` | manifests; P0/P1 |
-| r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | manifests; P1/P2 |
+| r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | P1 measured; P2 next |
 | r5 LedgerLM; persistence; market; alignment; dual pathway; learning curve; editing | B3 | P3, P4 | `Arm.LEDGER`, `GATES` P3a-d/P4a-f | manifests; P3/P4 |
 | r6 CMT; tied embeddings; pack; provenance; constrained; telemetry; two clocks | B3 | P0, P1, P2, P4 | `Pack`, `GATES` P0/P1/P2/P4 | manifests; P0/P1/P2/P4 |
 | r7 CoLib; holes; librarian; composition; planning; auditable thought | B4 | P5 | `Arm.LIBRARY`, `GATES` L-G0…L-G5, P5e-g | manifest; P5 |
@@ -23,7 +23,7 @@ The four bets, and where they live:
 | bet | experiments | plan | status |
 |---|---|---|---|
 | B1 the adapter | P0 | §4 B1 | manifest + gates; v0 next |
-| B2 the vocabulary | P1, P2 | §4 B2 | manifests |
+| B2 the vocabulary | P1, P2 | §4 B2 | P1 measured (1.920 bpb); P2 next |
 | B3 the ledger | P3, P4 | §4 B3 | manifests |
 | B4 the library | P5 | §4 B4 | manifest |
 
@@ -109,16 +109,29 @@ The four bets, and where they live:
 - `Space`, `ArmSpec`, `STAGE_AXES`: the valid experiment space per stage.
 - `SearchState`, `run_search`: successive halving + UCB + recombination.
 - `render_state`, `write_report`: the dashboard and `reports/PROGRESS.md`.
+- `Lexicon`, `read_lexicon`, `read_parse`: the v9 pack reader (the strings and
+  the cached 10 MB parse); no old imports.
+- `Trunk`, `Block`, `lm_loss`, `eval_bits`, `run_p1`: the causal unit trunk,
+  the 9 MB train / 1 MB test split, the CE-to-bpb judge, the checkpoint.
+- `fit_curve`, `curve`, `gates_report`: the scaling curve, `P1c`, and
+  `reports/GATES.md`.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
-- `tests/test_invariants.py`: gate ops, manifest, space, search, render.
+- `tests/test_invariants.py`: gate ops, manifest, space, search, render,
+  windows/split, the trunk, the curve, and the parse round-trip.
 - `pyproject.toml` + `uv.lock`; `ruff` clean.
 
-Not built yet: the lexicon, parse, encoder, trunk, trainer, judge, pack, trace,
-and the library. P0 builds the adapter; P1 the class; P2 the 100 MB verdict;
-P3 the gate; P4 the ops; P5 the library. `cml run` writes the run config and
-raises the TODO until P0 lands. The search `--simulate` is a scheduler test,
-not evidence.
+P1 is measured: 1.920 bpb at 20.5M params/6000 steps on the held-out 1 MB
+slice (1.912 ± 0.008 over seeds 0-2); 1.962 at 8.9M, 1.926 at 39.9M; the 60M
+fit is 1.919. The same-slice count bigram is 2.667, so the neural margin is
+0.75 bpb. P1a/P1b/P1c pass. The second split (8-9 MB) gives 1.992, so the win
+is not one slice.
+
+Not built yet: the byte base, `D` induction, the 3-parameter gate, the pack,
+the adapter, kNN/LoRA, and the structured latency suite (P0); the 100 MB
+verdict (P2); the ledger/gate (P3); the ops (P4); the library (P5). `cml
+run` dispatches P1 and raises the TODO for P0 and the later stages. The
+search `--simulate` is a scheduler test, not evidence.
 
 ## The experiment system
 
@@ -160,6 +173,11 @@ uv run cml space
 uv run cml search P1 --simulate --budget 20
 uv run cml status
 uv run cml report
+uv run cml run experiments/p1-class-10m.toml --params 20_000_000 --steps 6000
+uv run cml run experiments/p1-class-10m.toml --params 40_000_000 --steps 6000
+uv run cml run experiments/p1-check-8m.toml
+uv run cml curve P1 --steps 6000 --update
+uv run cml gates
 uv run cml run experiments/p0-adapter.toml --dry
 uv run cml run experiments/p0-adapter.toml   # after P0 is built
 ```
