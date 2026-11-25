@@ -1,5 +1,9 @@
 # TODO6 — H-NCM v11
 
+**Frozen.** The next session is `TODO7.md`: build the end-to-end codec (a real
+range coder, the byte/concept/adapter arms, the pack ops), then optimize. The
+analysis below is the state it starts from.
+
 The plan moved to `cml/PLAN.md`. The new codebase is `cml/`; the old scripts
 are frozen references. P1 is measured (1.920 bpb at seed 0, 1.912 ± 0.008 over
 seeds 0-2, on the held-out 1 MB of the 10 MB parse); that is the honest rate,
