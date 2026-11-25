@@ -792,3 +792,9 @@ to be the predictor rather than a gate over a table.
 
 Unblocked now: #2. #1 and #3 are GPU-bound; #4 is the only route to a
 capability claim.
+
+The build order is `../TODO7.md`, and it is **code first**: the thesis is that
+capacity belongs in the installed lexicon, not the weights — a 5M unit model
+plus a 90 kB code lexicon against a 5.5M byte model at equal total bytes, with
+the recorded bits as the judge. The text path (this section's P1 1.920) is the
+control, and the library (holes, slots) is the qualitative claim after it.
