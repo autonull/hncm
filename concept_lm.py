@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import bz2
+import os
 import collections
 import gzip
 import json
@@ -54,6 +55,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
+import corpora  # noqa: E402
 import hncm7 as v  # noqa: E402
 
 CAP = 16
@@ -249,17 +251,41 @@ def dict_at(usage: collections.Counter, top: list[bytes], k: int, bc) -> v.Dict:
 
 
 # %%
+def _cache(name: str, vocab: str, sha: str) -> Path:
+    base = Path(os.environ.get("HNCM_CACHE", str(Path.home() / ".cache/hncm")))
+    return base / f"counts-{name}-{vocab}-{sha[:12]}.npz"
+
+
 def split(name: str, vocab: str) -> dict:
     """The protocol: fit on the first 90% of the train, select on the last 10%,
     truncate the val to 16 bytes. Returns the EM usage and its ranked candidates
-    (the one model both vocabularies share)."""
-    corpus = v.base.get_corpus(name)
+    (the one model both vocabularies share). The candidate scan is cached by
+    corpus x vocab x sha, so a rerun is seconds, not the 9 min scan."""
+    corpus = corpora.get(name)
     tr = corpus["tr"].cpu().numpy().astype(np.uint8).tobytes()
     va = corpus["va"].cpu().numpy().astype(np.uint8).tobytes()
     va = va[: len(va) // 16 * 16]
     cut = len(tr) // 10 * 9
     fit, sel = tr[:cut], tr[cut:]
     bc = v.byte_costs(fit)
+    path = _cache(name, vocab, corpus["sha"])
+    if path.exists():
+        d = np.load(path, allow_pickle=True)
+        flat, offs, ucount = d["flat"], d["offs"], d["ucount"]
+        top = [bytes(flat[o:e]) for o, e in zip(offs[:-1], offs[1:])]
+        usage = collections.Counter(dict(zip(top, ucount.tolist())))
+        return {
+            "tr": tr,
+            "fit": fit,
+            "sel": sel,
+            "va": va,
+            "bc": bc,
+            "usage": usage,
+            "top": top,
+            "stream": len(tr) + len(va),
+            "sha": corpus["sha"],
+            "name": corpus["name"],
+        }
     xb = np.frombuffer(fit, np.uint8)
     counts = (
         v.counts_onsets(fit, v.base.onsets(name, xb))
@@ -268,6 +294,17 @@ def split(name: str, vocab: str) -> dict:
     )
     _, _, usage = v.em_dict(counts, fit, bc)
     top = sorted((s for s in usage if len(s) > 1), key=lambda s: -usage[s])
+    blob = b"".join(top)
+    offs = np.zeros(len(top) + 1, dtype=np.int64)
+    np.cumsum([len(s) for s in top], out=offs[1:])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        flat=np.frombuffer(blob, np.uint8),
+        offs=offs,
+        ucount=np.array([usage[s] for s in top], dtype=np.int64),
+        bc=bc,
+    )
     return {
         "tr": tr,
         "fit": fit,
@@ -277,6 +314,8 @@ def split(name: str, vocab: str) -> dict:
         "usage": usage,
         "top": top,
         "stream": len(tr) + len(va),
+        "sha": corpus["sha"],
+        "name": corpus["name"],
     }
 
 

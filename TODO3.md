@@ -349,3 +349,30 @@ cost is a 1 MB artifact (the escape falls as the counts grow), and N1a/N1b
 must re-base on these recorded numbers, not on 2.723/3.006. The v7 §8-§9 tables
 are estimates; the v8 `rate`/`shared` columns are the table of record.
 
+
+## 10. Results: N1a (coverage), the NCM, and the defect
+
+Artifacts: `corpora.py` (the enwik8 cache/split), `probe.py` (`runs/v8/coverage.json`,
+`coverage-onsets.json`, `COVERAGE.md`), `ncm.py` (`runs/v8/ncm.json`, the 15 kB
+GRU trained on the GPU), the counts cache (`~/.cache/hncm/counts-*`). All
+`selftest`s pass; the split cache turns a 9 min scan into seconds.
+
+Measured (enwik8_10m, 9 MB train / 1 MB val, unigram cover): coverage
+0.545/0.629/0.698/0.756 at 2k/4k/8k/16k (substr), 0.414-0.536 (onsets); the
+predicted total 3.56 -> 3.14 and 3.59 -> 3.38. PPMd 2.476 on the 1 MB val.
+
+The defect: the tail's SVD restarts at 256 and discards the real preceding
+bytes. Fitted on the train tail: order-1 4.17, order-2 3.83, order-3 3.73
+(the SVD 4.48); the val ceilings 3.80/2.75/1.62. The order-2 table is 23,851
+entries / 95 kB: it pays at 10 MB (0.088 charge vs ~0.35 gain) and not at 1 MB
+(0.877). The NCM (15 kB GRU, GPU, 10 epochs) is 4.61 vs the SVD's 4.48: the
+learned tail loses to the counts at this budget. The complete model is the
+*concept arm* (one normalized model; the rows are the tail's context): 3.671
+charged at 1 MB vs the hard split's 3.939; PPMd 2.476.
+
+Revised next: N1b is the concept arm at 10 MB with (i) the order-2 tail (real
+preceding bytes), (ii) the first-order concept table, (iii) the chunked DP
+(the 10 MB `viterbi` allocates L+1 dicts; chunk at 1 MB), (iv) the counts cache
+and three corpora as processes. The 10 MB target is <= 2.50 and PPMd parity is
+the stretch at 100 MB, where the model charge falls to 0.02 and the coverage
+rises; the 10 MB prediction with the order-2 tail and the bigram is ~2.5-2.7.

@@ -1,0 +1,62 @@
+{
+ "format": 8,
+ "vocab": "onsets",
+ "sizes": [
+  2048,
+  4096,
+  8192
+ ],
+ "corpora": {
+  "enwik8_10m": {
+   "corpus": "enwik8_10m",
+   "vocab": "onsets",
+   "sha": "5985c81c39d927ae0e169625790ca4d9e7d1531270c8b09ad73176a375bb3d97",
+   "stream_bytes": 10000000,
+   "val_bytes": 1000000,
+   "rows": [
+    {
+     "dict": 2048,
+     "coverage": 0.414121,
+     "covered_bpb": 1.792824512852843,
+     "tail_bpb": 4.739565739168623,
+     "tail_bytes": 585879,
+     "tail_spans": 41031,
+     "r": 64,
+     "dict_bytes": 21343,
+     "tail_bytes_model": 65698,
+     "model_bytes": 87041,
+     "predicted": 3.588891115785506,
+     "calls": 41032
+    },
+    {
+     "dict": 4096,
+     "coverage": 0.477265,
+     "covered_bpb": 1.8454593359407778,
+     "tail_bpb": 4.798165441958048,
+     "tail_bytes": 522735,
+     "tail_spans": 38942,
+     "r": 64,
+     "dict_bytes": 43990,
+     "tail_bytes_model": 65698,
+     "model_bytes": 109688,
+     "predicted": 3.476692562269715,
+     "calls": 38943
+    },
+    {
+     "dict": 8192,
+     "coverage": 0.536352,
+     "covered_bpb": 1.8885873223374323,
+     "tail_bpb": 4.840190267866892,
+     "tail_bytes": 463648,
+     "tail_spans": 36028,
+     "r": 64,
+     "dict_bytes": 90570,
+     "tail_bytes_model": 65698,
+     "model_bytes": 156268,
+     "predicted": 3.382106524826275,
+     "calls": 36029
+    }
+   ]
+  }
+ }
+}

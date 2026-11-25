@@ -13,9 +13,18 @@ shakespeare (0.25 behind gzip, 0.97 behind PPMd), 1.39 on synseg (0.11 ahead of
 PPMd, 0.12 ahead of bz2), and 2.10 on syngrid (0.09 behind lzma).
 The structure stands: the model is paid once; the tail arm makes 6.5x fewer
 calls (8,264 vs 56,592) but pays 0.30 bpb more than the concept arm at 1 MB, so
-the calls pay only when the tail fraction falls. Next: the coverage probe and
-the 10 MB run (N1a/N1b), then the tail's context (N2), both re-based on the
-recorded numbers.
+the calls pay only when the tail fraction falls. **N1a measured (enwik8, 9 MB train / 1 MB val):** the dictionary covers
+0.545/0.629/0.698/0.756 at 2k/4k/8k/16k substrings and 0.414-0.536 at word
+onsets; the predicted total is 3.56 -> 3.14 (substr) and 3.59 -> 3.38 (onsets),
+against PPMd 2.476 on the 1 MB val. The defect is the tail's context: the SVD
+restarts at 256, but the decoder holds the real preceding bytes, and an order-2
+table is 3.83 vs the SVD's 4.48 bpb on the 1 MB tail. That table costs 95 kB and
+pays at 10 MB (0.088 charge for ~0.35 gain) but not at 1 MB (0.877). The NCM
+(15 kB GRU, GPU, 10 epochs) reaches 4.61, so the learned tail loses to the counts
+at this budget: the count context table is the NCM at scale. The complete model
+is the *concept arm* (one normalized model: the H-Net rows give the tail its
+context), 3.67 charged vs the hard split's 3.94 at 1 MB. The 10 MB concept arm
+with the order-2 tail and the chunked DP is the next run.
 
 ## The measured bottleneck (v6)
 

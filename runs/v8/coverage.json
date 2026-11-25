@@ -1,0 +1,77 @@
+{
+ "format": 8,
+ "vocab": "substr",
+ "sizes": [
+  2048,
+  4096,
+  8192,
+  16384
+ ],
+ "corpora": {
+  "enwik8_10m": {
+   "corpus": "enwik8_10m",
+   "vocab": "substr",
+   "sha": "5985c81c39d927ae0e169625790ca4d9e7d1531270c8b09ad73176a375bb3d97",
+   "stream_bytes": 10000000,
+   "val_bytes": 1000000,
+   "rows": [
+    {
+     "dict": 2048,
+     "coverage": 0.544542,
+     "covered_bpb": 1.996700478154275,
+     "tail_bpb": 5.320814739328985,
+     "tail_bytes": 455458,
+     "tail_spans": 62234,
+     "r": 32,
+     "dict_bytes": 24961,
+     "tail_bytes_model": 32866,
+     "model_bytes": 57827,
+     "predicted": 3.556956511320386,
+     "calls": 62235
+    },
+    {
+     "dict": 4096,
+     "coverage": 0.628805,
+     "covered_bpb": 2.0298947143644663,
+     "tail_bpb": 5.45273243107378,
+     "tail_bytes": 371195,
+     "tail_spans": 59541,
+     "r": 32,
+     "dict_bytes": 50920,
+     "tail_bytes_model": 32866,
+     "model_bytes": 83786,
+     "predicted": 3.3674637606183806,
+     "calls": 59542
+    },
+    {
+     "dict": 8192,
+     "coverage": 0.697717,
+     "covered_bpb": 2.0317874506991553,
+     "tail_bpb": 5.605816085903335,
+     "tail_bytes": 302283,
+     "tail_spans": 55472,
+     "r": 32,
+     "dict_bytes": 105265,
+     "tail_bytes_model": 32866,
+     "model_bytes": 138131,
+     "predicted": 3.22266034863458,
+     "calls": 55473
+    },
+    {
+     "dict": 16384,
+     "coverage": 0.755529,
+     "covered_bpb": 2.0386250737281033,
+     "tail_bpb": 5.7171921486633845,
+     "tail_bytes": 244471,
+     "tail_spans": 50864,
+     "r": 32,
+     "dict_bytes": 218513,
+     "tail_bytes_model": 32866,
+     "model_bytes": 251379,
+     "predicted": 3.1390312451046065,
+     "calls": 50865
+    }
+   ]
+  }
+ }
+}

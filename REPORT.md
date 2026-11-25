@@ -246,3 +246,48 @@ reports it.
 - `runs/v7/tail.json`, `runs/v7/TAIL.md` (M5, the tail).
 - `runs/v7/transfer.json`, `runs/v7/TRANSFER.md` (K files).
 - `runs/p0/quick-c3b7a8ac/` (v6 honest negative).
+
+
+## v8/N1a: the coverage probe and the tail's context
+
+On the 9 MB/1 MB enwik8 split (cache: `~/.cache/hncm/counts-*`), the dictionary
+is fitted on the train and the val tiled with the unigram cover:
+
+| vocab | dict | coverage | covered bpb | tail bpb | model kB | predicted |
+|---|---:|---:|---:|---:|---:|---:|
+| substr | 2,048 | 0.545 | 1.997 | 5.321 | 57.8 | 3.557 |
+| substr | 4,096 | 0.629 | 2.030 | 5.453 | 83.8 | 3.367 |
+| substr | 8,192 | 0.698 | 2.032 | 5.606 | 138.1 | 3.223 |
+| substr | 16,384 | 0.756 | 2.039 | 5.717 | 251.4 | 3.139 |
+| onsets | 8,192 | 0.536 | 1.889 | 4.840 | 156.3 | 3.382 |
+
+PPMd on the 1 MB val is 2.476 (zlib 3.027, bz2 2.653, lzma 2.723, brotli 2.449),
+so the hard-split model is ~0.7-1.2 bpb behind at 10 MB's val. The probe locates
+the defect: the SVD tail restarts at 256 and throws away the real preceding
+bytes. Fitted on the train tail:
+
+| context | fitted bpb | val ceiling bpb |
+|---|---:|---:|
+| order 1 (the SVD is 4.48) | 4.17 | 3.80 |
+| order 2 | **3.83** | 2.75 |
+| order 3 | 3.73 | 1.62 |
+
+The order-2 table is 23,851 entries / 95 kB: 0.088 bpb of charge at 10 MB for
+~0.35 bpb of tail gain, so it pays at 10 MB and not at 1 MB (0.877). The SVD was
+a 1 MB size choice. The NCM at the same 15 kB loses to the counts: a GPU-trained
+GRU (previous byte, concept class, position; 10 epochs) is 4.61 bpb against the
+SVD's 4.48. The right NCM at scale is the count context table, not a 15 kB GRU.
+
+The complete model is the *concept arm* (one normalized model: every token is
+coded by the row of the previous token, so the H-Net rows are the tail's
+context), not the hard split:
+
+| arm | rate | model kB | charged |
+|---|---:|---:|---:|
+| concept | 3.452 | 27.3 | **3.671** |
+| tail (hard split) | 3.457 | 60.2 | 3.939 |
+| PPMd | 2.476 | in-stream | 2.476 |
+
+The gap is the context order, not the representation. Next: the concept arm at
+10 MB with the order-2 tail and the first-order concept table; the chunked DP
+(the 10 MB `viterbi` allocates L+1 dicts) is the prerequisite.
