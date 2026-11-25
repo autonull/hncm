@@ -1,0 +1,12 @@
+{
+ "name": "enwik8_10m",
+ "rect": {
+  "dict": 8192,
+  "table": 4096
+ },
+ "tail_bytes": 310677,
+ "tail_bpb": 4.307150757520221,
+ "svd_bpb": 4.458758852621471,
+ "size": 27373,
+ "epochs": 3
+}

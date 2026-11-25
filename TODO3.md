@@ -408,3 +408,11 @@ structured source (synseg 1.389 vs PPMd 1.500) it is already a win at 1.2 MB.
 Next: the real-context tail in the concept arm (the NCM at 10 MB is training; the
 1 MB 15 kB GRU lost to the SVD, the 25 kB 3-byte-context model is the test), then
 the 16k dict + that tail at 10 MB (~2.6 predicted), then the 100 MB run.
+
+The NCM at 10 MB: the 25 kB 3-byte-context model (the real previous bytes, the
+H-Net class, the position; 3 epochs on the RTX 3080) reaches **4.307 bpb** on
+the 10 MB DP tail against the SVD's **4.459** (a 0.152 gain, +0.009 of charge,
++0.04 net over the SVD). It is a real gain over the SVD, but the count order-2
+(3.83 at 1 MB) is the better tail and the 0.875 gap to PPMd is not closed by
+it. The NCM's context helps less at 10 MB than at 1 MB (the uncovered spans
+are the harder bytes); the counts are the stronger tail at this size.

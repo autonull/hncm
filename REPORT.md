@@ -311,3 +311,9 @@ SVD's 4.48 on the 1 MB tail. With that tail at 10 MB the total is ~2.6; at
 100 MB the charge (0.02) and coverage give ~1.8-2.0 against PPMd's ~1.8. The
 text claim is a 100 MB claim; the structured win (synseg 1.389 vs PPMd 1.500)
 stands at 1.2 MB.
+
+The NCM v2 (the real previous three bytes + the H-Net class + the position;
+25 kB; 3 epochs on the GPU) is 4.307 bpb on the 10 MB DP tail against the
+SVD's 4.459: +0.152 on the tail, +0.009 of charge, a +0.04 net. The context
+is real and it beats the SVD, but the count order-2 (3.83 at 1 MB) is the
+better tail; the 10 MB gap to PPMd is not closed by the NCM.
