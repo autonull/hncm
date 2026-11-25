@@ -1,0 +1,7 @@
+proof: seed split
+  fit: path
+  fit: tables
+proof: model fitted
+proof: encoded
+proof: decoded
+proof: k=16384 t=16384 RT=ok payload=327389 B rate=2.619 model=300.9 kB shared=2.643 calls=233504 enc=0.02 MB/s dec=0.02 MB/s (17.3 min)

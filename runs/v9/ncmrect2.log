@@ -1,0 +1,14 @@
+enwik8_10m:
+  fit: path
+  fit: tables
+  enwik8_10m  tail    dict= 8192 table= 4096 payload=374356 B (2.995 bpb) model=167.6 kB charged=3.129
+  enwik8_10m  concept dict= 8192 table= 4096 payload=372969 B (2.984 bpb) model=134.8 kB charged=3.092
+enwik8_10m  rate=2.984 v7=2.903 shared=3.092 model=134.8 kB RT=ok
+  ord2 top=1024 tail=4.140 row=4.721 size=81.2 kB
+  G0   pass enwik8_10m: round-trip=ok decode=0.04 MB/s encode=0.04 MB/s
+  G1   pass enwik8_10m: recorded shared=3.0917 entropy+charge=3.0916 delta=+0.0001
+  G1s  pass enwik8_10m: recorded self=4.0623 entropy+charge=4.0622
+  G2   fail enwik8_10m: published v7=2.9027 code=2.9837 gap=+0.0811
+  G2r  fail enwik8_10m: correct model=2.9027 code=2.9837 gap=+0.0811
+  G3   fail enwik8_10m: model=134.8 kB arm=concept
+  G4   pass enwik8_10m: ord2=4.140 row=4.721 top=1024 size=81.2 kB

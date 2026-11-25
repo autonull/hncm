@@ -16,7 +16,7 @@ the code is the judge (rule 17).
 
 | corpus | arm | dict | table | r | payload B | rate | ref | v7 | gap | model kB | shared | self | calls | enc MB/s | dec MB/s | RT |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| enwik8_10m | concept | 8192 | 4096 | 32 | 373820 | 2.991 | 2.748 | 2.748 | +0.242 | 134.8 | 3.099 | 4.069 | 310678 | 0.27 | 0.19 | ok |
+| enwik8_10m | concept | 16384 | 16384 | 32 | 341182 | 2.729 | 2.686 | 2.686 | +0.044 | 309.6 | 2.977 | 5.206 | 253853 | 0.02 | 0.02 | ok |
 
 ## N9: the order-2 tail on the DP path
 
@@ -26,20 +26,20 @@ single-byte tokens. A tail that does not beat the row does not pay.
 
 | corpus | ord2 top | ord2 kB | ord2 bpb | row bpb |
 |---|---:|---:|---:|---:|
-| enwik8_10m | 1024 | 80.9 | 4.151 | 4.625 |
+| enwik8_10m | 1024 | 81.0 | 4.303 | 4.854 |
 
 ## The arms at the chosen budget
 
 | corpus | arm | dict | table | rate | model kB | charged | calls |
 |---|---|---:|---:|---:|---:|---:|---:|
-| enwik8_10m | tail | 8192 | 4096 | 3.000 | 167.6 | 3.134 | 310678 |
-| enwik8_10m | concept | 8192 | 4096 | 2.991 | 134.8 | 3.098 | 310678 |
+| enwik8_10m | tail | 16384 | 16384 | 2.772 | 342.4 | 3.046 | 253853 |
+| enwik8_10m | concept | 16384 | 16384 | 2.729 | 309.6 | 2.977 | 253853 |
 
 ## The bit categories (bpb)
 
 | corpus | arm | concept | covered | type | len | tail | sum | rate |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| enwik8_10m | concept | 2.991 | 0.000 | 0.000 | 0.000 | 0.000 | 2.991 | 2.991 |
+| enwik8_10m | concept | 2.729 | 0.000 | 0.000 | 0.000 | 0.000 | 2.729 | 2.729 |
 
 ## Gates
 
@@ -50,13 +50,13 @@ G3 the model is at most 45 kB.
 
 | gate | corpus | value | status |
 |---|---|---|---|
-| G0 | enwik8_10m | round-trip=ok decode=0.19 MB/s encode=0.27 MB/s | **pass** |
-| G1 | enwik8_10m | recorded shared=3.0985 entropy+charge=3.0984 delta=+0.0001 | **pass** |
-| G1s | enwik8_10m | recorded self=4.0691 entropy+charge=4.0690 | **pass** |
-| G2 | enwik8_10m | published v7=2.7484 code=2.9906 gap=+0.2422 | **fail** |
-| G2r | enwik8_10m | correct model=2.7484 code=2.9906 gap=+0.2422 | **fail** |
-| G3 | enwik8_10m | model=134.8 kB arm=concept | **fail** |
-| G4 | enwik8_10m | ord2=4.151 row=4.625 top=1024 size=80.9 kB | **pass** |
+| G0 | enwik8_10m | round-trip=ok decode=0.02 MB/s encode=0.02 MB/s | **pass** |
+| G1 | enwik8_10m | recorded shared=2.9772 entropy+charge=2.9771 delta=+0.0001 | **pass** |
+| G1s | enwik8_10m | recorded self=5.2060 entropy+charge=5.2059 | **pass** |
+| G2 | enwik8_10m | published v7=2.6856 code=2.7295 gap=+0.0439 | **fail** |
+| G2r | enwik8_10m | correct model=2.6856 code=2.7295 gap=+0.0439 | **pass** |
+| G3 | enwik8_10m | model=309.6 kB arm=concept | **fail** |
+| G4 | enwik8_10m | ord2=4.303 row=4.854 top=1024 size=81.0 kB | **pass** |
 
 ## Finding
 

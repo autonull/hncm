@@ -1,0 +1,8 @@
+proof: split built
+proof: dictionary fitted
+  fit: path
+  fit: tables
+proof: model fitted
+proof: encoded
+proof: decoded
+proof: k=16384 t=16384 RT=ok payload=532626 B rate=4.261 model=278.7 kB shared=4.283 calls=131766 enc=0.03 MB/s dec=0.03 MB/s (27.3 min)

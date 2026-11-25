@@ -1,12 +1,14 @@
 # TODO4 — H-NCM v9: the coverage and context levers, then the 100 MB verdict
 
-Status: v9's N8, N9 and N10 are measured. The union vocabulary raises the
-10 MB coverage to 0.815 at 32k and the codec's record from 3.035 to 2.987 (a
-0.048 win; the 2.94 gate misses by 0.047). The order-2 tail on the DP path is
-4.329 against the row's 4.738; on the NCM's exact tail it is 4.151 against
-4.307 (+0.113 net), but the 4.0 gate misses. At 100 MB the charged estimate is
-2.503 against PPMd's 1.834 (coverage 0.825, charge 0.040): the text claim is a
-negative at 100 MB, and the structured win stands.
+Status: v9's N8, N9 and N10 are measured end to end. The union vocabulary
+raises the 10 MB coverage to 0.815 at 32k and the codec's record from 3.035 to
+2.977 (a 0.058 win; the 2.94 gate misses by 0.037; the 0.044 CDF gap is the
+2-byte count quantization). The order-2 tail is 4.303 against the row's 4.854 on
+the union tail (miss 0.303); on the substr tail it is 4.15 against the NCM's
+4.307 and the row 4.63. The 100 MB end-to-end proof round-trips at **2.643**
+(1 MB val) and **2.664** (10 MB val), with a 300.9 kB model and 2.39M calls;
+PPMd is 1.834, so the text claim is a negative at 100 MB. The structured win
+(synseg 1.389 against PPMd 1.500) stands.
 
 ## 0. Start here
 
@@ -120,15 +122,12 @@ enwik8_1m (the loss). `I_perf = (D-C) - (B-A)`. The per-seed spread.
 `runs/v9/` with the model files, the config JSON and the hashes; the README
 headline; `REPORT.md`; one command.
 
-## 7. Results: N8, N9, N10
+## 7. Results: N8, N9, N10 (the end-to-end proof)
 
 Artifacts: `runs/v9/{union.json,coverage-union.json,codec-union.json,
-codec-ncmrect.json,enwik8_100m.json,enwik8_100m_full.json,LEVERS.md,
-ENWIK8-100M.md,scan100.log}`. The candidate scan is cached at
-`runs/v9/scan100.npz` (64 MB, outside git; the log records it), and the
-candidate counts for the 10 MB stream at `~/.cache/hncm/counts-*`, so a rerun is
-seconds. Every `selftest` passes; the union map reuses the two cached EM
-tilings, so N8 needs no new scan. The codec is the judge.
+codec-ncmrect.json,proof-100m-seed.json,proof-100m-seed-10m.json,
+proof-100m-16k.json,LEVERS.md,PROOF-100M.md,scan100.log}`. Every `selftest`
+passes. The codec is the judge; every recorded size below is a round-trip.
 
 **N8, the union vocabulary.** At the 32k dict the unigram probe covers 0.815 of
 the val (8k 0.699, 16k 0.766); the first-order DP rate is 2.607 / 2.499 / 2.425
@@ -137,63 +136,55 @@ The codec records:
 
 | budget | arm | rate | model kB | shared | calls |
 |---|---|---:|---:|---:|---:|
-| union 16k/16k | concept | 2.739 | 309.6 | **2.987** | 247,688 |
-| union 16k/16k | tail | 2.778 | 342.4 | 3.052 | 247,688 |
+| union 16k/16k | concept | 2.729 | 309.6 | **2.977** | 253,853 |
+| union 16k/16k | tail | 2.772 | 342.4 | 3.046 | 253,853 |
 | substr 8k/16k (v8) | concept | 2.857 | 222.5 | 3.035 | 56,592 |
 
-N8 misses its recorded gate (2.940) by 0.047, but it is a 0.048 win on the record
-and 0.011 below zlib; PPMd is 2.160. The estimate fell 0.284 while the record
-fell 0.048: the 0.186 G2r gap is the derived CDF's loss against the model it
-packs. The coverage gate's three legs do not hold at one budget: 0.815 costs
-347.7 kB (more than v8's 222.5) and its covered rate is 2.129 (> 2.0).
+The union is a **0.058 win on the record** (2.977 against 3.035) and 0.021 below
+zlib; the 2.940 gate misses by 0.037. The estimate moved 0.284 (3.035 ->
+2.751), the record 0.058. The remaining G2r gap is 0.044: the packed counts are
+log-quantized to 2 bytes, so the CDF is 0.044 above the unquantized model. The
+coverage gate's three legs do not hold at one budget: 0.815 costs 347.7 kB
+(more than v8's 222.5) and its covered rate is 2.129 (> 2.0).
 
-**N9, the order-2 tail on the DP path.** The pruned order-2 counts (real two
+**N9, the order-2 tail on the DP path.** The pruned order-2 counts (the real two
 preceding bytes, order-1 backoff, top chosen on the held-out 10%, charged) beat
 the concept row on the same tail bytes:
 
 | rect | tail bytes | ord2 kB | ord2 bpb | row bpb | gate (4.0) |
 |---|---:|---:|---:|---:|---|
-| union 16k/16k | 247,687 | 80.5 | 4.329 | 4.738 | miss 0.329 |
-| substr 8k/4k | 310,677 | 80.9 | 4.151 | 4.625 | miss 0.151 |
+| union 16k/16k | 253,852 | 81.0 | 4.303 | 4.854 | miss 0.303 |
+| substr 8k/4k | 310,677 | 81.0 | 4.15 | 4.63 | miss 0.15 |
 
-**N9b, the NCM against the counts on the same tail.** On the identical 310,677
-bytes: the row 4.625, the order-2 counts 4.151 (80.9 kB), the NCM 4.307 (27.4
-kB). The counts win the rate by 0.156, pay 0.043 bpb more at 10 MB, and net
-+0.113; the count table is the tail of record, the NCM the smallest model.
-The NCM's earlier 4.307 against the SVD's 4.459 is reproduced.
+On the identical 310,677 substr bytes the NCM reaches 4.307 (27.4 kB); the
+counts win the rate but pay more. The 10 MB tail is harder than the 1 MB tail
+(3.83); the order-2 table does not reach 4.0.
 
-**The 10 MB record with that tail.** 2.987 - (4.738 - 4.329) * 247,687 / 1e6 +
-8 * 80.5e3 / 10e6 = 2.950, still 0.010 above 2.94. It is a projection: the
-codec does not implement the ord2 arm yet.
+**N10, the end-to-end proof (measured).** 90 MB train / 10 MB val. The seed
+model is the 10 MB union vocabulary with its counts refit on the 81 MB fit (one
+EM round); the full model adds the 90 MB heavy hitters (count >= 32, per-length
+top 8k). The table is fitted on 81 MB, chosen on 9 MB, charged over 100 MB. The
+bitstream round-trips:
 
-**N10, the verdict (measured).** The 90 MB train / 10 MB val split. The 10 MB
-union vocabulary is the baseline; the full row is the proper 100 MB vocabulary
-(the 64k seed plus the 90 MB heavy hitters, one EM unigram on the 81 MB fit).
-The table is fitted on the first 90% of the train, chosen on the held-out 9 MB,
-and charged over 100 MB:
+| vocab | model kB | val | payload B | rate | shared | calls | RT |
+|---|---:|---:|---:|---:|---:|---:|---|
+| seed | 300.9 | 1 MB | 327,389 | 2.619 | **2.643** | 233,504 | ok |
+| seed | 300.9 | 10 MB | 3,300,098 | 2.640 | **2.664** | 2,393,110 | ok |
+| full | 278.7 | 1 MB | 532,626 | 4.261 | 4.283 | 131,766 | ok |
 
-| vocab | dict | table | coverage | covered bpb | tail bpb | rate | model kB | charge | charged | sel charged | ord2 projected |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 10 MB seed | 32,768 | 16,384 | 0.825 | 1.961 | 4.831 | 2.464 | 498.7 | 0.040 | **2.503** | 2.522 | 2.446 |
-| 90 MB full | 32,768 | 16,384 | **0.912** | 2.164 | 5.781 | 2.484 | 451.9 | 0.036 | **2.520** | 2.540 | 2.475 |
+PPMd on the same 10 MB val is **1.834** (zlib 2.903, bz2 2.281, lzma 2.144).
+The seed is 0.830 behind PPMd on the 10 MB held-out; the 1.90 gate misses. The
+full vocabulary covers 0.912 but its table's unseen transitions cost 4.261: the
+coverage is not the lever. The stop rule: **the text claim is a negative at
+100 MB**; the structured win (synseg 1.389 against PPMd 1.500) is the product.
+The earlier unnormalized estimate (2.503 / 2.520) was 0.14 / 1.76 optimistic;
+the corrected, encoded records are 2.643 / 4.283.
 
-zlib 2.903, bz2 2.281, lzma 2.144, PPMd **1.834** on the same 10 MB val.
-`covered bpb` is derived: `(rate - (1-cov) * tail) / cov`. The model is 0.669
-(seed) / 0.686 (full) behind PPMd and misses the 1.90 gate by 0.603 / 0.619.
-Coverage is not the binding lever: the full vocabulary adds
-0.087 of coverage but the covered tokens cost 2.164 against the seed's 1.961,
-and the tail (5.781) is the remaining 8.8%. The covered tokens are already
-0.127 (seed) and 0.330 (full) above PPMd's 1.834, so the gap is the concept
-*rate*, not the coverage. The order-2 tail (349 kB, 0.028 of charge) projects
-2.446 / 2.475, still 0.61 behind. The stop rule: the text claim is a
-**negative at 100 MB**; the structured win (synseg 1.389 against PPMd 1.500) is
-the product. The codec record at 100 MB is not run; the 10 MB record is
-0.19-0.24 above the rate estimate, so the record is >= 2.69.
+The 90 MB scan found 2,702,205 substrings with count >= 32 (`runs/v9/scan100.npz`,
+64 MB, not committed; the log is). The GPU unique pass is the exact replacement
+for the CPU `counts_substr` that needs ~10x the memory.
 
-The 90 MB scan found 2,702,205 substrings with count >= 32
-(`runs/v9/scan100.npz`, 64 MB, not committed; the log is). The GPU unique
-pass is the exact replacement for the CPU `counts_substr` that needs ~10x the
-memory.
+
 
 ## 3. Risks and cheap checks
 
@@ -235,10 +226,10 @@ the measured negative are the result.
 
 | step | cost |
 |---|---|
-| N8 the union vocabulary | 30 min | measured (2.987; 2.94 missed by 0.047) |
-| N9 the order-2 tail | 1 h | measured (4.329; 4.0 missed) |
-| N9b the NCM vs the counts | 30 min | measured (counts net +0.113) |
-| N10 the 100 MB verdict | 2-3 h | measured: 2.503 vs PPMd 1.834 (negative) |
+| N8 the union vocabulary | 30 min | measured: 2.977; gate 2.94 missed by 0.037 |
+| N9 the order-2 tail | 1 h | measured: 4.303; gate 4.0 missed |
+| N9b the NCM vs the counts | 30 min | measured: counts 4.15 vs NCM 4.307 |
+| N10 the 100 MB verdict | 2-3 h | measured: 2.664 (10 MB val) vs PPMd 1.834 |
 | N11 the structured table | 1 h | |
 | N12 the factorial | 1 h | |
 | N13 delivery | 1 h | v9 artifacts written |

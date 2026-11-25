@@ -18,12 +18,14 @@ import argparse
 import collections
 import json
 import math
+import pickle
 import time
 from pathlib import Path
 
 import numpy as np
 import torch
 
+import codec
 import concept_lm as c
 import corpora
 import hncm7 as v
@@ -139,18 +141,11 @@ def scan(min_count: int, out: Path) -> dict[bytes, int]:
     return cand
 
 
-def cover_chunked(bs: bytes, d: v.Dict, chunk: int = 1 << 20) -> list[bytes]:
-    out = []
-    for a in range(0, len(bs), chunk):
-        out.extend(v.cover(bs[a : a + chunk], d, 0.0))
-    return out
-
-
 def _evaluate(
     d: v.Dict, fit: bytes, sel: bytes, va: bytes, k: int, table: int, t0: float
 ) -> dict:
     bc = v.byte_costs(fit)
-    ft = cover_chunked(fit, d)
+    ft = c.cover_chunked(fit, d)
     pf = t.pieces(ft, {})
     big, uni = c.bigrams(ft)
     del ft
@@ -243,10 +238,9 @@ def measure(k: int, table: int, val_bytes: int) -> dict:
     return _evaluate(d, fit, sel, va, k, table, t0)
 
 
-def measure_full(k: int, table: int, val_bytes: int, scan_path: Path) -> dict:
-    """The 100 MB vocabulary: the union seed plus the 90 MB heavy hitters,
-    one EM unigram on the fit, then the same evaluation."""
-    t0 = time.time()
+def build_full(val_bytes: int, scan_path: Path) -> dict:
+    """The 100 MB split: the union seed plus the 90 MB heavy hitters, one EM
+    unigram on the 81 MB fit. Returns the split `codec.fit_split` consumes."""
     raw = corpora.fetch_enwik8()[:STREAM]
     tr = raw[:90_000_000]
     va = raw[90_000_000:][:val_bytes]
@@ -273,13 +267,161 @@ def measure_full(k: int, table: int, val_bytes: int, scan_path: Path) -> dict:
     n0 = sum(pool.values())
     keys = list(pool)
     d0 = v.assemble(keys, [-math.log2(pool[s] / n0) for s in keys], bc)
-    usage = collections.Counter(cover_chunked(fit, d0))
+    usage = collections.Counter(c.cover_chunked(fit, d0))
     del d0
     top = sorted(usage, key=lambda s: -usage[s])
-    keep = top[:k]
-    n = sum(usage[s] for s in keep)
-    d = v.assemble(keep, [-math.log2(usage[s] / n) for s in keep], bc)
-    return _evaluate(d, fit, sel, va, k, table, t0)
+    return {
+        "fit": fit,
+        "sel": sel,
+        "va": va,
+        "stream": STREAM,
+        "bc": bc,
+        "usage": usage,
+        "top": top,
+    }
+
+
+def build_seed(val_bytes: int, k: int) -> tuple[dict, v.Dict]:
+    """The plan's N10 baseline: the 10 MB union vocabulary, its counts refit
+    on the 81 MB fit with one EM round, then the same codec."""
+    raw = corpora.fetch_enwik8()[:STREAM]
+    tr = raw[:90_000_000]
+    va = raw[90_000_000:][:val_bytes]
+    del raw
+    s10 = c.split("enwik8_10m", "union")
+    cut = len(tr) // 10 * 9
+    fit, sel = tr[:cut], tr[cut:]
+    del tr
+    bc = v.byte_costs(fit)
+    d0 = c.dict_at(s10["usage"], s10["top"], k, bc)
+    del s10
+    ft = c.cover_chunked(fit, d0)
+    u = collections.Counter(ft)
+    n = sum(u[x] for x in d0.strings)
+    keep = [x for x in d0.strings if u[x] > 0 or len(x) == 1]
+    cost = [float(bc[x[0]]) if len(x) == 1 else -math.log2(u[x] / n) for x in keep]
+    s = {"fit": fit, "sel": sel, "va": va, "stream": STREAM, "bc": bc}
+    return s, v.assemble(keep, cost, bc)
+
+
+def fit_dict(s: dict, k: int, table: int) -> v.Dict:
+    """One EM round on the fit: the costs from the final tiling, not the pool."""
+    d0, _, _ = c.rebuild(s, k, table)
+    s.pop("usage", None)
+    s.pop("top", None)
+    ft = c.cover_chunked(s["fit"], d0)
+    u = collections.Counter(ft)
+    n = sum(u[x] for x in d0.strings)
+    keep = [x for x in d0.strings if u[x] > 0 or len(x) == 1]
+    cost = [float(s["bc"][x[0]]) if len(x) == 1 else -math.log2(u[x] / n) for x in keep]
+    return v.assemble(keep, cost, s["bc"])
+
+
+def measure_full(k: int, table: int, val_bytes: int, scan_path: Path) -> dict:
+    """The 100 MB vocabulary, then the same evaluation."""
+    t0 = time.time()
+    s = build_full(val_bytes, scan_path)
+    d = fit_dict(s, k, table)
+    return _evaluate(d, s["fit"], s["sel"], s["va"], k, table, t0)
+
+
+def proof(
+    val_bytes: int,
+    k: int,
+    table: int,
+    scan_path: Path,
+    out: Path,
+    seed: bool = False,
+) -> dict:
+    """The end-to-end artifact: fit on 81/90 MB, encode and decode the val."""
+    t0 = time.time()
+    mode = "seed" if seed else "full"
+    cache = out.parent / f"fit-{mode}-{k}-{table}-{val_bytes}.pkl"
+    if cache.exists():
+        with cache.open("rb") as fh:
+            fitted = pickle.load(fh)
+        print("proof: cached fit", flush=True)
+    else:
+        if seed:
+            s, d = build_seed(val_bytes, k)
+            print("proof: seed split", flush=True)
+        else:
+            s = build_full(val_bytes, scan_path)
+            print("proof: split built", flush=True)
+            d = fit_dict(s, k, table)
+            print("proof: dictionary fitted", flush=True)
+        corp = codec.fit_split(s, {"vocab": mode, "dict": k, "table": table}, d)
+        print("proof: model fitted", flush=True)
+        fitted = {
+            "blob": corp["pack_concept"],
+            "toks": corp["val_toks"],
+            "va": s["va"],
+            "ref": corp["ref_concept"],
+        }
+        with cache.open("wb") as fh:
+            pickle.dump(fitted, fh)
+    blob = fitted["blob"]
+    model = codec.unpack(blob)
+    n = len(fitted["va"])
+    t1 = time.time()
+    payload, enc = codec.encode(model, fitted["toks"], "concept")
+    enc_s = time.time() - t1
+    print("proof: encoded", flush=True)
+    t2 = time.time()
+    got, dec = codec.decode(model, payload, n, "concept")
+    dec_s = time.time() - t2
+    print("proof: decoded", flush=True)
+    hdr = len(codec.header(n, 0, len(blob), "concept"))
+    res = {
+        "corpus": "enwik8_100m",
+        "dict": k,
+        "table": table,
+        "val_bytes": n,
+        "train_bytes": STREAM - n,
+        "payload_bytes": len(payload),
+        "model_bytes": len(blob),
+        "header_bytes": hdr,
+        "rate": 8 * len(payload) / n,
+        "entropy": enc["entropy"] / n,
+        "ref": fitted["ref"] / n,
+        "delta": (enc["entropy"] - fitted["ref"]) / n,
+        "shared": 8 * (len(payload) + hdr) / n + 8 * len(blob) / STREAM,
+        "self": 8 * (len(payload) + hdr) / n + 8 * len(blob) / n,
+        "calls": enc["calls"],
+        "tokens": len(fitted["toks"]),
+        "roundtrip": got == fitted["va"],
+        "encode_s": enc_s,
+        "decode_s": dec_s,
+        "encode_mb_s": n / 1e6 / max(enc_s, 1e-9),
+        "decode_mb_s": n / 1e6 / max(dec_s, 1e-9),
+        "seconds": time.time() - t0,
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(res, indent=1))
+    (out.parent / "PROOF-100M.md").write_text(
+        "# H-NCM v9: the end-to-end proof (enwik8_100m)\n\n"
+        f"The model is fitted on 81 MB of the 90 MB train; the held-out "
+        f"{res['val_bytes']} B val is encoded and decoded by the concept arm. "
+        f"The bitstream round-trips: **{res['roundtrip']}**.\n\n"
+        f"- payload: {res['payload_bytes']} B = {res['rate']:.3f} bpb\n"
+        f"- model: {res['model_bytes'] / 1e3:.1f} kB = "
+        f"{8 * res['model_bytes'] / STREAM:.3f} bpb over 100 MB\n"
+        f"- recorded shared: **{res['shared']:.3f} bpb**\n"
+        f"- calls: {res['calls']}; tokens: {res['tokens']}\n"
+        f"- encode/decode: {res['encode_mb_s']:.2f} / "
+        f"{res['decode_mb_s']:.2f} MB/s\n"
+        f"- model: {res['ref']:.3f}; entropy {res['entropy']:.3f}; "
+        f"gap {res['delta']:+.3f}\n"
+    )
+    print(
+        f"proof: k={k} t={table} RT={'ok' if res['roundtrip'] else 'FAIL'} "
+        f"payload={len(payload)} B rate={res['rate']:.3f} "
+        f"model={len(blob) / 1e3:.1f} kB shared={res['shared']:.3f} "
+        f"calls={res['calls']} enc={res['encode_mb_s']:.2f} MB/s "
+        f"dec={res['decode_mb_s']:.2f} MB/s ({res['seconds'] / 60:.1f} min)",
+        flush=True,
+    )
+    return res
 
 
 def report(res: list[dict], path: Path, full: bool) -> None:
@@ -367,12 +509,21 @@ def main(argv=None) -> int:
     s = sub.add_parser("scan")
     s.add_argument("--min-count", type=int, default=32)
     s.add_argument("--out", default="runs/v9/scan100.npz")
+    q = sub.add_parser("proof")
+    q.add_argument("--val", type=int, default=1_000_000)
+    q.add_argument("--dict", type=int, default=32768)
+    q.add_argument("--table", type=int, default=16384)
+    q.add_argument("--scan", default="runs/v9/scan100.npz")
+    q.add_argument("--seed", action="store_true")
+    q.add_argument("--out", default="runs/v9/proof-100m.json")
     sub.add_parser("selftest")
     a = p.parse_args(argv)
     if a.cmd == "selftest":
         selftest()
     elif a.cmd == "scan":
         scan(a.min_count, Path(a.out))
+    elif a.cmd == "proof":
+        proof(a.val, a.dict, a.table, Path(a.scan), Path(a.out), a.seed)
     elif a.cmd == "run":
         run(
             tuple(int(x) for x in a.dict.split(",")),

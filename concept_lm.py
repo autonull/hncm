@@ -114,7 +114,7 @@ def bigrams(toks: list[bytes]) -> tuple[dict, collections.Counter]:
     big: dict[bytes, collections.Counter] = collections.defaultdict(collections.Counter)
     for a, b in zip(toks, toks[1:]):
         big[a][b] += 1
-    return dict(big), collections.Counter(toks)
+    return dict(big), collections.Counter(toks[:-1])
 
 
 def prune(big: dict, n: int | None) -> dict:
@@ -135,16 +135,52 @@ def prune(big: dict, n: int | None) -> dict:
     return dict(out)
 
 
+_MASS: dict[tuple[int, bytes], float] = {}
+_LAST: dict | None = None
+_ZCACHE: dict[int, float] = {}
+
+
+def _ztotal(d: v.Dict) -> float:
+    key = id(d)
+    if key not in _ZCACHE:
+        _ZCACHE[key] = sum(2.0**-x for x in d.cost)
+    return _ZCACHE[key]
+
+
+def _seen_mass(big: dict, p: bytes, d: v.Dict) -> float:
+    global _LAST
+    if _LAST is not big:
+        _MASS.clear()
+        _ZCACHE.clear()
+        _LAST = big
+    key = (id(big), p)
+    if key not in _MASS:
+        _MASS[key] = sum(2.0 ** -d.cost_of(x) for x in big[p])
+    return _MASS[key] / _ztotal(d)
+
+
 def cost_of(
     s: bytes, d: v.Dict, big: dict, uni: collections.Counter, p: bytes | None
 ) -> float:
-    """Bits for `s` given the concept that just ended, with a unigram backoff."""
+    """Bits for `s` given the concept that just ended.
+
+    For a seen pair the cost is the bigram row; for an unseen token the
+    dictionary cost is renormalized by the row's unseen mass, exactly as the
+    derived CDF does. Without that factor the model is subnormalized and the
+    code is 1.6 bpb longer than the rate it claims (measured at 100 MB).
+    """
     if p is None:
         return d.cost_of(s)
     row = big.get(p)
     if row and row.get(s, 0):
         return -math.log2(row[s] / uni[p])
-    return d.cost_of(s)
+    if not row:
+        return d.cost_of(s)
+    left = (uni[p] - sum(row.values())) / uni[p]
+    if left <= 1e-12:
+        return d.cost_of(s)
+    mass = _seen_mass(big, p, d)
+    return -math.log2(left) + d.cost_of(s) - math.log2(max(1.0 - mass, 1e-12))
 
 
 def viterbi(
@@ -193,6 +229,42 @@ def viterbi_chunked(
     for a in range(0, len(bs), chunk):
         out.extend(viterbi(bs[a : a + chunk], d, big, uni)[0])
     return out
+
+
+_P_BS = b""
+_P_D: v.Dict | None = None
+_P_BIG: dict = {}
+_P_UNI: collections.Counter = collections.Counter()
+
+
+def _p_chunk(r: tuple[int, int]) -> list[bytes]:
+    a, b = r
+    return viterbi(_P_BS[a:b], _P_D, _P_BIG, _P_UNI)[0]
+
+
+def viterbi_parallel(
+    bs: bytes,
+    d: v.Dict,
+    big: dict,
+    uni: collections.Counter,
+    chunk: int = 1 << 20,
+    workers: int = 8,
+) -> list[bytes]:
+    """`viterbi_chunked` with the independent chunks on `workers` processes.
+
+    The children inherit the dictionary and the table by fork; the chunks are
+    exactly the sequential ones, so the path is identical.
+    """
+    if workers <= 1 or len(bs) <= chunk:
+        return viterbi_chunked(bs, d, big, uni, chunk)
+    import multiprocessing as mp
+
+    global _P_BS, _P_D, _P_BIG, _P_UNI
+    _P_BS, _P_D, _P_BIG, _P_UNI = bs, d, big, uni
+    ranges = [(a, min(a + chunk, len(bs))) for a in range(0, len(bs), chunk)]
+    with mp.get_context("fork").Pool(workers) as pool:
+        parts = pool.map(_p_chunk, ranges)
+    return [tok for part in parts for tok in part]
 
 
 def greedy1(bs: bytes, d: v.Dict, big: dict, uni: collections.Counter) -> list[bytes]:
@@ -347,12 +419,20 @@ def split(name: str, vocab: str) -> dict:
     }
 
 
+def cover_chunked(bs: bytes, d: v.Dict, chunk: int = 1 << 20) -> list[bytes]:
+    """The unigram cover in 1 MB chunks: the state resets at each boundary."""
+    out = []
+    for a in range(0, len(bs), chunk):
+        out.extend(v.cover(bs[a : a + chunk], d, 0.0))
+    return out
+
+
 def rebuild(s: dict, k: int, table: int) -> tuple[v.Dict, dict, collections.Counter]:
     """One measured grid point, rebuilt: the dictionary at `k` and the table
     pruned to `table` entries. The costs are the unigram-tiling table (the grid),
     not the EM refit, so the tail is exactly the tail of the reported codec."""
     d = dict_at(s["usage"], s["top"], k, s["bc"])
-    big, uni = bigrams(v.cover(s["fit"], d, 0.0))
+    big, uni = bigrams(cover_chunked(s["fit"], d))
     return d, prune(big, table), uni
 
 

@@ -328,6 +328,8 @@ class Model:
         else:
             w = self.u_m.copy()
         cdf = CDF(w)
+        if len(self._tcache) >= 64:
+            self._tcache.clear()
         self._tcache[p] = cdf
         return cdf
 
@@ -352,6 +354,8 @@ class Model:
         else:
             w = self.u.copy()
         cdf = CDF(w)
+        if len(self._fcache) >= 64:
+            self._fcache.clear()
         self._fcache[p] = cdf
         return cdf
 
@@ -454,13 +458,25 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     """The packed model at one budget, the reference (v7) costs, and the paths."""
     if (name, vocab) not in _SPLIT:
         _SPLIT[(name, vocab)] = c.split(name, vocab)
-    s = _SPLIT[(name, vocab)]
-    d, bg, uni = c.rebuild(s, rect["dict"], rect["table"])
+    return fit_split(_SPLIT[(name, vocab)], rect)
+
+
+def fit_split(s: dict, rect: dict, d: v.Dict | None = None) -> dict:
+    """The same, from a prepared split (the 100 MB run's dictionary)."""
+    if d is None:
+        d, bg, uni = c.rebuild(s, rect["dict"], rect["table"])
+        s.pop("usage", None)
+        s.pop("top", None)
+    else:
+        big, uni = c.bigrams(c.cover_chunked(s["fit"], d))
+        bg = c.prune(big, rect["table"])
     big, uni = bg, uni
-    fit_toks = c.viterbi_chunked(s["fit"], d, big, uni)
-    val_toks, val_cost = c.viterbi(s["va"], d, big, uni)
-    sel_toks = c.viterbi(s["sel"], d, big, uni)[0]
-    full_big, full_uni = c.bigrams(v.cover(s["fit"], d, 0.0))
+    fit_toks = c.viterbi_parallel(s["fit"], d, big, uni, workers=8)
+    print("  fit: path", flush=True)
+    val_toks = c.viterbi_parallel(s["va"], d, big, uni, workers=8)
+    sel_toks = c.viterbi_parallel(s["sel"], d, big, uni, workers=8)
+    full_big, full_uni = c.bigrams(c.cover_chunked(s["fit"], d))
+    print("  fit: tables", flush=True)
     rows = {
         d.ids[p]: (
             float(sum(row.values())),
@@ -469,6 +485,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
         for p, row in full_big.items()
         if p in big
     }
+    del full_big, full_uni
     pf = t.pieces(fit_toks, {})
     root_raw = np.exp2(s["bc"].max() - s["bc"])
     root = root_raw / root_raw.sum()
@@ -518,6 +535,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
         _, r, a, b, ref_logp, ref_size, scale = best
         model.r, model.a, model.b, model.tail_scale = r, a, b, scale
         model.__post_init__()
+    del counts, pf
     ref_lens = np.array(
         [lens.get(i, 0) + ALPHA for i in range(1, CAP + 1)]
         + [sum(c for ell, c in lens.items() if ell > CAP) + ALPHA],
@@ -552,6 +570,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
             "row_bits": single_row,
             "row_bytes": sum(len(x) for x in val_toks if len(x) == 1),
         }
+    del fit_toks, sel_toks, pfit, psel, pval
     tail_extra = 0.0
     if ref_logp is not None:
         for a0, e in runs(val_toks):

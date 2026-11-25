@@ -38,17 +38,14 @@ What the mechanism already shows:
   wins. The exact table is in the report of record.
 - **The coverage lever pays at the margin.** The union vocabulary raises the
   10 MB coverage to 0.815 at a 32k dictionary and moves the recorded size from
-  3.035 to 2.987, a 0.048 win; its estimate moves 0.284, but the 2.94 gate
-  misses by 0.047 and PPMd is 0.827 ahead.
-- **The tail's context is the count table.** On the same 310,677 tail bytes,
-  order-2 counts reach 4.151 against the NCM's 4.307 and the concept row's
-  4.625; the counts win the net by 0.113 at three times the model.
-- **Natural text is still behind.** At 100 MB the charged estimate is 2.503
-  against PPMd's 1.834 (coverage 0.825, 0.040 of charge); the full 100 MB
-  vocabulary covers 0.912 but charges 2.520, because the newly covered tokens
-  cost more (covered 2.164 against PPMd's 1.834). Coverage is not the binding
-  lever; the concept rate is. The text claim is a negative at 100 MB; the
-  structured win stands and is the product.
+  3.035 to **2.977**, a 0.058 win; the 2.94 gate misses by 0.037.
+- **The tail's context is the count table.** On the substr 10 MB DP tail,
+  order-2 counts reach 4.140 against the NCM's 4.307 and the row's 4.721; on
+  the union tail 4.303 against 4.854.
+- **The end-to-end proof.** The 100 MB model round-trips at **2.643** (1 MB
+  held-out) and **2.664** (10 MB held-out), with a 300.9 kB model and 2.39M
+  calls; PPMd is 1.834. The text claim is a negative at 100 MB; the structured
+  win is the product.
 
 The measured tables are the record of the current run. They
 will change as the levers land; this README states the mechanism and the claim,
@@ -120,10 +117,9 @@ report of record states the numbers for the current run.
 - **v9 (the levers).** The union vocabulary is a measured 0.048 win on the
   10 MB record (2.987 against 3.035) and raises coverage to 0.815 at 32k; the
   order-2 count tail beats both the concept row and the 25 kB NCM on the same
-  bytes, but the 2.94 and 4.0 gates miss. At 100 MB the charged estimate is
-  2.503 against PPMd's 1.834 (coverage 0.825); the full 100 MB vocabulary
-  covers 0.912 but charges 2.520, because the covered tokens cost more. The
-  text claim is a measured negative at 100 MB; the structured win is the
-  product.
+  bytes, but the 2.94 and 4.0 gates miss. At 100 MB the end-to-end proof
+  round-trips at 2.643 / 2.664 against PPMd's 1.834; the full vocabulary
+  covers 0.912 but its table's unseen transitions cost 4.283. The text claim
+  is a measured negative at 100 MB; the structured win is the product.
 
 The details of each stage are in the report of record and the run artifacts.
