@@ -1,0 +1,18 @@
+[run]
+name = "p4-ops"
+seed = 0
+gates = ["P4a", "P4b", "P4c", "P4d", "P4e", "P4f"]
+
+[data]
+corpus = "synseg"
+val_bytes = 1_200_000
+lexicon = ""
+
+[model]
+arm = "ledger"
+params = 40_000_000
+
+[optim]
+steps = 0
+batch = 32
+lr = 0.0

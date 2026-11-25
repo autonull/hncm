@@ -1,0 +1,19 @@
+[run]
+name = "p2-class-100m"
+seed = 0
+gates = ["P2a", "P2b", "P2c", "P2d"]
+
+[data]
+corpus = "enwik8_100m"
+stream_bytes = 100_000_000
+val_bytes = 10_000_000
+lexicon = "../runs/v9/scan100.npz"
+
+[model]
+arm = "concept"
+params = 60_000_000
+
+[optim]
+steps = 20000
+batch = 32
+lr = 3e-4

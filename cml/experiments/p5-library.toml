@@ -1,0 +1,18 @@
+[run]
+name = "p5-library"
+seed = 0
+gates = ["L-G0a", "L-G0b", "L-G1", "L-G2", "L-G3", "L-G4", "L-G5", "P5e", "P5f", "P5g"]
+
+[data]
+corpus = "src"
+val_bytes = 1_000_000
+lexicon = ""
+
+[model]
+arm = "library"
+params = 60_000_000
+
+[optim]
+steps = 5000
+batch = 32
+lr = 3e-4

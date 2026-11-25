@@ -1,0 +1,19 @@
+[run]
+name = "p1-class-10m"
+seed = 0
+gates = ["P1a", "P1b", "P1c", "P1d", "P1e"]
+
+[data]
+corpus = "enwik8_10m"
+val_bytes = 1_000_000
+lexicon = "../runs/v9/fit-seed-16384-16384-10000000.pkl"
+
+[model]
+arm = "concept"
+params = 10_000_000
+
+[optim]
+steps = 2000
+batch = 32
+lr = 3e-4
+mix = 0.5
