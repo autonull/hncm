@@ -74,7 +74,7 @@ plan, not on this page.
 - Not a trained index. The dictionary and the concept table are counts; the
   fallback may be learned or counted, selected on a held-out split.
 - Not the earlier estimates. The pre-bitstream numbers were lower bounds; the
-  recorded sizes are the record, and `REPORT.md` keeps both.
+  recorded sizes are the record, and the report of record keeps both.
 
 ## The design is not pinned to the numbers
 
