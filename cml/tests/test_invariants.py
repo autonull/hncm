@@ -5,6 +5,7 @@ import pytest
 import torch
 
 import cml
+import codec
 
 
 def test_gate_ops() -> None:
@@ -42,6 +43,42 @@ def test_search_and_render() -> None:
     text = cml.render_state(d)
     assert "CML SEARCH" in text
     assert "leaderboard" in text
+
+
+def test_arith_and_byte_roundtrip() -> None:
+    text = (b"alpha = beta + gamma\n" * 80) + bytes(range(256))
+    blob = codec.encode_byte(text)
+    assert codec.decode_frame(blob) == text
+    assert codec.unpack_frame(blob).n == len(text)
+
+
+def test_parse_reexpands() -> None:
+    train = b"def parse(data):\n    return data\n" * 40
+    lex = codec.build_lexicon(train, size=64, min_count=4, cap=8)
+    assert lex.units
+    parse, covered = codec.greedy_parse(train, lex)
+    rebuilt = b"".join(
+        lex.units[sym] if sym >= 0 else bytes([-1 - sym]) for sym in parse
+    )
+    assert rebuilt == train
+    assert covered > 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="pointer codec uses cuda")
+def test_pointer_roundtrip() -> None:
+    import pointer
+
+    data = b"def f(x):\n    return x + 1\n" * 8
+    full = codec.build_lexicon(data * 4, size=8, min_count=2, cap=4)
+    lex = codec.Lexicon(full.units[:8])
+    els = pointer.elements(data, lex)
+    cfg = pointer.PointerConfig(
+        d=32, layers=1, heads=4, seq=32, active=8, steps=2, batch=2
+    )
+    model, _ = pointer.train_pointer(els, lex.units, cfg)
+    pc = pointer.PointerCodec(model, lex)
+    blob = pc.encode(data)
+    assert pc.decode(blob, len(data)) == data
 
 
 def test_windows_and_split() -> None:

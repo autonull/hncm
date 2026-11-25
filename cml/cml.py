@@ -27,6 +27,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import codec as codec_mod
+
 ROOT = Path(__file__).resolve().parent
 RUNS = ROOT / "runs"
 
@@ -1181,6 +1183,8 @@ def corpus_bytes(name: str) -> bytes:
         return synseg_bytes(10_000_000)
     if name == "src":
         return src_bytes()
+    if name == "code":
+        return code_corpus().raw
     raw = (CACHE / "enwik8").read_bytes()
     n = {"enwik8_10m": 10_000_000, "enwik8_100m": 100_000_000}.get(name, 10_000_000)
     return raw[:n]
@@ -1203,6 +1207,106 @@ def src_bytes() -> bytes:
     if not path.exists():
         path.write_bytes(raw)
     return path.read_bytes()
+
+
+CODE_CAP = 8_000_000
+CODE_DROP = frozenset(
+    (
+        "__pycache__",
+        "test",
+        "tests",
+        ".git",
+        "runs",
+        ".venv",
+        "vendor",
+        "vendored",
+        "_vendor",
+        "third_party",
+    )
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CodeCorpus:
+    raw: bytes
+    train: bytes
+    test: bytes
+    files: tuple[tuple[str, int, int], ...]
+    split: int
+    sha: str
+    train_sha: str
+
+
+def _code_files() -> list[tuple[str, Path]]:
+    """Repo py files plus the installed venv's site-packages, path sorted."""
+    here = ROOT
+    roots = [("repo", here.parent)]
+    roots += [
+        ("site", p) for p in (here / ".venv/lib").rglob("site-packages") if p.is_dir()
+    ]
+    out: list[tuple[str, Path]] = []
+    for tag, base in roots:
+        for p in sorted(base.rglob("*.py")):
+            try:
+                rel = p.relative_to(base)
+            except ValueError:
+                continue
+            if any(q in CODE_DROP for q in rel.parts) or p.name.startswith("test_"):
+                continue
+            out.append((f"{tag}:{rel}", p))
+    out.sort(key=lambda item: item[0])
+    return out
+
+
+def code_corpus(refreeze: bool = False) -> CodeCorpus:
+    """The code corpus, frozen by SHA.  Whole files split 90/10 by path.
+
+    A pin in the cache (`code-current.json`) keeps the corpus fixed while the
+    repo's own source changes; pass ``refreeze=True`` to take a new snapshot.
+    """
+    pin = CACHE / "code-current.json"
+    if pin.exists() and not refreeze:
+        data = json.loads(pin.read_text())
+        sha = data["sha"]
+        raw = (CACHE / f"code-{sha[:12]}.bin").read_bytes()
+        if hashlib.sha256(raw).hexdigest() != sha:
+            raise ValueError("code corpus: pinned cache mismatch")
+        split = int(data["split"])
+        files = tuple(tuple(row) for row in data["files"])
+        train, test = raw[:split], raw[split:]
+        return CodeCorpus(
+            raw, train, test, files, split, sha, hashlib.sha256(train).hexdigest()
+        )
+    out = bytearray()
+    files: list[tuple[str, int, int]] = []
+    for rel, path in _code_files():
+        data = path.read_bytes()
+        marker = f"\n# --- {rel} ---\n".encode()
+        if len(out) + len(marker) + len(data) > CODE_CAP:
+            continue
+        start = len(out)
+        out += marker + data
+        files.append((rel, start, len(out)))
+        if len(out) >= CODE_CAP:
+            break
+    raw = bytes(out)
+    sha = hashlib.sha256(raw).hexdigest()
+    cached = CACHE / f"code-{sha[:12]}.bin"
+    if not cached.exists():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cached.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        os.replace(tmp, cached)
+    raw = cached.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != sha:
+        raise ValueError("code corpus: cache mismatch")
+    k = min(max(int(len(files) * 0.9), 1), len(files))
+    split = files[k][1] if k < len(files) else len(raw)
+    train, test = raw[:split], raw[split:]
+    write_json(pin, {"sha": sha, "files": files, "split": split})
+    return CodeCorpus(
+        raw, train, test, tuple(files), split, sha, hashlib.sha256(train).hexdigest()
+    )
 
 
 def synseg_bytes(n: int, seed: int = 0) -> bytes:
@@ -2680,6 +2784,262 @@ def run(
     return 0
 
 
+def _lexicon_for(corpus: CodeCorpus, units: int, min_count: int, cap: int):
+    path = CACHE / f"lex-{corpus.train_sha[:12]}-{units}-{min_count}-{cap}.bin"
+    if path.exists():
+        return codec_mod.Lexicon.from_blob(path.read_bytes())
+    lex = codec_mod.build_lexicon(corpus.train, units, min_count, cap)
+    blob = lex.blob()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(blob)
+    os.replace(tmp, path)
+    return lex
+
+
+def _pointer_for(
+    corpus: CodeCorpus, lex: codec_mod.Lexicon, active: int, steps: int, seed: int
+):
+    import pointer
+
+    active_lex = codec_mod.Lexicon(lex.units[:active])
+    path = CACHE / f"pointer-{corpus.train_sha[:12]}-a{active}-s{steps}-n{seed}.pt"
+    if path.exists():
+        try:
+            return pointer.load_model(path), active_lex
+        except RuntimeError, KeyError, ValueError:
+            pass
+    cfg = pointer.PointerConfig(active=active, steps=steps, seed=seed)
+    els = pointer.elements(corpus.train, active_lex)
+    model, losses = pointer.train_pointer(els, active_lex.units, cfg)
+    pointer.save_model(path, model, cfg, losses)
+    return model, active_lex
+
+
+def _run_concept(
+    corpus: CodeCorpus,
+    data: bytes,
+    lex: codec_mod.Lexicon,
+    active: int,
+    steps: int,
+    seed: int,
+    proof: int,
+    arm: str,
+    corpus_name: str,
+    nbytes: int,
+    split: str,
+) -> dict:
+    import pointer
+
+    model, active_lex = _pointer_for(corpus, lex, active, steps, seed)
+    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}"
+    pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
+    pcodec = pointer.PointerCodec(model, active_lex, half=True)
+    parse, covered = codec_mod.greedy_parse(data, active_lex)
+    stats = codec_mod.parse_stats(parse, active_lex, len(data), covered)
+    payload = pcodec.encode(data)
+    frame = codec_mod.pack_frame(
+        2, len(data), payload, corpus.sha, corpus.train_sha, active_lex
+    )
+    header_bytes = len(frame) - len(payload)
+    want = min(proof, len(parse))
+    out = pcodec.decode(payload, len(data), limit=want)
+    if out != data[: len(out)]:
+        raise SystemExit("concept: proof round-trip failed")
+    params = sum(p.numel() for p in model.parameters())
+    base_bytes = params / 2
+    n = max(len(data), 1)
+    payload_bpb = 8 * len(payload) / n
+    shared_bpb = 8 * (len(payload) + header_bytes) / n
+    metrics = {
+        "id": f"codec-{arm}-{corpus_name}-{nbytes}",
+        "arm": arm,
+        "corpus": corpus_name,
+        "split": split,
+        "bytes": nbytes,
+        "n": len(data),
+        "payload_bytes": len(payload),
+        "header_bytes": header_bytes,
+        "lexicon_bytes": len(active_lex.blob()),
+        "payload_bpb": payload_bpb,
+        "shared_bpb": shared_bpb,
+        "self_bpb": shared_bpb + 8 * base_bytes / n,
+        "base_bytes": base_bytes,
+        "params": params,
+        "roundtrip": True,
+        "proof_units": want,
+        "proof_bytes": len(out),
+        "coding_dtype": "fp16",
+        "corpus_sha": corpus.sha,
+        "train_sha": corpus.train_sha,
+        "lexicon_sha": active_lex.sha,
+        "units": len(active_lex.units),
+        "coverage": stats["coverage"],
+        "mean_unit": stats["mean_unit"],
+        "literals": stats["literals"],
+        "files": len(corpus.files),
+        "train_bytes": len(corpus.train),
+        "test_bytes": len(corpus.test),
+        "git": git_sha(),
+        "seconds": None,
+    }
+    out_dir = RUNS / metrics["id"]
+    write_json(out_dir / "metrics.json", metrics)
+    (out_dir / "lexicon.bin").write_bytes(active_lex.blob())
+    (out_dir / "frame.bin").write_bytes(frame)
+    return metrics
+
+
+def run_codec(
+    arm: str,
+    corpus_name: str,
+    nbytes: int,
+    split: str,
+    units: int,
+    min_count: int,
+    cap: int,
+    active: int,
+    steps: int,
+    proof: int,
+    seed: int,
+) -> int:
+    """One `cml codec` run: encode a frozen slice, decode it, record the bpb."""
+    if corpus_name != "code":
+        raise SystemExit("codec: only --corpus code is wired")
+    t0 = time.perf_counter()
+    corpus = code_corpus()
+    pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}[split]
+    data = pool[:nbytes]
+    if arm == "concept":
+        lex = _lexicon_for(corpus, units, min_count, cap)
+        metrics = _run_concept(
+            corpus,
+            data,
+            lex,
+            active,
+            steps,
+            seed,
+            proof,
+            arm,
+            corpus_name,
+            nbytes,
+            split,
+        )
+        metrics["seconds"] = round(time.perf_counter() - t0, 3)
+        write_json(RUNS / metrics["id"] / "metrics.json", metrics)
+        print(
+            f"{metrics['id']}: {len(data)} B -> {metrics['payload_bytes']} B payload, "
+            f"header {metrics['header_bytes']} B, "
+            f"{metrics['payload_bpb']:.3f} / {metrics['shared_bpb']:.3f} bpb, "
+            f"proof {metrics['proof_units']} units"
+        )
+        return 0
+    lex = None
+    coverage = None
+    mean_unit = None
+    literals = None
+    if arm == "byte":
+        payload = codec_mod.ByteArm().encode(data)
+        codec_arm = 0
+    elif arm == "lexicon":
+        lex = _lexicon_for(corpus, units, min_count, cap)
+        parse, covered = codec_mod.greedy_parse(data, lex)
+        stats = codec_mod.parse_stats(parse, lex, len(data), covered)
+        coverage = stats["coverage"]
+        mean_unit = stats["mean_unit"]
+        literals = stats["literals"]
+        payload = codec_mod.UnitArm(lex).encode(data, parse)
+        codec_arm = 1
+    else:
+        raise SystemExit(f"codec: unknown arm {arm}")
+    frame = codec_mod.pack_frame(
+        codec_arm, len(data), payload, corpus.sha, corpus.train_sha, lex
+    )
+    header_bytes = len(frame) - len(payload)
+    lexicon_bytes = len(lex.blob()) if lex is not None else 0
+    if codec_mod.decode_frame(frame) != data:
+        raise SystemExit("codec: round-trip failed")
+    n = max(len(data), 1)
+    payload_bpb = 8 * len(payload) / n
+    shared_bpb = 8 * (len(payload) + header_bytes) / n
+    metrics = {
+        "id": f"codec-{arm}-{corpus_name}-{nbytes}",
+        "arm": arm,
+        "corpus": corpus_name,
+        "split": split,
+        "bytes": nbytes,
+        "n": len(data),
+        "payload_bytes": len(payload),
+        "header_bytes": header_bytes,
+        "lexicon_bytes": lexicon_bytes,
+        "payload_bpb": payload_bpb,
+        "shared_bpb": shared_bpb,
+        "self_bpb": shared_bpb,
+        "base_bytes": 0,
+        "roundtrip": True,
+        "corpus_sha": corpus.sha,
+        "train_sha": corpus.train_sha,
+        "lexicon_sha": lex.sha if lex is not None else "",
+        "units": len(lex.units) if lex is not None else 0,
+        "coverage": coverage,
+        "mean_unit": mean_unit,
+        "literals": literals,
+        "files": len(corpus.files),
+        "train_bytes": len(corpus.train),
+        "test_bytes": len(corpus.test),
+        "git": git_sha(),
+        "seconds": round(time.perf_counter() - t0, 3),
+    }
+    out = RUNS / metrics["id"]
+    write_json(out / "metrics.json", metrics)
+    if lex is not None:
+        (out / "lexicon.bin").write_bytes(lex.blob())
+    print(
+        f"{metrics['id']}: {len(data)} B -> {len(payload)} B payload, "
+        f"header {header_bytes} B, {payload_bpb:.3f} / {shared_bpb:.3f} bpb"
+        + (
+            f", coverage {coverage:.3f}, mean unit {mean_unit:.2f} B"
+            if coverage is not None
+            else ""
+        )
+    )
+    return 0
+
+
+def recorded_report() -> int:
+    rows = []
+    for path in sorted(RUNS.glob("codec-*/metrics.json")):
+        m = json.loads(path.read_text())
+        rows.append(m)
+    lines = [
+        "# Recorded codec runs",
+        "",
+        "Generated by `cml recorded`.  `shared` charges the header (and the",
+        "installed lexicon, which the frame carries); `self` adds the 4-bit base.",
+        "",
+        "| arm | corpus | sha | bytes | payload | shared | self | proof | lexicon | round-trip | run |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|:---:|---|",
+    ]
+    for m in rows:
+        mark = "✓" if m.get("roundtrip") else "✗"
+        proof = m.get("proof_units", "—")
+        lines.append(
+            f"| {m['arm']} | {m['corpus']} | {m['corpus_sha'][:8]} | {m['n']} | "
+            f"{m['payload_bpb']:.3f} | {m['shared_bpb']:.3f} | "
+            f"{m['self_bpb']:.3f} | {proof} | {m.get('lexicon_bytes', 0)} | "
+            f"{mark} | `{m['id']}` |"
+        )
+    if not rows:
+        lines += ["", "No `codec-*` runs yet.", ""]
+    report = REPORTS / "RECORDED.md"
+    report.parent.mkdir(parents=True, exist_ok=True)
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, report)
+    print(f"recorded {len(rows)} runs -> {report}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="cml")
     sub = p.add_subparsers(dest="cmd")
@@ -2713,6 +3073,21 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("stage", choices=("P1",))
     c.add_argument("--steps", type=int, default=6000)
     c.add_argument("--update", action="store_true")
+    co = sub.add_parser("codec")
+    co.add_argument("--arm", choices=("byte", "lexicon", "concept"), default="byte")
+    co.add_argument("--corpus", default="code")
+    co.add_argument("--bytes", type=int, default=1_000_000)
+    co.add_argument("--split", choices=("train", "test", "all"), default="test")
+    co.add_argument("--units", type=int, default=8192)
+    co.add_argument("--min-count", type=int, default=16)
+    co.add_argument("--cap", type=int, default=16)
+    co.add_argument("--active", type=int, default=256)
+    co.add_argument("--steps", type=int, default=1000)
+    co.add_argument("--proof", type=int, default=50_000)
+    co.add_argument("--seed", type=int, default=0)
+    cd = sub.add_parser("coder")
+    cd.add_argument("--test", action="store_true")
+    sub.add_parser("recorded")
     a = p.parse_args(argv)
     if a.cmd == "selftest":
         return selftest()
@@ -2746,6 +3121,27 @@ def main(argv: list[str] | None = None) -> int:
         return status()
     if a.cmd == "report":
         return report()
+    if a.cmd == "codec":
+        return run_codec(
+            a.arm,
+            a.corpus,
+            a.bytes,
+            a.split,
+            a.units,
+            a.min_count,
+            a.cap,
+            a.active,
+            a.steps,
+            a.proof,
+            a.seed,
+        )
+    if a.cmd == "coder":
+        if not a.test:
+            raise SystemExit("coder: pass --test")
+        print(codec_mod.selftest())
+        return 0
+    if a.cmd == "recorded":
+        return recorded_report()
     p.print_help()
     return 1
 

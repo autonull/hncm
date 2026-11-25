@@ -8,6 +8,35 @@ This file supersedes the analysis phase. Read `cml/PLAN.md` §11 for the
 corrected accounting (the P0 oracle −2.224) and `TODO6.md` for the frozen
 state.
 
+## 0a. Progress after the first build (M0-M3)
+
+The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
+555 files, 8.0 MB (train 7.24 MB, test 0.757 MB). `cml recorded` owns
+`reports/RECORDED.md`; every row below carries that SHA.
+
+| M | state | evidence |
+|---|---|---|
+| M0 | **done** | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`; `cml coder --test` passes 10k fixed + 10k adaptive symbols and a 200 kB byte round-trip |
+| M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
+| M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
+| M3 | **partial** | 4.97M pointer (active 256, 3,000 steps): 70k test payload **2.352**, shared **2.674** vs byte **2.807**; proof **50,000 units** exact; a pack the model never trained on decodes exactly, but the pack gap is **0.926 bpb** (Q1 bar 0.15) — rotating-lexicon training and local copy are not built |
+| M4-M7 | **not started** | M4 is blocked by M3's pack-agnostic training; M5-M7 remain as written |
+
+Concrete remaining work, in order:
+
+1. **Finish M3.** Rotate 2-4 packs per training step and add local copy
+   symbols. Bar: unseen-pack gap ≤0.15 bpb and shared bpb < the byte arm at
+   equal bytes. Then re-run the concept arm at 200 kB-1 MB.
+2. **M4.** Train a 5M byte model on the train split (the recorded byte arm is
+   adaptive, not trained) and print the equal-bytes table at a size where the
+   4-bit base amortizes (≥1 MB), with steps/byte and FLOPs/byte.
+3. **M5-M7.** Ops + Q2/Q3, the P1 text control, then the librarian.
+
+Two build notes. The causal step is 4.2 ms fp32 / 3.7 ms fp16 per unit, so a
+50k-unit proof is a ~6-minute job; encode-at-scale needs an exact batched CDF
+replay or a fused step. `code_corpus(refreeze=True)` takes a new snapshot;
+normal runs never read the moving working tree.
+
 ## 0. What is measured (start from this, do not re-derive)
 
 | fact | number | where |
@@ -106,16 +135,19 @@ existing `src_bytes` freeze, generalized). Cap at 8 MB. Split by **whole
 files**: the last 10% by path is the test, so the test shares no file with the
 train. Record `corpus_sha` in every header and metrics.
 - Drop `test`/`__pycache__`/vendored duplicates by path filter; keep the SHA as
-  the truth. Target 5-8 MB, ≥1500 files.
+  the truth. Target 5-8 MB, ≥1500 files. The first pin is 8.0 MB / **555
+  files**: the path-sorted cap spends the budget on a few large packages. The
+  file-count target is not met; a deliberate small-file selection is the next
+  option, and the actual count is recorded rather than hidden.
 
 ## 4. Milestones (each ships a runnable number)
 
 | M | ships | acceptance | cost |
 |---|---|---|---|
-| M0 | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`, `cml coder --test` | 10k random symbols round-trip; 200 kB byte codec round-trip | 1.5 h |
-| M1 | byte arm: order-2 counts, escape to order-1; `cml codec --arm byte --corpus code` | exact round-trip; recorded bpb on 1 MB | 1.5 h |
-| M2 | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
-| M3 | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
+| M0 ✅ | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`, `cml coder --test` | 10k random symbols round-trip; 200 kB byte codec round-trip | 1.5 h |
+| M1 ✅ | byte arm: order-2 counts, escape to order-1; `cml codec --arm byte --corpus code` | exact round-trip; recorded bpb on 1 MB | 1.5 h |
+| M2 ✅ | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
+| M3 ◐ | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
 | M4 | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
 | M5 | ops: `pack verify/trace/diff/merge/rm`; Q2/Q3 demos; the adapter arm as a 30-min negative control (flag+index+byte) to confirm −2.2 in a real codec; a rent λ sweep on the pack | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
 | M6 | text control: the P1 trunk concept codec on the 10 MB parse (recorded, vs PPMd 1.992) | recorded bpb within 0.05 of 1.920 + header | 2 h |
@@ -204,9 +236,14 @@ cd cml
 uv sync && uv run pytest -q
 uv run cml coder --test
 uv run cml codec --arm byte --corpus code --bytes 1000000
-uv run cml codec --arm concept --corpus code --bytes 200000 --units 50000
+uv run cml codec --arm lexicon --corpus code --bytes 200000
+uv run cml codec --arm concept --corpus code --bytes 70000 --proof 50000 --steps 3000
 uv run cml recorded
 ```
+
+The concept arm codes in fp16 for speed; training stays fp32. Its model is
+cached by `(train_sha, active, steps, seed)` and copied into the run directory.
+The 50k-unit proof takes ~6 minutes on an RTX 3080.
 
 References: `cml/PLAN.md` §11; `n10.py:241` (`build_full`); `runs/v9/CODEC.md`
 (the header and charge); `reports/GATES.md` (the record).
