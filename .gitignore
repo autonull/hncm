@@ -2,3 +2,4 @@
 __pycache__
 .venv/
 runs/**/*.pt
+runs/v9/scan100.npz

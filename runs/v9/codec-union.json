@@ -1,0 +1,66 @@
+{
+ "format": 8,
+ "seed": 0,
+ "try": 1,
+ "corpora": {
+  "enwik8_10m": {
+   "corpus": "enwik8_10m",
+   "arm": "concept",
+   "vocab": "union",
+   "dict": 16384,
+   "table": 16384,
+   "r": 32,
+   "val_bytes": 1000000,
+   "stream_bytes": 10000000,
+   "payload_bytes": 342375,
+   "model_bytes": 309557,
+   "rate": 2.739,
+   "entropy": 2.7389938697979375,
+   "ref": 2.5526744201062668,
+   "v7": 2.5526744201062668,
+   "shared": 2.9867825999999997,
+   "self": 5.215593,
+   "delta_v7": 0.1863194496916707,
+   "delta_ref": 0.1863194496916707,
+   "delta_code": 0.00014313020206246918,
+   "bits": {
+    "concept": 2.7389938697979375
+   },
+   "calls": 247688,
+   "encode_s": 5.255857618059963,
+   "decode_s": 4.86517636210192,
+   "encode_mb_s": 0.1902639060395854,
+   "decode_mb_s": 0.20554239467856955,
+   "model_kb": 309.557,
+   "roundtrip": true,
+   "options": [
+    {
+     "arm": "tail",
+     "dict": 16384,
+     "table": 16384,
+     "rate": 2.777696,
+     "model_bytes": 342389,
+     "charged": 3.0516072000000003,
+     "calls": 247688
+    },
+    {
+     "arm": "concept",
+     "dict": 16384,
+     "table": 16384,
+     "rate": 2.739,
+     "model_bytes": 309557,
+     "charged": 2.9866455999999997,
+     "calls": 247688
+    }
+   ],
+   "ord2": {
+    "top": 1024,
+    "size": 80468,
+    "bits": 1072288.15451056,
+    "bytes": 247687,
+    "row_bits": 1173650.6034973008,
+    "row_bytes": 247687
+   }
+  }
+ }
+}

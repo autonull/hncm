@@ -317,3 +317,70 @@ The NCM v2 (the real previous three bytes + the H-Net class + the position;
 SVD's 4.459: +0.152 on the tail, +0.009 of charge, a +0.04 net. The context
 is real and it beats the SVD, but the count order-2 (3.83 at 1 MB) is the
 better tail; the 10 MB gap to PPMd is not closed by the NCM.
+
+## v9/N8: the union vocabulary (measured)
+
+The union is the merge of the two cached EM tilings (substrings and word
+onsets): one candidate map, one unigram, one first-order DP. On enwik8_10m
+(9 MB train / 1 MB val, SHA `5985c81c...`) the unigram probe covers
+0.699/0.766/0.815 at 8k/16k/32k dicts; the first-order DP rate is
+2.607/2.499/2.425 at the 32k table. The selection rule picks 16,384/16,384;
+the codec records:
+
+| budget | arm | rate | model kB | shared | calls |
+|---|---|---:|---:|---:|---:|
+| union 16k/16k | concept | 2.739 | 309.6 | **2.987** | 247,688 |
+| union 16k/16k | tail | 2.778 | 342.4 | 3.052 | 247,688 |
+| substr 8k/16k (v8) | concept | 2.857 | 222.5 | 3.035 | 56,592 |
+
+The union is a 0.048 win on the record and 0.011 below zlib; PPMd is 2.160.
+The estimate moved 0.284 (3.035 -> 2.751), the record 0.048: the 0.186 G2r
+gap is the derived CDF's loss against the model it packs. The N8 gate
+(recorded <= 2.94) misses by 0.047. The coverage gate's legs do not meet at
+one budget: 0.815 costs 347.7 kB and its covered rate is 2.129.
+
+## v9/N9: the order-2 tail, and the NCM on the same bytes (measured)
+
+The pruned order-2 counts (the real two preceding bytes, order-1 backoff, top
+on the held-out 10%, charged) beat the concept row on the same tail bytes:
+
+| rect | tail bytes | ord2 kB | ord2 bpb | row bpb |
+|---|---:|---:|---:|---:|
+| union 16k/16k | 247,687 | 80.5 | **4.329** | 4.738 |
+| substr 8k/4k | 310,677 | 80.9 | **4.151** | 4.625 |
+
+On the identical 310,677 bytes the NCM is 4.307 (27.4 kB). The counts win the
+rate by 0.156, pay 0.043 bpb more at 10 MB, and net +0.113; the count table
+is the tail of record, the NCM the smallest model. The N9 gate (tail <= 4.0)
+misses by 0.329 and 0.151: the 10 MB tail is harder than the 1 MB tail. With
+the ord2 tail the 10 MB record is projected at 2.950, still 0.010 above 2.94;
+the codec does not implement that arm yet.
+
+## v9/N10: the 100 MB verdict (measured)
+
+The 90 MB train / 10 MB val split. `n10.py` reads the dump as bytes, refits
+the 32k union vocabulary's counts on the 90 MB train with an exact GPU scan,
+fits the table on the first 90% (81 MB), chooses on the held-out 9 MB, and
+charges over 100 MB:
+
+| vocab | dict | table | coverage | covered bpb | tail bpb | rate | model kB | charge | charged | sel charged | ord2 projected | PPMd |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 MB seed | 32,768 | 16,384 | 0.825 | 1.961 | 4.831 | 2.464 | 498.7 | 0.040 | **2.503** | 2.522 | 2.446 | **1.834** |
+| 90 MB full | 32,768 | 16,384 | **0.912** | 2.164 | 5.781 | 2.484 | 451.9 | 0.036 | **2.520** | 2.540 | 2.475 | **1.834** |
+
+zlib 2.903, bz2 2.281, lzma 2.144, PPMd 1.834 on the same 10 MB val.
+`covered bpb` is derived: `(rate - (1-cov) * tail) / cov`. The model is
+0.669 behind PPMd (seed) / 0.686 (full) and misses the 1.90 gate by
+0.603 / 0.619. Coverage is not the binding lever: the full vocabulary adds
+0.087 of coverage but the covered tokens cost 2.164 against the seed's 1.961,
+and the covered tokens themselves are 0.127 / 0.330 above PPMd. The gap is
+the concept **rate**, not coverage. The order-2 tail (349 kB) projects
+2.446 / 2.475, still 0.61 behind. The stop rule holds: **the text claim is a
+negative at 100 MB**; the structured win (synseg 1.389 against PPMd 1.500) is
+the product. The codec record at 100 MB is not run (the 10 MB val encode is
+out of Python's throughput); the 10 MB record is 0.19-0.24 above the rate
+estimate, so the record would be >= 2.69.
+
+The 90 MB scan found 2,702,205 substrings with count >= 32 (64 MB cache,
+`runs/v9/scan100.npz`, not committed). The GPU unique pass is the exact
+replacement for the CPU `counts_substr` that would need ~10x the memory.

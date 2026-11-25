@@ -47,7 +47,12 @@ def tail_model(
     val_toks: list[bytes],
     root: np.ndarray,
 ) -> dict:
-    """The shared tail fitted on the train's uncovered spans, r chosen on sel."""
+    """The shared tail fitted on the train's uncovered spans, r chosen on sel.
+
+    Two arms, both charged: `svd`, the rank-r factorization of the 257x256
+    byte table (the shared low-rank model), and `ord2`, the pruned order-2
+    count table with the order-1 backoff (the real two preceding bytes).
+    """
     pf, ps, pv = (
         t.pieces(fit_toks, {}),
         t.pieces(sel_toks, {}),
@@ -55,11 +60,33 @@ def tail_model(
     )
     n = sum(len(p.raw) for p in pf)
     lens = collections.Counter(len(p.raw) for p in pf)
-    out = {"r": 0, "size": 0, "bits": 0.0, "bytes": sum(len(p.raw) for p in pv)}
+    out = {
+        "r": 0,
+        "size": 0,
+        "bits": 0.0,
+        "bytes": sum(len(p.raw) for p in pv),
+        "ord2": {"top": 0, "size": 0, "bits": 0.0},
+    }
     if not pf or n < 1000 or not pv:
         for p in pv:
             out["bits"] += t.prior_bits(lens, len(p.raw), n, c.CAP)
+        out["ord2"]["bits"] = out["bits"]
         return out
+    best2 = None
+    for k in t.ORD2:
+        m = t.ord2_model(pf, root, k)
+        sb = sum(m.bits(p) + t.prior_bits(lens, len(p.raw), n, c.CAP) for p in ps)
+        sel = sb / max(len(sel_toks), 1) + 8 * m.size() / (
+            len(fit_toks) + len(sel_toks)
+        )
+        if best2 is None or sel < best2[0]:
+            best2 = (sel, k, m)
+    _, k2, m2 = best2
+    out["ord2"] = {
+        "top": k2,
+        "size": m2.size(),
+        "bits": sum(m2.bits(p) + t.prior_bits(lens, len(p.raw), n, c.CAP) for p in pv),
+    }
     counts, _ = t.byte_matrix(pf, root)
     best = None
     for r in TAIL:
@@ -102,26 +129,40 @@ def measure(name: str, vocab: str, sizes: tuple[int, ...]) -> dict:
         calls = 1 + len([p for p in t.pieces(val_toks, {})])
         model = d.model_bytes + tail["size"]
         pred = cov * cov_rate + (1 - cov) * tail_rate + 8 * model / stream
+        t2 = tail["ord2"]
+        tail2_rate = t2["bits"] / max(tail["bytes"], 1) if t2["top"] else float("nan")
+        model2 = d.model_bytes + t2["size"]
+        pred2 = (
+            cov * cov_rate + (1 - cov) * tail2_rate + 8 * model2 / stream
+            if t2["top"]
+            else float("nan")
+        )
         rows.append(
             {
                 "dict": k,
                 "coverage": cov,
                 "covered_bpb": cov_rate,
                 "tail_bpb": tail_rate,
+                "tail2_bpb": tail2_rate,
                 "tail_bytes": tail["bytes"],
                 "tail_spans": calls - 1,
                 "r": tail["r"],
+                "ord2": t2["top"],
                 "dict_bytes": d.model_bytes,
                 "tail_bytes_model": tail["size"],
+                "tail2_bytes_model": t2["size"],
                 "model_bytes": model,
+                "model2_bytes": model2,
                 "predicted": pred,
+                "predicted2": pred2,
                 "calls": calls,
             }
         )
         print(
             f"  dict={k:6d} cov={cov:.3f} covered={cov_rate:.3f} "
-            f"tail={tail_rate:.3f} r={tail['r']:2d} model={8 * model / stream:.3f} "
-            f"pred={pred:.3f} ({time.time() - t1:.1f}s)",
+            f"tail={tail_rate:.3f} ord2={tail2_rate:.3f} top={t2['top']:5d} "
+            f"model={8 * model / stream:.3f} pred={pred:.3f} pred2={pred2:.3f} "
+            f"({time.time() - t1:.1f}s)",
             flush=True,
         )
     return {
@@ -147,32 +188,50 @@ def gates(res: dict) -> list[dict]:
                 "status": "pass" if best["coverage"] > 0.5 else "fail",
             }
         )
+        r2 = min(
+            (r for r in e["rows"] if r["ord2"]),
+            key=lambda r: r["predicted2"],
+            default=None,
+        )
+        if r2:
+            out.append(
+                {
+                    "id": "C2",
+                    "corpus": name,
+                    "value": f"ord2={r2['tail2_bpb']:.3f} "
+                    f"svd={best['tail_bpb']:.3f} pred2={r2['predicted2']:.3f} "
+                    f"top={r2['ord2']}",
+                    "status": "pass" if r2["tail2_bpb"] < best["tail_bpb"] else "fail",
+                }
+            )
     return out
 
 
 def report(res: dict, path: Path) -> None:
     lines = [
-        "# H-NCM v8: N1a, the coverage probe",
+        "# H-NCM v9: the coverage probe (N8, N9)",
         "",
         "The dictionary is fitted on the train and the val is tiled with the unigram",
         "cover (a lower bound on the first-order DP's coverage and a higher bound on",
-        "its covered rate). The shared tail is the rank-r factorization of the byte",
-        "context table, fitted on the train's uncovered spans, r chosen on the",
-        "held-out 10% of the train. `predicted = cov * covered + (1-cov) * tail +",
-        "8 * model / stream`; the concept table's charge is not included, so the",
-        "total is a lower bound.",
+        "its covered rate). Two shared tails are fitted on the train's uncovered",
+        "spans and chosen on the held-out 10% of the train: the rank-r",
+        "factorization of the byte table, and the pruned order-2 counts with the",
+        "order-1 backoff. `predicted = cov * covered + (1-cov) * tail +",
+        "8 * model / stream`; `predicted ord2` repeats it with the count tail. The",
+        "concept table's charge is not included, so both totals are lower bounds.",
         "",
-        "| corpus | dict | coverage | covered bpb | tail bpb | tail bytes | r | model kB | charge | predicted | calls |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| corpus | dict | coverage | covered bpb | tail bpb | ord2 bpb | ord2 top | tail bytes | r | model kB | charge | predicted | predicted ord2 | calls |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, e in res["corpora"].items():
         for r in e["rows"]:
             lines.append(
                 f"| {name} | {r['dict']} | {r['coverage']:.3f} | "
                 f"{r['covered_bpb']:.3f} | {r['tail_bpb']:.3f} | "
-                f"{r['tail_bytes']} | {r['r']} | {r['model_bytes'] / 1e3:.1f} | "
+                f"{r['tail2_bpb']:.3f} | {r['ord2']} | {r['tail_bytes']} | "
+                f"{r['r']} | {r['model_bytes'] / 1e3:.1f} | "
                 f"{8 * r['model_bytes'] / e['stream_bytes']:.3f} | "
-                f"{r['predicted']:.3f} | {r['calls']} |"
+                f"{r['predicted']:.3f} | {r['predicted2']:.3f} | {r['calls']} |"
             )
     lines += [
         "",

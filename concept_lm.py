@@ -275,7 +275,20 @@ def split(name: str, vocab: str) -> dict:
     """The protocol: fit on the first 90% of the train, select on the last 10%,
     truncate the val to 16 bytes. Returns the EM usage and its ranked candidates
     (the one model both vocabularies share). The candidate scan is cached by
-    corpus x vocab x sha, so a rerun is seconds, not the 9 min scan."""
+    corpus x vocab x sha, so a rerun is seconds, not the 9 min scan.
+
+    `union` merges the two EM tilings' used tokens: one candidate map, one
+    unigram (the usage counts), one DP. It is the coverage lever, and it costs
+    no new scan because both maps are cached."""
+    if vocab == "union":
+        a, b = split(name, "substr"), split(name, "onsets")
+        usage = a["usage"] + b["usage"]
+        return {
+            **a,
+            "vocab": "union",
+            "usage": usage,
+            "top": sorted((s for s in usage if len(s) > 1), key=lambda s: -usage[s]),
+        }
     corpus = corpora.get(name)
     tr = corpus["tr"].cpu().numpy().astype(np.uint8).tobytes()
     va = corpus["va"].cpu().numpy().astype(np.uint8).tobytes()
@@ -343,19 +356,24 @@ def rebuild(s: dict, k: int, table: int) -> tuple[v.Dict, dict, collections.Coun
     return d, prune(big, table), uni
 
 
-def measure(name: str, vocab: str) -> dict:
+def measure(
+    name: str,
+    vocab: str,
+    dicts: tuple[int, ...] = DICTS,
+    prunes: tuple[int | None, ...] = PRUNES,
+) -> dict:
     s = split(name, vocab)
     fit, sel, va, bc = s["fit"], s["sel"], s["va"], s["bc"]
     usage, top, stream = s["usage"], s["top"], s["stream"]
     codec = {c: 8 * f(va) / len(va) for c, f in codecs().items()}
 
     grid = []
-    for k in sorted({min(k, len(top)) for k in DICTS}):
+    for k in sorted({min(k, len(top)) for k in dicts}):
         d = dict_at(usage, top, k, bc)
         fit_toks = v.cover(fit, d, 0.0)
         big, uni = bigrams(fit_toks)
         uni_rate = v.bits_of(v.cover(va, d, 0.0), d) / len(va)
-        for n in PRUNES:
+        for n in prunes:
             bg = prune(big, n)
             model_bytes = d.model_bytes + ENTRY_BYTES * sum(len(r) for r in bg.values())
             model_bpb = 8 * model_bytes / stream
@@ -430,6 +448,7 @@ def measure(name: str, vocab: str) -> dict:
     return {
         "stream_bytes": stream,
         "train_bytes": len(s["tr"]),
+        "sha": s.get("sha", ""),
         "val_bytes": len(va),
         "dict": chosen["dict"],
         "table": chosen["table"],
@@ -603,12 +622,22 @@ def report(res: dict, path: Path) -> None:
 
 
 def run(
-    names: list[str], out: Path, vocabs: tuple[str, ...] = ("substr", "onsets")
+    names: list[str],
+    out: Path,
+    vocabs: tuple[str, ...] = ("substr", "onsets"),
+    dicts: tuple[int, ...] = DICTS,
+    prunes: tuple[int | None, ...] = PRUNES,
 ) -> dict:
-    res = {"format": 7, "vocabs": list(vocabs), "corpora": {}}
+    res = {
+        "format": 7,
+        "vocabs": list(vocabs),
+        "dicts": list(dicts),
+        "prunes": list(prunes),
+        "corpora": {},
+    }
     for name in names:
         print(f"{name}:", flush=True)
-        cand = {w: measure(name, w) for w in vocabs}
+        cand = {w: measure(name, w, dicts, prunes) for w in vocabs}
         vocab = min(cand, key=lambda w: cand[w]["chosen"]["sel_charged"])
         e = cand[vocab]
         e["vocab"] = vocab
@@ -720,6 +749,10 @@ def main(argv=None) -> int:
     r.add_argument("--corpora", default="shakespeare,synseg,syngrid")
     r.add_argument("--out", default="runs/v7/concept.json")
     r.add_argument("--vocab", default="substr,onsets")
+    r.add_argument("--dicts", default=",".join(str(x) for x in DICTS))
+    r.add_argument(
+        "--prunes", default=",".join("none" if x is None else str(x) for x in PRUNES)
+    )
     sub.add_parser("selftest")
     a = p.parse_args(argv)
     if a.cmd == "selftest":
@@ -729,6 +762,8 @@ def main(argv=None) -> int:
             [x for x in a.corpora.split(",") if x],
             Path(a.out),
             tuple(x for x in a.vocab.split(",") if x),
+            tuple(int(x) for x in a.dicts.split(",") if x),
+            tuple(None if x == "none" else int(x) for x in a.prunes.split(",") if x),
         )
     else:
         p.print_help()

@@ -1,0 +1,15 @@
+enwik8_10m:
+  enwik8_10m  union  dict=  8192 unigram=3.171 full=2.607 sel=2.715
+  enwik8_10m  union  dict= 16384 unigram=2.952 full=2.499 sel=2.695
+  enwik8_10m  union  dict= 32768 unigram=2.782 full=2.425 sel=2.695
+enwik8_10m  vocab=union  dict=16384 table= 16384 model= 289.7 kB rate=2.519 charged=2.751 zlib=2.998 ppmd=2.160
+  DP        rate=2.553 charged=2.784
+  greedy    rate=2.756 charged=2.988
+  fixed4    rate=4.950 charged=5.182
+  unigram   rate=2.952 charged=3.105
+  DP-em     rate=2.519 charged=2.751
+  greedy-em rate=2.758 charged=2.990
+  G1   pass enwik8_10m: rule=2.751 oracle=2.784 zlib=2.998
+  G1a  fail enwik8_10m: rule=2.751 oracle=2.784 ppmd=2.160
+  G2   pass enwik8_10m: DP=2.519 greedy=2.758 gain=+0.239
+  G3   pass enwik8_10m: DP=2.519 fixed4=4.950 unigram=2.952

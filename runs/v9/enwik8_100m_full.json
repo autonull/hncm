@@ -1,0 +1,66 @@
+{
+ "format": 9,
+ "full": true,
+ "rows": [
+  {
+   "corpus": "enwik8_100m",
+   "dict": 32768,
+   "table": 16384,
+   "stream": 100000000,
+   "val_bytes": 10000000,
+   "train_bytes": 90000000,
+   "entries": 16384,
+   "model_bytes": 451922,
+   "charge": 0.03615376,
+   "coverage": 0.911508,
+   "rate": 2.4842988025055392,
+   "charged": 2.520452562505539,
+   "tokens": 2315590,
+   "calls": 884921,
+   "sel_rate": 2.50377740661577,
+   "sel_charged": 2.53993116661577,
+   "tail_bytes": 884920,
+   "ord2_kB": 248.486,
+   "ord2_bpb": 5.043196495238056,
+   "row_bpb": 5.781350381233099,
+   "ord2_projected": 2.475010728826066,
+   "seconds": 849.1692163944244,
+   "codec": {
+    "zlib": 2.9029616,
+    "bz2": 2.280996,
+    "lzma": 2.1439392,
+    "ppmd": 1.8337984
+   }
+  }
+ ],
+ "best": {
+  "corpus": "enwik8_100m",
+  "dict": 32768,
+  "table": 16384,
+  "stream": 100000000,
+  "val_bytes": 10000000,
+  "train_bytes": 90000000,
+  "entries": 16384,
+  "model_bytes": 451922,
+  "charge": 0.03615376,
+  "coverage": 0.911508,
+  "rate": 2.4842988025055392,
+  "charged": 2.520452562505539,
+  "tokens": 2315590,
+  "calls": 884921,
+  "sel_rate": 2.50377740661577,
+  "sel_charged": 2.53993116661577,
+  "tail_bytes": 884920,
+  "ord2_kB": 248.486,
+  "ord2_bpb": 5.043196495238056,
+  "row_bpb": 5.781350381233099,
+  "ord2_projected": 2.475010728826066,
+  "seconds": 849.1692163944244,
+  "codec": {
+   "zlib": 2.9029616,
+   "bz2": 2.280996,
+   "lzma": 2.1439392,
+   "ppmd": 1.8337984
+  }
+ }
+}

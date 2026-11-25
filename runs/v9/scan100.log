@@ -1,0 +1,16 @@
+  len= 2 kept=7934 total=7934
+  len= 3 kept=43984 total=51918
+  len= 4 kept=122901 total=174819
+  len= 5 kept=215048 total=389867
+  len= 6 kept=295351 total=685218
+  len= 7 kept=335140 total=1020358
+  len= 8 kept=336511 total=1356869
+  len= 9 kept=309326 total=1666195
+  len=10 kept=264937 total=1931132
+  len=11 kept=216662 total=2147794
+  len=12 kept=171800 total=2319594
+  len=13 kept=133875 total=2453469
+  len=14 kept=103518 total=2556987
+  len=15 kept=80920 total=2637907
+  len=16 kept=64298 total=2702205
+scan: 2702205 candidates -> runs/v9/scan100.npz

@@ -459,6 +459,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     big, uni = bg, uni
     fit_toks = c.viterbi_chunked(s["fit"], d, big, uni)
     val_toks, val_cost = c.viterbi(s["va"], d, big, uni)
+    sel_toks = c.viterbi(s["sel"], d, big, uni)[0]
     full_big, full_uni = c.bigrams(v.cover(s["fit"], d, 0.0))
     rows = {
         d.ids[p]: (
@@ -500,7 +501,6 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     stream = s["stream"]
     best: tuple | None = None
     if pf and sum(len(p.raw) for p in pf) > 1000:
-        sel_toks = c.viterbi(s["sel"], d, big, uni)[0]
         sel_pf = t.pieces(sel_toks, {})
         for r in (1, 2, 4, 8, 16, 32, 64):
             a, b, scale = factors(counts, r)
@@ -529,6 +529,29 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     total = sum(cost)
     single_row = sum(x for t, x in zip(val_toks, cost) if len(t) == 1)
     single_bc = sum(float(d.cost_of(t)) for t in val_toks if len(t) == 1)
+    pfit, psel, pval = (
+        t.pieces(fit_toks, {}),
+        t.pieces(sel_toks, {}),
+        t.pieces(val_toks, {}),
+    )
+    ord2 = None
+    if pfit and pval:
+        best2 = None
+        for top in t.ORD2:
+            m2 = t.ord2_model(pfit, root, top)
+            sb = t.ord2_bits(psel, m2)
+            selc = sb / len(s["sel"]) + 8 * m2.size() / stream
+            if best2 is None or selc < best2[0]:
+                best2 = (selc, top, m2)
+        _, top2, m2 = best2
+        ord2 = {
+            "top": top2,
+            "size": m2.size(),
+            "bits": t.ord2_bits(pval, m2),
+            "bytes": sum(len(p.raw) for p in pval),
+            "row_bits": single_row,
+            "row_bytes": sum(len(x) for x in val_toks if len(x) == 1),
+        }
     tail_extra = 0.0
     if ref_logp is not None:
         for a0, e in runs(val_toks):
@@ -560,6 +583,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
         "model": model,
         "pack": blob,
         "pack_concept": pack(concept_model),
+        "ord2": ord2,
         "ref_tail": ref_tail,
         "ref_concept": total,
         "ref_v7": ref_v7,
@@ -810,6 +834,7 @@ def measure(name: str, candidates: list[dict], try_n: int) -> dict:
     return {
         "corpus": name,
         "arm": arm,
+        "sha": corp["s"].get("sha", ""),
         "vocab": best["vocab"],
         "dict": best["dict"],
         "table": best["table"],
@@ -849,6 +874,7 @@ def measure(name: str, candidates: list[dict], try_n: int) -> dict:
         ],
         "corp": corp,
         "payload": payload,
+        "ord2": corp["ord2"],
     }
 
 
@@ -905,6 +931,19 @@ def gates(res: dict) -> list[dict]:
                 "status": "pass" if e["model_kb"] <= 45 else "fail",
             },
         ]
+        o2 = e.get("ord2")
+        if o2:
+            tb = o2["bits"] / max(o2["bytes"], 1)
+            rb = o2["row_bits"] / max(o2["row_bytes"], 1)
+            out.append(
+                {
+                    "id": "G4",
+                    "corpus": name,
+                    "value": f"ord2={tb:.3f} row={rb:.3f} "
+                    f"top={o2['top']} size={o2['size'] / 1e3:.1f} kB",
+                    "status": "pass" if tb < rb else "fail",
+                }
+            )
     return out
 
 
@@ -938,6 +977,25 @@ def report(res: dict, path: Path) -> None:
             f"{e['encode_mb_s']:.2f} | {e['decode_mb_s']:.2f} | "
             f"{'ok' if e['roundtrip'] else 'FAIL'} |"
         )
+    lines += [
+        "",
+        "## N9: the order-2 tail on the DP path",
+        "",
+        "`ord2` prices the DP tail bytes with the two real preceding bytes (order-1",
+        "backoff, pruned, charged); `row` is the concept row's price for the same",
+        "single-byte tokens. A tail that does not beat the row does not pay.",
+        "",
+        "| corpus | ord2 top | ord2 kB | ord2 bpb | row bpb |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for name, e in res["corpora"].items():
+        o2 = e.get("ord2")
+        if o2:
+            lines.append(
+                f"| {name} | {o2['top']} | {o2['size'] / 1e3:.1f} | "
+                f"{o2['bits'] / max(o2['bytes'], 1):.3f} | "
+                f"{o2['row_bits'] / max(o2['row_bytes'], 1):.3f} |"
+            )
     lines += [
         "",
         "## The arms at the chosen budget",
@@ -1016,6 +1074,14 @@ def run(names: list[str], out: Path, rect_path: Path, try_n: int = 3) -> dict:
             f"RT={'ok' if e['roundtrip'] else 'FAIL'}",
             flush=True,
         )
+        o2 = e.get("ord2")
+        if o2:
+            print(
+                f"  ord2 top={o2['top']} tail={o2['bits'] / max(o2['bytes'], 1):.3f} "
+                f"row={o2['row_bits'] / max(o2['row_bytes'], 1):.3f} "
+                f"size={o2['size'] / 1e3:.1f} kB",
+                flush=True,
+            )
     for g in gates(res):
         print(
             f"  {g['id']:4s} {g['status']:4s} {g['corpus']}: {g['value']}", flush=True

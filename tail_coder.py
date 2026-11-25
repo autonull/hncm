@@ -260,6 +260,33 @@ def byte_matrix(train: list[Piece], root: np.ndarray) -> tuple[np.ndarray, np.nd
     return counts, np.log2(prob)
 
 
+ORD2 = (1024, 2048, 4096, 8192, 16384, 32768)
+
+
+def ord2_model(train: list[Piece], root: np.ndarray, top: int) -> Cond:
+    """P(byte | the two real preceding bytes), order-1 backoff, pruned to `top`."""
+    o1 = Cond(lambda p, j: (p.raw[j - 1] if j else -1,), root)
+    o2 = Cond(
+        lambda p, j: (
+            p.raw[j - 2] if j >= 2 else -1,
+            p.raw[j - 1] if j else 0,
+        ),
+        root,
+        o1,
+    )
+    for p in train:
+        for j in range(len(p.raw)):
+            o1.add(p, j)
+            o2.add(p, j)
+    o1.freeze(2, top)
+    o2.freeze(2, top)
+    return o2
+
+
+def ord2_bits(pieces: list[Piece], m: Cond) -> float:
+    return sum(m.bits(p) for p in pieces)
+
+
 def count_model(counts: np.ndarray, root: np.ndarray, r: int) -> tuple[np.ndarray, int]:
     """The rank-r factorization of the *count* table: shared parameters.
 

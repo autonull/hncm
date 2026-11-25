@@ -1,0 +1,420 @@
+{
+ "format": 7,
+ "vocabs": [
+  "union"
+ ],
+ "dicts": [
+  8192,
+  16384,
+  32768
+ ],
+ "prunes": [
+  8192,
+  16384,
+  32768
+ ],
+ "corpora": {
+  "enwik8_10m": {
+   "stream_bytes": 10000000,
+   "train_bytes": 9000000,
+   "val_bytes": 1000000,
+   "dict": 16384,
+   "table": 16384,
+   "model_bytes": 289696,
+   "model_bpb": 0.2317568,
+   "unigram": 2.951790835471852,
+   "codec": {
+    "zlib": 2.998376,
+    "gzip": 2.968584,
+    "bz2": 2.392832,
+    "lzma": 2.42688,
+    "zstd": 2.511408,
+    "brotli": 2.343824,
+    "ppmd": 2.159856
+   },
+   "best_codec": "ppmd",
+   "best_codec_bpb": 2.159856,
+   "chosen": {
+    "dict": 16384,
+    "prune": 16384,
+    "table": 16384,
+    "model_bytes": 289696,
+    "model_bpb": 0.2317568,
+    "unigram": 2.951790835471852,
+    "sel_rate": 2.4636612765201584,
+    "sel_charged": 2.6954180765201583,
+    "charged": 2.7844312201055446,
+    "crossing": {
+     "zlib": 5199820.02430598,
+     "gzip": 5572288.093455616,
+     "bz2": null,
+     "lzma": null,
+     "zstd": null,
+     "brotli": null,
+     "ppmd": null
+    },
+    "tokens": 382737,
+    "bytes_per_token": 2.612760198256244,
+    "covered": 0.752313,
+    "calls": 247688,
+    "rate": 2.5526744201055447
+   },
+   "fitted": {
+    "arm": "DP-em",
+    "model_bytes": 289696,
+    "charged": 2.7508182587639345,
+    "tokens": 390767,
+    "bytes_per_token": 2.559069726972851,
+    "covered": 0.7421690000000001,
+    "calls": 257832,
+    "rate": 2.5190614587639346,
+    "crossing": {
+     "zlib": 4835171.480555153,
+     "gzip": 5155621.325745569,
+     "bz2": null,
+     "lzma": null,
+     "zstd": null,
+     "brotli": null,
+     "ppmd": null
+    }
+   },
+   "grid": [
+    {
+     "dict": 8192,
+     "prune": 8192,
+     "table": 8192,
+     "model_bytes": 140795,
+     "model_bpb": 0.112636,
+     "unigram": 3.1709601494281903,
+     "sel_rate": 2.63091012903982,
+     "sel_charged": 2.74354612903982,
+     "charged": 2.82500971742187,
+     "crossing": {
+      "zlib": 3938290.2466601855,
+      "gzip": 4396232.612781738,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 446305,
+     "bytes_per_token": 2.2406202036723766,
+     "covered": 0.6855640000000001,
+     "calls": 314437,
+     "rate": 2.71237371742187
+    },
+    {
+     "dict": 8192,
+     "prune": 16384,
+     "table": 16384,
+     "model_bytes": 189947,
+     "model_bpb": 0.1519576,
+     "unigram": 3.1709601494281903,
+     "sel_rate": 2.5627060827174843,
+     "sel_charged": 2.714663682717484,
+     "charged": 2.807003690030675,
+     "crossing": {
+      "zlib": 4425993.645982575,
+      "gzip": 4846546.308064215,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 444805,
+     "bytes_per_token": 2.248176167084453,
+     "covered": 0.687452,
+     "calls": 312549,
+     "rate": 2.6550460900306754
+    },
+    {
+     "dict": 8192,
+     "prune": 32768,
+     "table": 32768,
+     "model_bytes": 288251,
+     "model_bpb": 0.2306008,
+     "unigram": 3.1709601494281903,
+     "sel_rate": 2.5103393207083915,
+     "sel_charged": 2.7409401207083914,
+     "charged": 2.8379760553508415,
+     "crossing": {
+      "zlib": 5897707.4380489,
+      "gzip": 6384142.228449711,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 443364,
+     "bytes_per_token": 2.2554830793659386,
+     "covered": 0.689334,
+     "calls": 310667,
+     "rate": 2.6073752553508416
+    },
+    {
+     "dict": 16384,
+     "prune": 8192,
+     "table": 8192,
+     "model_bytes": 240544,
+     "model_bpb": 0.1924352,
+     "unigram": 2.951790835471852,
+     "sel_rate": 2.532647835925703,
+     "sel_charged": 2.725083035925703,
+     "charged": 2.8012246358510864,
+     "crossing": {
+      "zlib": 4939472.192024688,
+      "gzip": 5348474.356615185,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 384289,
+     "bytes_per_token": 2.6022082339072936,
+     "covered": 0.749911,
+     "calls": 250090,
+     "rate": 2.6087894358510866
+    },
+    {
+     "dict": 16384,
+     "prune": 16384,
+     "table": 16384,
+     "model_bytes": 289696,
+     "model_bpb": 0.2317568,
+     "unigram": 2.951790835471852,
+     "sel_rate": 2.4636612765201584,
+     "sel_charged": 2.6954180765201583,
+     "charged": 2.7844312201055446,
+     "crossing": {
+      "zlib": 5199820.02430598,
+      "gzip": 5572288.093455616,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 382737,
+     "bytes_per_token": 2.612760198256244,
+     "covered": 0.752313,
+     "calls": 247688,
+     "rate": 2.5526744201055447
+    },
+    {
+     "dict": 16384,
+     "prune": 32768,
+     "table": 32768,
+     "model_bytes": 388000,
+     "model_bpb": 0.3104,
+     "unigram": 2.951790835471852,
+     "sel_rate": 2.402456661057743,
+     "sel_charged": 2.712856661057743,
+     "charged": 2.8092890895020797,
+     "crossing": {
+      "zlib": 6214377.063266254,
+      "gzip": 6608545.101562782,
+      "bz2": null,
+      "lzma": null,
+      "zstd": 247944899.08012968,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 381662,
+     "bytes_per_token": 2.6201193726386176,
+     "covered": 0.753824,
+     "calls": 246177,
+     "rate": 2.4988890895020797
+    },
+    {
+     "dict": 32768,
+     "prune": 8192,
+     "table": 8192,
+     "model_bytes": 449512,
+     "model_bpb": 0.3596096,
+     "unigram": 2.7821260439270676,
+     "sel_rate": 2.449911402152801,
+     "sel_charged": 2.8095210021528008,
+     "charged": 2.8850732789225155,
+     "crossing": {
+      "zlib": 7604149.521430624,
+      "gzip": 8115394.011395795,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 335907,
+     "bytes_per_token": 2.9770144712673448,
+     "covered": 0.7983359999999999,
+     "calls": 201665,
+     "rate": 2.5254636789225153
+    },
+    {
+     "dict": 32768,
+     "prune": 16384,
+     "table": 16384,
+     "model_bytes": 498664,
+     "model_bpb": 0.3989312,
+     "unigram": 2.7821260439270676,
+     "sel_rate": 2.3917010273424504,
+     "sel_charged": 2.79063222734245,
+     "charged": 2.8739223549938133,
+     "crossing": {
+      "zlib": 7622138.925235495,
+      "gzip": 8082191.7099507395,
+      "bz2": null,
+      "lzma": null,
+      "zstd": 109545788.47569883,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 334703,
+     "bytes_per_token": 2.9877234443670955,
+     "covered": 0.800682,
+     "calls": 199319,
+     "rate": 2.4749911549938135
+    },
+    {
+     "dict": 32768,
+     "prune": 32768,
+     "table": 32768,
+     "model_bytes": 596968,
+     "model_bpb": 0.4775744,
+     "unigram": 2.7821260439270676,
+     "sel_rate": 2.333836216970773,
+     "sel_charged": 2.811410616970773,
+     "charged": 2.902240782517228,
+     "crossing": {
+      "zlib": 8324322.713909203,
+      "gzip": 8780270.84708516,
+      "bz2": null,
+      "lzma": 2157438689.009179,
+      "zstd": 55057124.11863343,
+      "brotli": null,
+      "ppmd": null
+     },
+     "tokens": 333860,
+     "bytes_per_token": 2.9952674773857306,
+     "covered": 0.8022130000000001,
+     "calls": 197788,
+     "rate": 2.424666382517228
+    }
+   ],
+   "arms": [
+    {
+     "arm": "DP",
+     "model_bytes": 289696,
+     "charged": 2.7844312201062666,
+     "tokens": 382737,
+     "bytes_per_token": 2.612760198256244,
+     "covered": 0.752313,
+     "calls": 247688,
+     "rate": 2.5526744201062668
+    },
+    {
+     "arm": "greedy",
+     "model_bytes": 289696,
+     "charged": 2.9880430062159715,
+     "tokens": 370889,
+     "bytes_per_token": 2.696224476865046,
+     "covered": 0.766088,
+     "calls": 233913,
+     "rate": 2.7562862062159716
+    },
+    {
+     "arm": "fixed4",
+     "model_bytes": 289696,
+     "charged": 5.182085704129846,
+     "tokens": 250000,
+     "bytes_per_token": 4.0,
+     "covered": 1.0,
+     "calls": 1,
+     "rate": 4.9503289041298455
+    },
+    {
+     "arm": "unigram",
+     "model_bytes": 191392,
+     "charged": 3.1049044354718522,
+     "tokens": 370214,
+     "bytes_per_token": 2.7011404214859516,
+     "covered": 0.765713,
+     "calls": 234288,
+     "rate": 2.951790835471852
+    },
+    {
+     "arm": "DP-em",
+     "model_bytes": 289696,
+     "charged": 2.7508182587639345,
+     "tokens": 390767,
+     "bytes_per_token": 2.559069726972851,
+     "covered": 0.7421690000000001,
+     "calls": 257832,
+     "rate": 2.5190614587639346,
+     "crossing": {
+      "zlib": 4835171.480555153,
+      "gzip": 5155621.325745569,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     }
+    },
+    {
+     "arm": "greedy-em",
+     "model_bytes": 289696,
+     "charged": 2.989751373036513,
+     "tokens": 370889,
+     "bytes_per_token": 2.696224476865046,
+     "covered": 0.766088,
+     "calls": 233913,
+     "rate": 2.757994573036513,
+     "crossing": {
+      "zlib": 9641210.75939877,
+      "gzip": 11005148.89763118,
+      "bz2": null,
+      "lzma": null,
+      "zstd": null,
+      "brotli": null,
+      "ppmd": null
+     }
+    }
+   ],
+   "vocab": "union",
+   "alt": {
+    "union": {
+     "dict": 16384,
+     "table": 16384,
+     "model_bytes": 289696,
+     "rate": 2.5190614587639346,
+     "charged": 2.7508182587639345,
+     "sel_charged": 2.6954180765201583,
+     "oracle_charged": 2.7844312201055446
+    }
+   },
+   "oracle": {
+    "vocab": "union",
+    "dict": 16384,
+    "table": 16384,
+    "model_bytes": 289696,
+    "rate": 2.5526744201055447,
+    "header_bpb": 4e-07,
+    "charged": 2.7844316201055443,
+    "crossing": {
+     "zlib": 5199820.02430598,
+     "gzip": 5572288.093455616,
+     "bz2": null,
+     "lzma": null,
+     "zstd": null,
+     "brotli": null,
+     "ppmd": null
+    }
+   }
+  }
+ }
+}

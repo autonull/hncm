@@ -1,0 +1,77 @@
+{
+ "format": 8,
+ "vocab": "union",
+ "sizes": [
+  8192,
+  16384,
+  32768
+ ],
+ "corpora": {
+  "enwik8_10m": {
+   "corpus": "enwik8_10m",
+   "vocab": "union",
+   "sha": "5985c81c39d927ae0e169625790ca4d9e7d1531270c8b09ad73176a375bb3d97",
+   "stream_bytes": 10000000,
+   "val_bytes": 1000000,
+   "rows": [
+    {
+     "dict": 8192,
+     "coverage": 0.699218,
+     "covered_bpb": 2.1618022706845776,
+     "tail_bpb": 5.602230439193822,
+     "tail2_bpb": 5.236365378107737,
+     "tail_bytes": 300782,
+     "tail_spans": 49670,
+     "r": 32,
+     "ord2": 1024,
+     "dict_bytes": 91643,
+     "tail_bytes_model": 32866,
+     "tail2_bytes_model": 82596,
+     "model_bytes": 124509,
+     "model2_bytes": 174239,
+     "predicted": 3.296228336065125,
+     "predicted2": 3.2259667112615307,
+     "calls": 49671
+    },
+    {
+     "dict": 16384,
+     "coverage": 0.765713,
+     "covered_bpb": 2.145622991093369,
+     "tail_bpb": 5.7576748068337995,
+     "tail2_bpb": 5.4635420759830975,
+     "tail_bytes": 234287,
+     "tail_spans": 44690,
+     "r": 32,
+     "ord2": 1024,
+     "dict_bytes": 191392,
+     "tail_bytes_model": 32866,
+     "tail2_bytes_model": 78340,
+     "model_bytes": 224258,
+     "model2_bytes": 269732,
+     "predicted": 3.171286174847747,
+     "predicted2": 3.1387538997349287,
+     "calls": 44691
+    },
+    {
+     "dict": 32768,
+     "coverage": 0.815345,
+     "covered_bpb": 2.1293037168297833,
+     "tail_bpb": 5.92180559827501,
+     "tail2_bpb": 5.692678142763278,
+     "tail_bytes": 184655,
+     "tail_spans": 40286,
+     "r": 32,
+     "ord2": 1024,
+     "dict_bytes": 400360,
+     "tail_bytes_model": 32866,
+     "tail2_bytes_model": 74304,
+     "model_bytes": 433226,
+     "model2_bytes": 474664,
+     "predicted": 3.1761889517480517,
+     "predicted2": 3.167029821450533,
+     "calls": 40287
+    }
+   ]
+  }
+ }
+}
