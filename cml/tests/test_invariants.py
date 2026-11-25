@@ -190,3 +190,51 @@ def test_decode_copy_and_fallback() -> None:
     )
     assert strict["copies"] == 0 and strict["verify_fail"] > 0
     assert abs(strict["bpb"] - out["bpb"]) > 0.1
+
+
+def test_heldout_subset_bookkeeping() -> None:
+    entries = tuple(cml.Entry(b"S%02d" % i, 10, 0, ("fit:0",)) for i in range(20))
+    data = b"|" + b"|".join(e.data for e in entries)
+    trie = cml.make_trie(entries)
+    total = 200
+    n_eval = len(data)
+    nll = torch.zeros(n_eval)
+    hs = torch.zeros((n_eval, 4))
+    gate = {
+        "kind": "logistic",
+        "w": [0.0, 0.0, 0.0],
+        "b": 8.0,
+        "mu": [0.0, 0.0, 0.0],
+        "sd": [1.0, 1.0, 1.0],
+        "tau": 1.0,
+        "alpha": 0.5,
+    }
+    e_c = torch.zeros((20, 4))
+    out = cml.adapter_eval(
+        None, entries, trie, total, e_c, gate, data, nll, hs, n_eval, 1000, 10_000
+    )
+    assert out["held_matches"] == 2
+    assert out["held_bytes"] == 6
+    assert out["held_accept"] == 1.0
+    assert 0.0 <= out["held_bpb"] < 0.01
+
+
+def test_zeroshot_keys(tmp_path: Path) -> None:
+    p = tmp_path / "z.toml"
+    p.write_text(
+        '[run]\nname = "z"\nseed = 0\ngates = ["P1e"]\n'
+        '[data]\ncorpus = "src"\npack_corpus = "enwik8_10m"\n'
+        '[model]\narm = "adapter"\nmode = "adapter"\n'
+    )
+    cfg, gates = cml.config_from_manifest(p, None, None)
+    assert cfg.pack_corpus == "enwik8_10m"
+    assert cfg.mode == "adapter"
+    assert gates == ["P1e"]
+
+
+def test_src_stream_is_frozen() -> None:
+    a = cml.src_bytes()
+    b = cml.src_bytes()
+    assert a == b
+    assert len(a) > 100_000
+    assert b"# --- cml/cml.py ---" in a

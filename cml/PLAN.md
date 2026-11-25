@@ -30,10 +30,19 @@ a batch-1 KV-cache decoder: one trunk step per byte for the byte arm, one per
 span for the adapter. The equal-charge baselines at 90.1 kB each are measured:
 no-D +0.000, counts-only **+0.758**, kNN +0.516 (37.8% accept), LoRA (rank 1,
 48.4 kB) +0.006 rate at 0.039 charge → net **−0.033**. Counts-only ties the
-tied-embedding gate on *seen* spans (0.996 vs 0.997), so B1's linchpin is the
-held-out-span test, not the seen-span rate. P1d and P1e are next. The record is
-`reports/GATES.md` and `runs/<id>/metrics.json`; the base is a prerequisite,
-not a gate row. §11 lists the remaining runs, their blockers and their cost.
+tied-embedding gate on *seen* spans (0.996 vs 0.997). The linchpin is measured
+and it **fails**: on the held-out 10% of `D`, tied and counts-only are identical
+(0.510 vs 0.510 bpb on text; 0.445 vs 0.443 on code), and the fitted gate gives
+the embedding weight −0.04 — the gate is a length/count classifier. A copy needs
+byte equality, so semantic similarity has nothing to add in the exact-span
+formulation; B1's tied-embedding claim dies as stated, and the neural part can
+only pay when copies become inexact (holes/fills, B4). On the repo's own 650 kB
+of Python, the adapter saves **+1.932** rate at 23.1 kB (charge 0.284, net
+**+1.648**, accept 90.8%), but P0d there is **1.05x**: code spans average ~3 B,
+so the per-span step pays call overhead. The speed gate is data-bound, and the
+rate gate is not. P1d and P2 are next. The record is `reports/GATES.md` and
+`runs/<id>/metrics.json`; the base is a prerequisite, not a gate row. §11 lists
+the remaining runs, their blockers and their cost.
 
 ## 0. Start here
 
@@ -743,30 +752,41 @@ TODO5's measured accounting; the 10 MB parse is
 `../runs/v9/fit-seed-16384-16384-10000000.pkl` (`toks`, 3.73M units); the
 100 MB scan is `../runs/v9/scan100.npz`; the seed is 0.
 
-## 11. Next: the runs, the blockers, the cost
+## 11. Next: what the measurements closed, and what is left
 
-Status: P1a-c pass, P0a-g pass (P0d included), the equal-charge table is
-measured, and the adapter beats no-D, kNN and LoRA at the same charged bytes.
-The open items, cheapest first; each is a run, not a re-score.
+Two of the open P0 questions are answered, both as negatives, and one positive
+came with them:
+
+- **The linchpin is negative.** On the held-out 10% of `D` the tied gate and the
+  counts-only gate give the same bpb to three decimals (0.510/0.510 on text,
+  0.445/0.443 on code), and the fitted embedding weight is −0.04. The gate is a
+  length/count classifier. An exact copy needs byte equality, so semantic
+  similarity has no work to do: B1's tied-embedding claim dies in the exact-span
+  formulation. The neural part can only pay when the copy is inexact (holes and
+  fills, B4) or as a ranker over equal-length alternatives.
+- **Zero-shot packs are domain-local.** A text pack (22.7 kB) on the repo's code
+  gives 3.112 bpb against 2.690 tuned → gap **+0.422**, not ≤0.1. Install a pack
+  per domain; the pack is data, not transferable weights.
+- **The code stream is the strongest rate result.** On 650 kB of Python the
+  adapter saves **+1.932** rate at 23.1 kB (net +1.648, accept 90.8%), but P0d
+  there is 1.05x: code spans average ~3 B, so a per-span step pays call overhead.
+  The rate gate is not the speed gate.
 
 | # | run | pass bar | blocker | cost |
 |---|---|---|---|---|
-| 1 | held-out-span linchpin | tied > counts by 0.05 bpb on unseen spans | a fold split in `fit_gate` (fit on 9 folds, eval on the 10th) | 1 h, no training |
-| 2 | P1d shared-trunk adapter | accept per pack byte ≥ P0 × 1.2 | the mixed schedule: one 20.5M trunk, 50% fixed parse and 50% rotating lexicon (`run_p1` reads only the fixed parse) | 3 h GPU |
-| 3 | P1e zero-shot lexicon | bpb(foreign pack) − bpb(tuned) ≤ 0.1 | a second induced pack; `decode_arm` already takes any pack | 30 min GPU |
-| 4 | P0d on code/JSON | ≥1.5x, exact copies | `corpus_bytes` needs a `json`/`src` reader; `synseg` already proves the loop | 1 h |
-| 5 | P2 class, 100 MB | P2a-d | parse the 90 MB train once; the DP parse is the cost, not the 60M training | 1 GPU-day |
+| 1 | speculative verification | P0d ≥1.5x on code | batch the forwards of the next k candidate spans | 2 h |
+| 2 | P1d shared trunk | accept per pack byte ≥ P0 × 1.2 | the mixed schedule: a rotating-lexicon data path | 3 h GPU |
+| 3 | P2 class, 100 MB | P2a-d | parse the 90 MB train once | 1 GPU-day |
+| 4 | holes and fills (B4) | +0.05 bpb on held-out slots | a typed-hole event model over the pack | 1-2 weeks |
+| 5 | pack growth vs rent | net saving vs pack bytes | a rent sweep at repo scale | 1 day |
 
-Two design notes from the measurements:
+Two design notes:
 
-- The gate's embedding term earns nothing on seen spans. The counts-only tie
-  says the pack's identity does the work; the embedding can only pay on unseen
-  spans. Run #1 decides B1; if it fails, the pack is a copy codec and B1's
-  "LoRA you can read" claim is the pack alone.
-- The 10 MB pilot is data-bound (40M is 0.006 above 20.5M at 6000 steps). A
-  bigger trunk on 9 MB is a null result; P1d and P2 spend the next GPU-hours,
-  not the scale axis.
+- The adapter's value is the pack: a 23 kB span table buys 1.9 bpb on code and
+  0.83 bpb on text over a byte model's fallback. That is a competitive product
+  on structured data and it costs no training.
+- The text win still needs a ≤4 MB trunk and payload ≤1.5 bpb; nothing measured
+  moves that bar. The adapter and the structured rate are the results to defend.
 
-Unblocked now: #1, #3, #4. #2 and #5 are the two GPU-bound items. The record
-is `reports/GATES.md`; the arms are `experiments/p0-{none,counts,knn,lora,
-structured}.toml`.
+Unblocked now: #1, #5. #2 and #3 are GPU-bound; #4 is the only route to the
+neural part earning its bytes.

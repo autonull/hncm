@@ -1,0 +1,24 @@
+[run]
+name = "p0-code"
+seed = 0
+gates = ["P0a", "P0b", "P0c", "P0d", "P0e", "P0f", "P0g", "P0h"]
+
+[data]
+corpus = "src"
+stream_bytes = 650_000
+val_bytes = 65_000
+structured = "src"
+lexicon = "../runs/v9/fit-seed-16384-16384-10000000.pkl"
+
+[model]
+arm = "adapter"
+mode = "adapter"
+base = "byte-20m"
+params = 20_000_000
+dict_size = 1024
+min_count = 16
+
+[optim]
+steps = 0
+batch = 32
+lr = 0.0

@@ -1,0 +1,24 @@
+[run]
+name = "p0-zeroshot"
+seed = 0
+gates = ["P1e"]
+
+[data]
+corpus = "src"
+pack_corpus = "enwik8_10m"
+stream_bytes = 650_000
+val_bytes = 65_000
+lexicon = "../runs/v9/fit-seed-16384-16384-10000000.pkl"
+
+[model]
+arm = "adapter"
+mode = "adapter"
+base = "byte-20m"
+params = 20_000_000
+dict_size = 1024
+min_count = 16
+
+[optim]
+steps = 0
+batch = 32
+lr = 0.0

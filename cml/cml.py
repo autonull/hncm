@@ -17,7 +17,7 @@ import random
 import struct
 import time
 import tomllib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Callable, Protocol
@@ -65,6 +65,7 @@ class Config:
     lexicon: str = ""
     mode: str = "adapter"
     structured: str = ""
+    pack_corpus: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +120,7 @@ GATES: dict[str, Gate] = {
     "P0e": Gate("text_delta", Convention.RATE, "<=", 0.01),
     "P0f": Gate("pack_mb", Convention.RATE, "<=", 1.0),
     "P0g": Gate("provenance", Convention.RATE, ">=", 1.0),
+    "P0h": Gate("linchpin", Convention.RATE, ">=", 0.05),
     "P1a": Gate("payload", Convention.RATE, "<=", 2.60),
     "P1b": Gate("payload", Convention.RATE, "<=", 2.293),
     "P1c": Gate("curve60", Convention.RATE, "<=", 2.29),
@@ -273,7 +275,7 @@ STAGE_AXES: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 STAGE_GATES: dict[str, tuple[str, ...]] = {
-    "P0": ("P0a", "P0b", "P0c", "P0d", "P0e", "P0f", "P0g"),
+    "P0": ("P0a", "P0b", "P0c", "P0d", "P0e", "P0f", "P0g", "P0h"),
     "P1": ("P1a", "P1b", "P1c", "P1d", "P1e"),
     "P2": ("P2a", "P2b", "P2c", "P2d"),
     "P3": ("P3a", "P3b", "P3c", "P3d"),
@@ -757,6 +759,7 @@ def config_from_manifest(
         lexicon=data.get("lexicon", ""),
         mode=model.get("mode", "adapter"),
         structured=data.get("structured", ""),
+        pack_corpus=data.get("pack_corpus", ""),
     )
     return cfg, list(run.get("gates", []))
 
@@ -1170,14 +1173,36 @@ def run_p1(cfg: Config, gates: list[str], out: Path) -> dict:
 CACHE = Path(os.environ.get("HNCM_CACHE", str(Path.home() / ".cache/hncm")))
 PACK_MAGIC = b"CMLP"
 CAP = 16
+HOLDOUT = 10
 
 
 def corpus_bytes(name: str) -> bytes:
     if name == "synseg":
         return synseg_bytes(10_000_000)
+    if name == "src":
+        return src_bytes()
     raw = (CACHE / "enwik8").read_bytes()
     n = {"enwik8_10m": 10_000_000, "enwik8_100m": 100_000_000}.get(name, 10_000_000)
     return raw[:n]
+
+
+def src_bytes() -> bytes:
+    """The repo's Python source in path order, frozen per build hash."""
+    files = sorted(
+        p
+        for p in ROOT.parent.rglob("*.py")
+        if not any(q in p.parts for q in (".venv", "__pycache__", "runs", ".git"))
+    )
+    out = bytearray()
+    for p in files:
+        out += b"\n# --- " + str(p.relative_to(ROOT.parent)).encode() + b" ---\n"
+        out += p.read_bytes()
+    raw = bytes(out)
+    sha = hashlib.sha256(raw).hexdigest()[:12]
+    path = CACHE / f"src-{sha}.bin"
+    if not path.exists():
+        path.write_bytes(raw)
+    return path.read_bytes()
 
 
 def synseg_bytes(n: int, seed: int = 0) -> bytes:
@@ -1645,6 +1670,7 @@ def fit_gate(
     samples: int = 250_000,
     neural: bool = True,
     kind: str = "logistic",
+    holdout: bool = False,
 ) -> dict:
     rng = np.random.default_rng(0)
     picks = rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
@@ -1653,6 +1679,8 @@ def fit_gate(
     for t in sorted(picks.tolist()):
         length, idx = longest_match(trie, train, t)
         if length < 2 or t + length > n_eval:
+            continue
+        if holdout and idx % HOLDOUT == 0:
             continue
         logc = math.log(float(count[idx]) / total)
         score = match_score(hs[t], e_c[idx], int(count[idx]), total, 0.5)
@@ -1729,13 +1757,16 @@ def adapter_eval(
     bits = 0.0
     copies = matches = fallbacks = verify_fail = 0
     copy_bytes = 0
+    h_bits = h_bytes = h_copies = h_matches = 0
     t = 1
     while t < n_eval:
         length, idx = longest_match(trie, data, t)
         pi = 0.0
         feat = None
+        held = length >= 2 and idx % HOLDOUT == 0
         if length >= 2 and t + length <= n_eval:
             matches += 1
+            h_matches += int(held)
             logc = math.log(float(count[idx]) / total)
             score = match_score(hs[t], e_c[idx], int(count[idx]), total, alpha)
             feat = [
@@ -1749,12 +1780,19 @@ def adapter_eval(
                 bits += entropy(pi)
                 copies += 1
                 copy_bytes += length
+                if held:
+                    h_bits += entropy(pi)
+                    h_bytes += length
+                    h_copies += 1
                 t += length
                 continue
             if pi >= 0.5 and not passes:
                 verify_fail += 1
         bits += float(nll[t]) / math.log(2) + entropy(pi)
         fallbacks += 1
+        if held:
+            h_bits += float(nll[t]) / math.log(2) + entropy(pi)
+            h_bytes += 1
         t += 1
     base_bits = float(nll[1:n_eval].sum()) / math.log(2)
     base_bpb = base_bits / (n_eval - 1)
@@ -1781,6 +1819,10 @@ def adapter_eval(
         "pack_bytes": pack_size,
         "provenance": provenance,
         "structured_x": None,
+        "held_bpb": h_bits / max(h_bytes, 1),
+        "held_bytes": h_bytes,
+        "held_matches": h_matches,
+        "held_accept": h_copies / h_matches if h_matches else 0.0,
         "n_eval": n_eval,
         "gate": gate,
     }
@@ -1801,9 +1843,11 @@ def pack_key(cfg: Config) -> str:
     return hashlib.sha256(blob).hexdigest()[:8]
 
 
-def load_pack(cfg: Config, train: bytes, out: Path) -> tuple[Pack, int, int]:
+def load_pack(
+    cfg: Config, train: bytes, out: Path, tag: str = ""
+) -> tuple[Pack, int, int]:
     """Induce the pack once per (corpus, split, dict): the arms share it."""
-    key = pack_key(cfg)
+    key = f"{pack_key(cfg)}-{hashlib.sha256(train).hexdigest()[:8]}"
     cache = RUNS / f"pack-{key}"
     bin_path = cache / "artifacts/pack.bin"
     meta_path = cache / "artifacts/pack.json"
@@ -1818,8 +1862,10 @@ def load_pack(cfg: Config, train: bytes, out: Path) -> tuple[Pack, int, int]:
         write_json(meta_path, {"sha": pack.sha, "bytes": size, "total": total})
     art = out / "artifacts"
     art.mkdir(parents=True, exist_ok=True)
-    (art / "pack.bin").write_bytes(bin_path.read_bytes())
-    write_json(art / "pack.json", {"sha": pack.sha, "bytes": size, "total": total})
+    (art / f"pack{tag}.bin").write_bytes(bin_path.read_bytes())
+    write_json(
+        art / f"pack{tag}.json", {"sha": pack.sha, "bytes": size, "total": total}
+    )
     return pack, size, total
 
 
@@ -2063,6 +2109,22 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
             neural=neural,
             kind=kind,
         )
+        gates_heldout = {}
+        if cfg.mode == "adapter":
+            for name, flag in (("tied", True), ("counts", False)):
+                gates_heldout[name] = fit_gate(
+                    model,
+                    pack.entries,
+                    trie,
+                    train[:1_000_000],
+                    total,
+                    e_c,
+                    train_nll,
+                    train_hs,
+                    train_n,
+                    neural=flag,
+                    holdout=True,
+                )
         del train_nll, train_hs
         torch.cuda.empty_cache()
         test_nll, test_hs, test_n = stream_nll(model, test_ids)
@@ -2081,6 +2143,66 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
             cfg.stream_bytes,
             neural=neural,
         )
+        held = {}
+        for name, g in gates_heldout.items():
+            held[name] = adapter_eval(
+                model,
+                pack.entries,
+                trie,
+                total,
+                e_c,
+                g,
+                test,
+                test_nll,
+                test_hs,
+                test_n,
+                pack_size,
+                cfg.stream_bytes,
+                neural=name == "tied",
+            )
+        if held:
+            m["linchpin_tied"] = held["tied"]["held_bpb"]
+            m["linchpin_counts"] = held["counts"]["held_bpb"]
+            m["linchpin"] = held["counts"]["held_bpb"] - held["tied"]["held_bpb"]
+            m["linchpin_accept_tied"] = held["tied"]["held_accept"]
+            m["linchpin_accept_counts"] = held["counts"]["held_accept"]
+            m["linchpin_bytes"] = held["tied"]["held_bytes"]
+            m["linchpin_tied_gate"] = held["tied"]["gate"]
+            m["linchpin_counts_gate"] = held["counts"]["gate"]
+        if cfg.pack_corpus:
+            fr = corpus_bytes(cfg.pack_corpus)
+            fcfg = replace(cfg, corpus=cfg.pack_corpus, pack_corpus="")
+            fpack, fsize, ftotal = load_pack(
+                fcfg, fr[: len(fr) * 9 // 10], out, tag="-foreign"
+            )
+            ftrie = make_trie(fpack.entries)
+            fe_c = span_embeddings(model, fpack.entries)
+            fm = adapter_eval(
+                model,
+                fpack.entries,
+                ftrie,
+                ftotal,
+                fe_c,
+                gate,
+                test,
+                test_nll,
+                test_hs,
+                test_n,
+                fsize,
+                cfg.stream_bytes,
+                neural=neural,
+            )
+            m["zero_shot"] = fm["adapter_bpb"] - m["adapter_bpb"]
+            m["zero_shot_foreign"] = fm["adapter_bpb"]
+            m["zero_shot_tuned"] = m["adapter_bpb"]
+            m["zero_shot_pack_bytes"] = fsize
+            m["zero_shot_coverage"] = fm["coverage"]
+            print(
+                f"  zero-shot {cfg.pack_corpus} pack ({fsize / 1e3:.1f} kB): "
+                f"{fm['adapter_bpb']:.3f} vs tuned {m['adapter_bpb']:.3f} bpb · "
+                f"gap {m['zero_shot']:+.3f} · coverage {fm['coverage']:.1%}",
+                flush=True,
+            )
         if cfg.structured:
             m.update(run_p0d(model, cfg, out))
 
@@ -2097,6 +2219,8 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
         "test_bytes": len(test),
         "pack_bytes": pack_size,
         "pack_sha": pack.sha,
+        "corpus": cfg.corpus,
+        "pack_corpus": cfg.pack_corpus,
         "corpus_sha": hashlib.sha256(raw).hexdigest(),
         "structured": cfg.structured,
         "tokens_per_byte": 1.0,
@@ -2153,6 +2277,16 @@ def print_metrics(metrics: dict) -> None:
         value = "—" if row["value"] is None else f"{row['value']:.3f}"
         mark = "·" if row["pass"] is None else ("✓" if row["pass"] else "✗")
         print(f"  {name} {row['bar']:g} {value} {mark}", flush=True)
+    if metrics.get("linchpin") is not None:
+        print(
+            f"  linchpin (held-out 10%) {metrics['linchpin_bytes']} B · "
+            f"tied {metrics['linchpin_tied']:.3f} vs counts "
+            f"{metrics['linchpin_counts']:.3f} bpb · "
+            f"gap {metrics['linchpin']:+.3f} · "
+            f"accept {metrics['linchpin_accept_tied']:.1%} vs "
+            f"{metrics['linchpin_accept_counts']:.1%}",
+            flush=True,
+        )
     if metrics.get("structured_x") is not None:
         print(
             f"  P0d structured {metrics['structured_bytes']} B · "
@@ -2293,8 +2427,13 @@ def gates_report() -> int:
             )
             lines.append("")
         if p0:
-            adapter_rows = [m for m in p0 if (m.get("mode") or "adapter") == "adapter"]
-            b0 = max(adapter_rows or p0, key=lambda m: float(m["saved"]))
+            text_p0 = [
+                m for m in p0 if (m.get("corpus") or "enwik8_10m") == "enwik8_10m"
+            ]
+            adapter_rows = [
+                m for m in text_p0 if (m.get("mode") or "adapter") == "adapter"
+            ]
+            b0 = max(adapter_rows or text_p0 or p0, key=lambda m: float(m["saved"]))
             lines.append(
                 f"P0: base {b0['base_bpb']:.3f} → adapter "
                 f"{b0['adapter_bpb']:.3f} bpb; rate saved "
@@ -2310,30 +2449,51 @@ def gates_report() -> int:
                 if (m.get("mode") or "adapter")
                 in ("adapter", "none", "counts", "knn", "lora")
             ]
-            seen: dict[str, dict] = {}
+            seen: dict[tuple[str, str], dict] = {}
             for m in arms:
-                mode = m.get("mode") or "adapter"
-                if mode not in seen or m.get("mode"):
-                    seen[mode] = m
+                key = (
+                    m.get("mode") or "adapter",
+                    str(m.get("corpus") or "enwik8_10m"),
+                )
+                if key not in seen or m.get("mode"):
+                    seen[key] = m
             arms = list(seen.values())
             if arms:
                 lines += [
-                    "| arm | saved | charge | accept | pack kB |",
-                    "|---|---:|---:|---:|---:|",
+                    "| arm | corpus | saved | charge | accept | pack kB |",
+                    "|---|---|---:|---:|---:|---:|",
                 ]
-                for m in sorted(arms, key=lambda m: m.get("mode") or "adapter"):
+                for m in sorted(
+                    arms,
+                    key=lambda m: (str(m.get("corpus")), str(m.get("mode"))),
+                ):
+                    corpus = str(m.get("corpus") or "enwik8_10m").replace("enwik8_", "")
                     lines.append(
-                        f"| {(m.get('mode') or 'adapter')} | {m['saved']:+.3f} | "
+                        f"| {(m.get('mode') or 'adapter')} | {corpus} | "
+                        f"{m['saved']:+.3f} | "
                         f"{m['charge']:.3f} | "
                         f"{m['accept']:.1%} | {m['pack_bytes'] / 1e3:.1f} |"
                     )
                 lines.append("")
-            d0 = [m for m in p0 if m.get("structured_x") is not None]
-            if d0:
-                s = d0[0]
+            lin = [m for m in text_p0 if m.get("linchpin") is not None]
+            if lin:
+                s = lin[0]
                 lines.append(
-                    f"P0d: **{s['structured_x']:.2f}x** wall-clock on "
-                    f"{s['structured_bytes']} B of `{s.get('structured', '?')}` "
+                    f"Linchpin (held-out 10% of `D`): tied "
+                    f"{s['linchpin_tied']:.3f} vs counts-only "
+                    f"{s['linchpin_counts']:.3f} bpb on "
+                    f"{s['linchpin_bytes']} B → gap "
+                    f"**{s['linchpin']:+.3f}**; accept "
+                    f"{s['linchpin_accept_tied']:.1%} vs "
+                    f"{s['linchpin_accept_counts']:.1%}."
+                )
+                lines.append("")
+            d0 = [m for m in p0 if m.get("structured_x") is not None]
+            for s in sorted(d0, key=lambda m: str(m.get("structured"))):
+                lines.append(
+                    f"P0d on `{s.get('structured', '?')}`: "
+                    f"**{s['structured_x']:.2f}x** wall-clock over "
+                    f"{s['structured_bytes']} B "
                     f"({s['structured_base_bpb']:.3f} → "
                     f"{s['structured_adapter_bpb']:.3f} bpb, accept "
                     f"{s['structured_accept']:.1%}); the copies are verified "
@@ -2363,10 +2523,22 @@ def gates_report() -> int:
             lines.append(
                 "P1a ≤2.60, P1b ≤2.293 and P1c ≤2.29 at 60M are measured. P1d "
                 "(acceptance per pack byte on a shared trunk) needs the "
-                "mixed-schedule trunk; P1e (zero-shot lexicon) needs a second "
-                "induced pack. The adapter code path supports both; neither run "
-                "is built yet."
+                "mixed-schedule trunk."
             )
+            zs = [m for m in p0 if m.get("zero_shot") is not None]
+            if zs:
+                z = zs[0]
+                lines.append("")
+                lines.append(
+                    f"P1e zero-shot lexicon: a pack from "
+                    f"`{z.get('pack_corpus') or 'foreign'}` on "
+                    f"`{z.get('corpus', '?')}` gives "
+                    f"{z['zero_shot_foreign']:.3f} vs "
+                    f"{z['zero_shot_tuned']:.3f} bpb tuned → gap "
+                    f"**{z['zero_shot']:+.3f}** at "
+                    f"{z['zero_shot_coverage']:.1%} coverage; packs are "
+                    f"domain-local."
+                )
             lines.append("")
             lines.append(
                 "The 40M point is 0.006 bpb above the 20.5M point; the curve is "
