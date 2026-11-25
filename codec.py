@@ -209,19 +209,27 @@ class Decoder:
 
 
 # %%
-def factors(counts: np.ndarray, r: int) -> tuple[np.ndarray, np.ndarray]:
-    """The rank-r factors of the count table, as the float16 the file stores."""
-    u, sv, vt = np.linalg.svd(counts, full_matrices=False)
+def factors(counts: np.ndarray, r: int) -> tuple[np.ndarray, np.ndarray, float]:
+    """The rank-r factors of the count table, as the float16 the file stores.
+
+    The counts are divided by their max before the SVD: at 10 MB the largest
+    count is ~1e5 and the float16 product would overflow. The scale is 4 bytes
+    and the probabilities are identical (`logp_of` divides the prior by it).
+    """
+    scale = max(float(counts.max()), 1e-9)
+    u, sv, vt = np.linalg.svd(counts / scale, full_matrices=False)
     a = (u[:, :r] * sv[:r]).astype(np.float16)
     b = vt[:r].astype(np.float16)
-    return a, b
+    return a, b, scale
 
 
-def logp_of(a: np.ndarray, b: np.ndarray, root: np.ndarray) -> np.ndarray:
+def logp_of(
+    a: np.ndarray, b: np.ndarray, root: np.ndarray, scale: float = 1.0
+) -> np.ndarray:
     """The same reconstruction the decoder makes: clip, add the root, renormalize."""
     cc = np.clip(a.astype(np.float64) @ b.astype(np.float64), 0.0, None)
-    rows = cc.sum(1)
-    p = (cc + ALPHA * root[None, :]) / (rows[:, None] + ALPHA)
+    alpha = ALPHA / scale
+    p = (cc + alpha * root[None, :]) / (cc.sum(1)[:, None] + alpha)
     return np.log2(p)
 
 
@@ -263,6 +271,7 @@ class Model:
     r: int
     a: np.ndarray | None
     b: np.ndarray | None
+    tail_scale: float = 1.0
 
     def __post_init__(self) -> None:
         self.m = len(self.strings)
@@ -283,7 +292,9 @@ class Model:
         self._ucache: CDF | None = None
         self._fcache: dict[int, CDF] = {}
         if self.a is not None:
-            self._logp = logp_of(self.a, self.b, self.root / self.root.sum())
+            self._logp = logp_of(
+                self.a, self.b, self.root / self.root.sum(), self.tail_scale
+            )
 
     def tok(self, i: int) -> bytes:
         return self.strings[i] if i < self.m else bytes([i - self.m])
@@ -374,7 +385,7 @@ class Model:
 def pack(m: Model) -> bytes:
     """The model as bytes: counts, not costs; the CDF is derived from it."""
     out = bytearray(MODEL_MAGIC)
-    out += struct.pack("<IB", m.m, m.r if m.a is not None else 0)
+    out += struct.pack("<IBf", m.m, m.r if m.a is not None else 0, m.tail_scale)
     for q in (q16(x) for x in m.root):
         out += struct.pack("<H", q)
     for s, x in zip(m.strings, m.counts[: m.m]):
@@ -398,8 +409,8 @@ def unpack(data: bytes) -> Model:
     if data[:4] != MODEL_MAGIC:
         raise ValueError("not a v8 model")
     pos = 4
-    m, r = struct.unpack_from("<IB", data, pos)
-    pos += 5
+    m, r, tail_scale = struct.unpack_from("<IBf", data, pos)
+    pos += 9
     root = np.array([dq16(x) for x in struct.unpack_from("<256H", data, pos)])
     pos += 512
     strings, counts = [], []
@@ -433,7 +444,9 @@ def unpack(data: bytes) -> Model:
         n = r * 256
         b = np.frombuffer(data, "<f2", n, pos).reshape(r, 256).copy()
     all_counts = np.concatenate([np.array(counts), root])
-    return Model(strings, all_counts, root, dict(table), rows, lens, r, a, b)
+    return Model(
+        strings, all_counts, root, dict(table), rows, lens, r, a, b, tail_scale
+    )
 
 
 # %%
@@ -444,7 +457,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     s = _SPLIT[(name, vocab)]
     d, bg, uni = c.rebuild(s, rect["dict"], rect["table"])
     big, uni = bg, uni
-    fit_toks = c.viterbi(s["fit"], d, big, uni)[0]
+    fit_toks = c.viterbi_chunked(s["fit"], d, big, uni)
     val_toks, val_cost = c.viterbi(s["va"], d, big, uni)
     full_big, full_uni = c.bigrams(v.cover(s["fit"], d, 0.0))
     rows = {
@@ -480,6 +493,7 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
         0,
         None,
         None,
+        1.0,
     )
     table_bytes = 6 * sum(len(row) for row in table.values()) + 6 * len(rows)
     base = d.model_bytes + table_bytes
@@ -489,20 +503,20 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
         sel_toks = c.viterbi(s["sel"], d, big, uni)[0]
         sel_pf = t.pieces(sel_toks, {})
         for r in (1, 2, 4, 8, 16, 32, 64):
-            a, b = factors(counts, r)
-            logp = logp_of(a, b, root)
+            a, b, scale = factors(counts, r)
+            logp = logp_of(a, b, root, scale)
             sel_bits = sum(run_bits(p.raw, logp) for p in sel_pf) + sum(
                 math.log2(1 / model.lens_p[min(len(p.raw), LEN) - 1]) for p in sel_pf
             )
             size = 34 + (257 + 256) * r * 2
             sel_charged = sel_bits / len(s["sel"]) + 8 * (base + size) / stream
             if best is None or sel_charged < best[0]:
-                best = (sel_charged, r, a, b, logp, size)
+                best = (sel_charged, r, a, b, logp, size, scale)
     ref_logp = None
     ref_size = 0
     if best is not None:
-        _, r, a, b, ref_logp, ref_size = best
-        model.r, model.a, model.b = r, a, b
+        _, r, a, b, ref_logp, ref_size, scale = best
+        model.r, model.a, model.b, model.tail_scale = r, a, b, scale
         model.__post_init__()
     ref_lens = np.array(
         [lens.get(i, 0) + ALPHA for i in range(1, CAP + 1)]
@@ -540,6 +554,8 @@ def fit(name: str, vocab: str, rect: dict) -> dict:
     return {
         "s": s,
         "dict": d,
+        "big": big,
+        "uni": uni,
         "val_toks": val_toks,
         "model": model,
         "pack": blob,

@@ -376,3 +376,35 @@ preceding bytes), (ii) the first-order concept table, (iii) the chunked DP
 and three corpora as processes. The 10 MB target is <= 2.50 and PPMd parity is
 the stretch at 100 MB, where the model charge falls to 0.02 and the coverage
 rises; the 10 MB prediction with the order-2 tail and the bigram is ~2.5-2.7.
+
+## 11. Results: N1b, enwik8 at 10 MB
+
+Artifacts: `runs/v8/enwik8_10m.json`, `runs/v8/ENWIK8.md`. The fit uses the
+chunked DP (1 MB chunks; the 10 MB `viterbi` allocates L+1 dicts) and the scaled
+tail (the float16 product overflowed at 10 MB; the counts are divided by their max
+and the prior by the same scale). The table is chosen on the held-out 10% of the
+train; the val is 1 MB; the model is charged over the 10 MB stream.
+
+| dict | table | sel | concept rate | model kB | concept charged | tail charged |
+|---:|---:|---:|---:|---:|---:|---:|
+| 8,192 | 4,096 | 3.029 | 2.991 | 135.0 | 3.098 | 3.134 |
+| 8,192 | 8,192 | 2.981 | 2.927 | 165.0 | 3.059 | 3.122 |
+| 8,192 | 16,384 | **2.948** | 2.857 | 222.5 | **3.035** | 3.126 |
+| 16,384 | 4,096 | 3.001 | 2.873 | 248.8 | 3.072 | 3.094 |
+
+PPMd on the same val: **2.160** (brotli 2.344, bz2 2.393, lzma 2.427). The rule
+costs nothing (the sel picks the val's best); the concept arm beats the hard split
+by 0.09 bpb at half the model. The 10 MB concept arm is **+0.875** behind PPMd;
+the 2.50 target is not reachable at 10 MB.
+
+The decomposition: the 16k dict covers 0.756 and the covered tokens are ~2.0 per
+covered byte (below PPMd's 2.16); the tail (24% at 5.6 bpb, the SVD cold start)
+is the whole gap. The real-context order-2 is 3.83 vs the SVD's 4.48 on the 1 MB
+tail; order 3 is 3.73, ceiling 1.62. With the tail at ~3.0 the 16k/16k is ~2.6 at
+10 MB, and at 100 MB the charge falls to 0.02 and the coverage rises, so ~1.8-2.0
+against PPMd's ~1.8. The claim is a 100 MB claim, not a 10 MB one; on the
+structured source (synseg 1.389 vs PPMd 1.500) it is already a win at 1.2 MB.
+
+Next: the real-context tail in the concept arm (the NCM at 10 MB is training; the
+1 MB 15 kB GRU lost to the SVD, the 25 kB 3-byte-context model is the test), then
+the 16k dict + that tail at 10 MB (~2.6 predicted), then the 100 MB run.

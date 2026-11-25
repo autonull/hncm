@@ -1,0 +1,109 @@
+{
+ "format": 8,
+ "corpus": "enwik8_10m",
+ "vocab": "substr",
+ "stream_bytes": 10000000,
+ "val_bytes": 1000000,
+ "codecs": {
+  "zlib": 2.998,
+  "gzip": 2.969,
+  "bz2": 2.393,
+  "lzma": 2.427,
+  "zstd": 2.511,
+  "brotli": 2.344,
+  "ppmd": 2.16
+ },
+ "rects": [
+  {
+   "vocab": "substr",
+   "dict": 8192,
+   "table": 4096,
+   "sel_charged": 3.029,
+   "arms": {
+    "concept": {
+     "rate": 2.991,
+     "model_bytes": 133750,
+     "charged": 3.0980000000000003
+    },
+    "tail": {
+     "rate": 3.0,
+     "model_bytes": 167500,
+     "charged": 3.134
+    }
+   }
+  },
+  {
+   "vocab": "substr",
+   "dict": 8192,
+   "table": 8192,
+   "sel_charged": 2.981,
+   "arms": {
+    "concept": {
+     "rate": 2.927,
+     "model_bytes": 165000,
+     "charged": 3.059
+    },
+    "tail": {
+     "rate": 2.964,
+     "model_bytes": 197500,
+     "charged": 3.122
+    }
+   }
+  },
+  {
+   "vocab": "substr",
+   "dict": 8192,
+   "table": 16384,
+   "sel_charged": 2.948,
+   "arms": {
+    "concept": {
+     "rate": 2.857,
+     "model_bytes": 222500,
+     "charged": 3.035
+    },
+    "tail": {
+     "rate": 2.922,
+     "model_bytes": 255000,
+     "charged": 3.1260000000000003
+    }
+   }
+  },
+  {
+   "vocab": "substr",
+   "dict": 16384,
+   "table": 4096,
+   "sel_charged": 3.001,
+   "arms": {
+    "concept": {
+     "rate": 2.873,
+     "model_bytes": 248750,
+     "charged": 3.072
+    },
+    "tail": {
+     "rate": 2.869,
+     "model_bytes": 281250,
+     "charged": 3.0940000000000003
+    }
+   }
+  }
+ ],
+ "chosen": {
+  "vocab": "substr",
+  "dict": 8192,
+  "table": 16384,
+  "sel_charged": 2.948,
+  "arms": {
+   "concept": {
+    "rate": 2.857,
+    "model_bytes": 222500,
+    "charged": 3.035
+   },
+   "tail": {
+    "rate": 2.922,
+    "model_bytes": 255000,
+    "charged": 3.1260000000000003
+   }
+  }
+ },
+ "note": "the 16k/8k and 16k/16k points were killed by the parallel NCM (OOM); the 16k/4k point is dominated on the val, so the table is complete."
+}

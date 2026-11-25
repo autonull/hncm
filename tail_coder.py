@@ -59,6 +59,7 @@ class Piece:
     prev: int
     cid: int = 0
     post: int = 256
+    ctx: bytes = b""
 
 
 # %%
@@ -68,17 +69,17 @@ def pieces(toks: list[bytes], rank: dict[bytes, int]) -> list[Piece]:
     of the token that follows it. A run ends at a dictionary token, which is also
     the predecessor of the next run; `post` lets the boundary be a space instead
     of a transmitted length."""
-    out, cur, last = [], bytearray(), len(rank)
+    out, cur, last, last_tok = [], bytearray(), len(rank), b""
     for s in toks:
         if len(s) == 1:
             cur += s
         else:
             if cur:
-                out.append(Piece(bytes(cur), last, 0, s[0]))
+                out.append(Piece(bytes(cur), last, 0, s[0], last_tok[-3:]))
                 cur = bytearray()
-            last = rank.get(s, len(rank))
+            last, last_tok = rank.get(s, len(rank)), s
     if cur:
-        out.append(Piece(bytes(cur), last))
+        out.append(Piece(bytes(cur), last, 0, 256, last_tok[-3:]))
     return out
 
 

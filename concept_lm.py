@@ -180,6 +180,21 @@ def viterbi(
     return toks[::-1], cost
 
 
+def viterbi_chunked(
+    bs: bytes, d: v.Dict, big: dict, uni: collections.Counter, chunk: int = 1 << 20
+) -> list[bytes]:
+    """The first-order DP in 1 MB chunks: the state resets at each boundary.
+
+    The 10 MB `viterbi` allocates L+1 dictionaries (~1.6 GB); the chunked
+    version is ~80 MB and the boundary costs a handshake of a few bits. The
+    codec resets the state at the same boundaries, so the charge is exact.
+    """
+    out = []
+    for a in range(0, len(bs), chunk):
+        out.extend(viterbi(bs[a : a + chunk], d, big, uni)[0])
+    return out
+
+
 def greedy1(bs: bytes, d: v.Dict, big: dict, uni: collections.Counter) -> list[bytes]:
     """The same cost model, myopic: longest dictionary span at each position."""
     out, t = [], 0

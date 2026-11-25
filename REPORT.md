@@ -291,3 +291,23 @@ context), not the hard split:
 The gap is the context order, not the representation. Next: the concept arm at
 10 MB with the order-2 tail and the first-order concept table; the chunked DP
 (the 10 MB `viterbi` allocates L+1 dicts) is the prerequisite.
+
+## v8/N1b: enwik8 at 10 MB
+
+Chunked DP, scaled tail, table chosen on the held-out 10%, charged over 10 MB:
+
+| dict | table | concept rate | model kB | charged | PPMd |
+|---:|---:|---:|---:|---:|---:|
+| 8,192 | 16,384 | 2.857 | 222.5 | **3.035** | 2.160 |
+| 8,192 | 8,192 | 2.927 | 165.0 | 3.059 | 2.160 |
+| 16,384 | 4,096 | 2.873 | 248.8 | 3.072 | 2.160 |
+| 8,192 | 4,096 | 2.991 | 135.0 | 3.098 | 2.160 |
+
+The concept arm beats the hard split by 0.09 at half the model; the selection
+rule costs nothing. The gap to PPMd is the *tail*: the 16k dict covers 0.756 and
+its covered tokens are ~2.0, below PPMd's 2.16; the 24% uncovered at 5.6 bpb
+(the SVD cold start) is the whole deficit. Real-context order-2 is 3.83 vs the
+SVD's 4.48 on the 1 MB tail. With that tail at 10 MB the total is ~2.6; at
+100 MB the charge (0.02) and coverage give ~1.8-2.0 against PPMd's ~1.8. The
+text claim is a 100 MB claim; the structured win (synseg 1.389 vs PPMd 1.500)
+stands at 1.2 MB.

@@ -61,19 +61,10 @@ def tail_model(
             out["bits"] += t.prior_bits(lens, len(p.raw), n, c.CAP)
         return out
     counts, _ = t.byte_matrix(pf, root)
-    scale = max(float(counts.max()), 1e-9)
-    alpha = z.ALPHA / scale
-    cn = counts / scale
-
-    def logp_q(a, b):
-        cc = np.clip(a.astype(np.float64) @ b.astype(np.float64), 0.0, None)
-        rows = cc.sum(1)
-        return np.log2((cc + alpha * root[None, :]) / (rows[:, None] + alpha))
-
     best = None
     for r in TAIL:
-        a, b = z.factors(cn, r)
-        logp = logp_q(a, b)
+        a, b, scale = z.factors(counts, r)
+        logp = z.logp_of(a, b, root, scale)
         sb = tail_bits(ps, logp, lens, n)
         size = 34 + (257 + 256) * r * 2
         sel = sb / max(len(sel_toks), 1) + 8 * size / (len(fit_toks) + len(sel_toks))

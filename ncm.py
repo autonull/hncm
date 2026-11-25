@@ -1,16 +1,13 @@
-"""NCM: the neural context model of the tail, trained end to end.
+"""NCM: the neural context model of the tail, trained end to end at 10 MB.
 
-The H-Net tier gives an exact concept index; the NSCM tier codes the spans the
-index does not cover. The count SVD (v7/v8) is the baseline. This module is the
-learned replacement at the *same* parameter budget, conditioned on the H-Net
-state: the previous concept's class (its length x its frequency bucket, which
-the decoder derives from the dictionary), the span position, and the previous
-byte. The GRU carries the within-span context (the trigram arm N2 asks for).
-
-Training is on the fit's uncovered spans; the model is selected on the held-out
-10% of the train, never the val; it is packed as float16, and every reported
-bit is from the *packed* numpy forward (the same pass the codec's decoder
-makes), so the charge is the model the artifact can use.
+The H-Net gives an exact concept index; the NCM codes the spans it does not
+cover. The defect of the first version was the *context*: it saw only the
+previous byte and restarted at 256. This version sees the real previous *three*
+bytes (the decoder holds them), the H-Net class of the preceding concept, and
+the span position; it is trained on the fit's uncovered spans and selected on
+the held-out 10% of the train. It is packed as float16 (25 kB at these sizes),
+and every reported bit is from the packed numpy forward — the pass the codec's
+decoder makes.
 """
 
 from __future__ import annotations
@@ -28,79 +25,93 @@ import codec as z
 import concept_lm as c
 import tail_coder as t
 
-HID = 12
-RANK = 6
-PE = 12
-CE = 12
-POS = 8
+PE = 8
+CE = 8
+POS = 4
+HID = 24
+RANK = 8
 SEED = 0
-MAGIC = b"HNN8"
+MAGIC = b"HNN9"
+ALPHA = 0.2
 KEYS = (
-    "pe",
+    "pe1",
+    "pe2",
+    "pe3",
     "ce",
     "pos",
-    "wz",
-    "uz",
-    "bz",
     "wr",
+    "uz",
+    "wz",
     "ur",
-    "br",
     "wn",
     "un",
-    "bn",
     "w1",
-    "w2",
     "b1",
+    "w2",
     "b2",
+    "br",
+    "bz",
+    "bn",
 )
-ALPHA = 0.2
-
-
-def class_of(tok: bytes, d, k: int) -> int:
-    """The H-Net state: the previous concept's length x its frequency bucket."""
-    if tok is None:
-        return 64
-    lb = min(len(tok), 16) - 1
-    fb = min(int(d.cost_of(tok) / 5), 3)
-    return lb * 4 + fb
-
-
-@dataclass
-class Tail:
-    """The packed model: the embedding tables and the GRU, as float16 arrays."""
-
-    w: dict[str, np.ndarray]
-
-    def __post_init__(self) -> None:
-        self.size = len(pack(self))
-
-    def logits(self, prev: int, cls: int, pos: int, h: np.ndarray):
-        w = self.w
-        x = np.concatenate([w["pe"][prev], w["ce"][cls], w["pos"][pos]])
-        z = sigmoid(x @ w["wz"] + h @ w["uz"] + w["bz"])
-        r = sigmoid(x @ w["wr"] + h @ w["ur"] + w["br"])
-        n = np.tanh(x @ w["wn"] + (r * h) @ w["un"] + w["bn"])
-        h = (1 - z) * n + z * h
-        y = np.tanh(h @ w["w1"] + w["b1"])
-        return y @ w["w2"] + w["b2"], h
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(x, -30, 30)))
 
 
-def logp_span(model: Tail, raw: bytes, cls: int) -> tuple[float, np.ndarray]:
+def ctxb(raw: bytes, ctx: bytes, j: int, k: int) -> int:
+    """The k-th byte before the span position j (256 = unknown)."""
+    if j >= k:
+        return raw[j - k]
+    i = len(ctx) - k + j
+    return ctx[i] if 0 <= i < len(ctx) else 256
+
+
+@dataclass
+class Tail:
+    w: dict[str, np.ndarray]
+
+    def __post_init__(self) -> None:
+        self.size = len(pack(self))
+
+    def one(self, x: np.ndarray, h: np.ndarray):
+        w = self.w
+        zgt = sigmoid(x @ w["wz"] + h @ w["uz"] + w["bz"])
+        rgt = sigmoid(x @ w["wr"] + h @ w["ur"] + w["br"])
+        n = np.tanh(x @ w["wn"] + (rgt * h) @ w["un"] + w["bn"])
+        h = (1 - zgt) * n + zgt * h
+        y = np.tanh(h @ w["w1"] + w["b1"])
+        return y @ w["w2"] + w["b2"], h
+
+    def input(self, b1: int, b2: int, b3: int, cls: int, pos: int) -> np.ndarray:
+        return np.concatenate(
+            [
+                self.w["pe1"][b1],
+                self.w["pe2"][b2],
+                self.w["pe3"][b3],
+                self.w["ce"][cls],
+                self.w["pos"][pos],
+            ]
+        )
+
+
+def logp_span(model: Tail, raw: bytes, cls: int, ctx: bytes) -> float:
     h = np.zeros(HID)
     bits = 0.0
-    prev = 256
     for j, b in enumerate(raw):
-        logits, h = model.logits(prev, cls, min(j, 15), h)
+        x = model.input(
+            ctxb(raw, ctx, j, 1),
+            ctxb(raw, ctx, j, 2),
+            ctxb(raw, ctx, j, 3),
+            cls,
+            min(j, 15),
+        )
+        logits, h = model.one(x, h)
         logits = logits - logits.max()
         p = np.exp(logits)
         p /= p.sum()
         bits -= math.log2(max(p[b], 1e-30))
-        prev = b
-    return bits, h
+    return bits
 
 
 def pack(model: Tail) -> bytes:
@@ -129,7 +140,13 @@ def unpack(data: bytes) -> Tail:
 
 
 # %%
-def train(name: str, vocab: str, rect: dict, epochs: int = 2) -> dict:
+def class_of(tok: bytes | None, d) -> int:
+    if tok is None:
+        return 64
+    return (min(len(tok), 16) - 1) * 4 + min(int(d.cost_of(tok) / 5), 3)
+
+
+def train(name: str, vocab: str, rect: dict, epochs: int = 3) -> dict:
     import torch
     import torch.nn as nn
 
@@ -137,72 +154,83 @@ def train(name: str, vocab: str, rect: dict, epochs: int = 2) -> dict:
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     s = c.split(name, vocab)
     d, bg, uni = c.rebuild(s, rect["dict"], rect["table"])
-    fit_toks = c.viterbi(s["fit"], d, bg, uni)[0]
+    fit_toks = c.viterbi_chunked(s["fit"], d, bg, uni)
     val_toks, _ = c.viterbi(s["va"], d, bg, uni)
     pf, pv = t.pieces(fit_toks, {}), t.pieces(val_toks, {})
     if not pf or not pv:
-        return {"name": name, "model": None, "bits": 0.0, "size": 0}
-    # the H-Net state for a piece: the class of the token before it
+        return {"name": name, "bits": 0.0, "size": 0, "tail_bytes": 0}
     rank = {tok: i for i, tok in enumerate(s["top"][:256])}
-
-    # t.pieces uses the rank of the previous multi token; recover the token
     inv = {i: tok for tok, i in rank.items()}
-    pf = [t.Piece(p.raw, p.prev, 0, p.post) for p in pf]
-    train_cls = [class_of(inv.get(p.prev), d, len(rank)) for p in pf]
-    pv = [t.Piece(p.raw, p.prev, 0, p.post) for p in pv]
-    val_cls = [class_of(inv.get(p.prev), d, len(rank)) for p in pv]
+    tr_cls = [class_of(inv.get(p.prev), d) for p in pf]
+    va_cls = [class_of(inv.get(p.prev), d) for p in pv]
 
-    class Net(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.pe = nn.Embedding(257, PE)
-            self.ce = nn.Embedding(65, CE)
-            self.pos = nn.Embedding(16, POS)
-            self.gru = nn.GRU(PE + CE + POS, HID, batch_first=True, bias=False)
-            self.w1 = nn.Linear(HID, RANK)
-            self.w2 = nn.Linear(RANK, 256)
-
-        def forward(self, prev, cls, pos, h):
-            x = torch.cat([self.pe(prev), self.ce(cls), self.pos(pos)], -1)
-            y, h = self.gru(x, h)
-            return self.w2(torch.tanh(self.w1(y))), h
-
-    net = Net().to(dev)
-    opt = torch.optim.Adam(net.parameters(), lr=0.01)
-    lossf = nn.CrossEntropyLoss()
-
-    def batches(pf_, cls_, bs=128):
+    def arrays(pf_, cls_, bs=256):
         for i in range(0, len(pf_), bs):
             group = pf_[i : i + bs]
-            L = max(len(p.raw) for p in group)
+            L = max(len(q.raw) for q in group)
             raw = torch.zeros(len(group), L, dtype=torch.long)
-            prev = torch.full((len(group), L), 256, dtype=torch.long)
+            b1 = torch.full((len(group), L), 256, dtype=torch.long)
+            b2 = torch.full((len(group), L), 256, dtype=torch.long)
+            b3 = torch.full((len(group), L), 256, dtype=torch.long)
             pos = torch.zeros(len(group), L, dtype=torch.long)
             cls = torch.tensor(cls_[i : i + len(group)], dtype=torch.long)
             mask = torch.zeros(len(group), L, dtype=torch.bool)
             for j, q in enumerate(group):
                 n = len(q.raw)
                 raw[j, :n] = torch.tensor(list(q.raw))
-                prev[j, 1:n] = raw[j, : n - 1]
+                for k, dst in ((1, b1), (2, b2), (3, b3)):
+                    dst[j, :n] = torch.tensor(
+                        [ctxb(q.raw, q.ctx, p, k) for p in range(n)]
+                    )
                 pos[j, :n] = torch.arange(n).clamp(max=15)
                 mask[j, :n] = True
-            yield (raw.to(dev), prev.to(dev), cls.to(dev), pos.to(dev), mask.to(dev))
+            yield (
+                raw.to(dev),
+                b1.to(dev),
+                b2.to(dev),
+                b3.to(dev),
+                cls.to(dev),
+                pos.to(dev),
+                mask.to(dev),
+            )
 
+    class Net(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.pe1 = nn.Embedding(257, PE)
+            self.pe2 = nn.Embedding(257, PE)
+            self.pe3 = nn.Embedding(257, PE)
+            self.ce = nn.Embedding(65, CE)
+            self.pos = nn.Embedding(16, POS)
+            self.gru = nn.GRU(3 * PE + CE + POS, HID, batch_first=True, bias=False)
+            self.w1 = nn.Linear(HID, RANK)
+            self.w2 = nn.Linear(RANK, 256)
+
+        def forward(self, b1, b2, b3, cls, pos, h0):
+            x = torch.cat(
+                [self.pe1(b1), self.pe2(b2), self.pe3(b3), self.ce(cls), self.pos(pos)],
+                -1,
+            )
+            y, _ = self.gru(x, h0)
+            return self.w2(torch.tanh(self.w1(y)))
+
+    net = Net().to(dev)
+    opt = torch.optim.Adam(net.parameters(), lr=0.01)
+    lossf = nn.CrossEntropyLoss()
     for _ in range(epochs):
-        for raw, prev, cls, pos, mask in batches(pf, train_cls):
+        for raw, b1, b2, b3, cls, pos, mask in arrays(pf, tr_cls):
             h0 = torch.zeros(1, len(raw), HID, device=dev)
-            logits, _ = net(prev, cls[:, None].expand(-1, prev.shape[1]), pos, h0)
+            logits = net(b1, b2, b3, cls[:, None].expand_as(b1), pos, h0)
             loss = lossf(logits[mask], raw[mask])
             opt.zero_grad()
             loss.backward()
             opt.step()
-    # export the float16 model and measure the val with the packed forward
-    w = {}
     sd = net.state_dict()
-    w["pe"] = sd["pe.weight"].detach().cpu().numpy()
-    w["ce"] = sd["ce.weight"].detach().cpu().numpy()
-    w["pos"] = sd["pos.weight"].detach().cpu().numpy()
-    # torch GRU: weight_ih_l0 is (3H, in), weight_hh_l0 is (3H, H), bias_ih/hh
+    w = {
+        k: sd[k].detach().cpu().numpy()
+        for k in ("pe1.weight", "pe2.weight", "pe3.weight", "ce.weight", "pos.weight")
+    }
+    w = {k.split(".")[0]: v for k, v in w.items()}
     wih = sd["gru.weight_ih_l0"].cpu().numpy()
     whh = sd["gru.weight_hh_l0"].cpu().numpy()
     H = HID
@@ -215,22 +243,21 @@ def train(name: str, vocab: str, rect: dict, epochs: int = 2) -> dict:
     w["w2"] = sd["w2.weight"].cpu().numpy().T
     w["b2"] = sd["w2.bias"].cpu().numpy()
     model = Tail(w)
-    bits = sum(logp_span(model, p.raw, cl)[0] for p, cl in zip(pv, val_cls))
+    bits = sum(logp_span(model, q.raw, cl, q.ctx) for q, cl in zip(pv, va_cls))
     root = np.exp2(-s["bc"])
     root /= root.sum()
     counts, _ = t.byte_matrix(pf, root)
-    a, b = z.factors(counts, 16)
-    logp = z.logp_of(a, b, root)
-    svd_bits = sum(z.run_bits(p.raw, logp) for p in pv)
+    a, b, scale = z.factors(counts, 32)
+    svd = sum(z.run_bits(q.raw, z.logp_of(a, b, root, scale)) for q in pv)
+    tb = sum(len(q.raw) for q in pv)
     return {
         "name": name,
         "rect": rect,
-        "bits": bits,
-        "tail_bytes": sum(len(p.raw) for p in pv),
-        "tail_bpb": bits / max(sum(len(p.raw) for p in pv), 1),
+        "tail_bytes": tb,
+        "tail_bpb": bits / tb,
+        "svd_bpb": svd / tb,
         "size": model.size,
-        "svd_bpb": svd_bits / max(sum(len(p.raw) for p in pv), 1),
-        "svd_bits": svd_bits,
+        "epochs": epochs,
         "model": model,
     }
 
@@ -238,12 +265,14 @@ def train(name: str, vocab: str, rect: dict, epochs: int = 2) -> dict:
 def selftest() -> None:
     rng = np.random.RandomState(SEED)
     w = {
-        "pe": rng.normal(0, 0.1, (257, PE)),
+        "pe1": rng.normal(0, 0.1, (257, PE)),
+        "pe2": rng.normal(0, 0.1, (257, PE)),
+        "pe3": rng.normal(0, 0.1, (257, PE)),
         "ce": rng.normal(0, 0.1, (65, CE)),
         "pos": rng.normal(0, 0.1, (16, POS)),
     }
     for nm in ("z", "r", "n"):
-        w[f"w{nm}"] = rng.normal(0, 0.1, (PE + CE + POS, HID))
+        w[f"w{nm}"] = rng.normal(0, 0.1, (3 * PE + CE + POS, HID))
         w[f"u{nm}"] = rng.normal(0, 0.1, (HID, HID))
         w[f"b{nm}"] = rng.normal(0, 0.1, HID)
     w["w1"] = rng.normal(0, 0.1, (HID, RANK))
@@ -254,9 +283,11 @@ def selftest() -> None:
     blob = pack(model)
     m2 = unpack(blob)
     assert pack(m2) == blob
-    a, _ = logp_span(m2, b"abc", 3)
-    b, _ = logp_span(unpack(pack(m2)), b"abc", 3)
+    a = logp_span(m2, b"abc", 3, b"xyz")
+    b = logp_span(unpack(pack(m2)), b"abc", 3, b"xyz")
     assert abs(a - b) < 1e-9
+    assert ctxb(b"abc", b"xyz", 0, 1) == ord("z")
+    assert ctxb(b"abc", b"xyz", 1, 1) == ord("a")
     print("ncm selftest: ok")
 
 
@@ -264,12 +295,12 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="H-NCM neural tail")
     sub = p.add_subparsers(dest="cmd")
     r = sub.add_parser("run")
-    r.add_argument("--corpus", default="enwik8_1m")
+    r.add_argument("--corpus", default="enwik8_10m")
     r.add_argument("--vocab", default="substr")
-    r.add_argument("--dict", type=int, default=1024)
-    r.add_argument("--table", type=int, default=2048)
-    r.add_argument("--epochs", type=int, default=2)
-    r.add_argument("--out", default="runs/v8/ncm.json")
+    r.add_argument("--dict", type=int, default=8192)
+    r.add_argument("--table", type=int, default=4096)
+    r.add_argument("--epochs", type=int, default=3)
+    r.add_argument("--out", default="runs/v8/ncm10m.json")
     sub.add_parser("selftest")
     a = p.parse_args(argv)
     if a.cmd == "selftest":

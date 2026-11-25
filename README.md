@@ -23,8 +23,11 @@ pays at 10 MB (0.088 charge for ~0.35 gain) but not at 1 MB (0.877). The NCM
 (15 kB GRU, GPU, 10 epochs) reaches 4.61, so the learned tail loses to the counts
 at this budget: the count context table is the NCM at scale. The complete model
 is the *concept arm* (one normalized model: the H-Net rows give the tail its
-context), 3.67 charged vs the hard split's 3.94 at 1 MB. The 10 MB concept arm
-with the order-2 tail and the chunked DP is the next run.
+context), 3.67 charged vs the hard split's 3.94 at 1 MB. The 10 MB concept arm is **3.035 charged** (8k dict / 16k table) against PPMd
+**2.160**: the coverage is 0.756 and the tail (24% at 5.6 bpb) is the gap. The
+chunked DP and the real-context tail are implemented; the order-2 table (3.83 vs
+the SVD's 4.48 on the 1 MB tail) is the next lever, and the 100 MB is where
+the charge (0.02) and coverage make the scale claim.
 
 ## The measured bottleneck (v6)
 
