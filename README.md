@@ -24,7 +24,7 @@ archive to win.
 
 The mechanism works end to end. The bitstream round-trips every corpus; the
 recorded size equals the code's entropy plus the charged model (the exact
-reconciliation is in `REPORT.md`), so the accounting is checked by an encoder
+reconciliation is in the report of record), so the accounting is checked by an encoder
 and decoder, not by an estimate.
 
 What the mechanism already shows:
@@ -35,13 +35,13 @@ What the mechanism already shows:
   one index each, the uncovered bytes are the fallback.
 - **Structured sources pay.** Where the phrasebook fits the source, the model is
   at or ahead of the best standard codec; on at least one structured corpus it
-  wins. The exact table is in `REPORT.md`.
+  wins. The exact table is in the report of record.
 - **Natural text is still behind.** On English text the model currently trails
   PPMd at 1-10 MB, and the gap is the uncovered part: the covered tokens are
   already competitive, the fallback is not. The verdict at 100 MB is not yet
   measured.
 
-The tables in `REPORT.md` and `runs/` are the record of the current run. They
+The measured tables are the record of the current run. They
 will change as the levers land; this README states the mechanism and the claim,
 not the bit rates.
 
@@ -62,9 +62,10 @@ the other two, and the bitstream remains the judge.
 
 ## The open question
 
-Does the text lever close at 100 MB? The plan and the gates are in `TODO4.md`.
-The answer will be a win, a measured crossing, or a clean negative; all three
-are publishable, and the structural claims survive either way.
+Does the text lever close at 100 MB? The answer will be a win, a measured
+crossing, or a clean negative; all three are publishable, and the structural
+claims survive either way. The plan and its gates are kept with the current work
+plan, not on this page.
 
 ## What we do not claim
 
@@ -84,18 +85,13 @@ the packed model and reconciles the recorded size to the charge, so an
 accounting error is visible. That is what lets the model improve without
 rewriting the claim.
 
-## The record
+## Where the evidence lives
 
-| file | what it holds |
-|---|---|
-| `codec.py` | the bitstream: the model, the CDF, the arithmetic coder, both conventions |
-| `concept_lm.py`, `hncm7.py` | the dictionary, the concept LM and the first-order solver |
-| `corpora.py` | the cached corpora and the deterministic split |
-| `probe.py` | the coverage probe |
-| `ncm.py` | the learned fallback (the context model) |
-| `tail_coder.py`, `transfer.py` | the fallback arms and the K-file charge |
-| `REPORT.md` | the measured tables (the record) |
-| `TODO4.md` | the remaining levers and the 100 MB verdict |
+The bitstream, the solver, the loader, the probe and the fallback are separate
+modules. The measured tables, the reconciliation and the current work plan are
+kept with the run artifacts, so the numbers can change without rewriting this
+page. This README states the mechanism, the claim and the open question; the
+report of record states the numbers for the current run.
 
 ## History
 
@@ -113,5 +109,4 @@ rewriting the claim.
   learned/count fallback are the 10 MB measurements. The structured win stands;
   the text verdict moves to 100 MB.
 
-The details of each stage are in `REPORT.md`, `TODO1.md`, `TODO2.md` and
-`runs/`.
+The details of each stage are in the report of record and the run artifacts.
