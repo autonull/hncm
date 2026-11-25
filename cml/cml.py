@@ -113,7 +113,7 @@ class Gate:
 
 # The initial gate table. The plan's scorecard is a snapshot of these numbers.
 GATES: dict[str, Gate] = {
-    "P0a": Gate("saved", Convention.SHARED, ">=", 0.15),
+    "P0a": Gate("saved_charged", Convention.SHARED, ">=", 0.15),
     "P0b": Gate("accept", Convention.RATE, ">=", 0.50),
     "P0c": Gate("delta", Convention.RATE, "<=", 0.02),
     "P0d": Gate("structured_x", Convention.RATE, ">=", 1.5),
@@ -1429,7 +1429,9 @@ def longest_match(trie: dict, data: bytes, t: int, cap: int = CAP) -> tuple[int,
 
 
 @torch.no_grad()
-def span_embeddings(model: Trunk, entries: tuple[Entry, ...]) -> torch.Tensor:
+def span_embeddings(
+    model: Trunk, entries: tuple[Entry, ...], pool: str = "last"
+) -> torch.Tensor:
     d = model.tok.embedding_dim
     out = torch.empty((len(entries), d))
     batch = 512
@@ -1445,7 +1447,16 @@ def span_embeddings(model: Trunk, entries: tuple[Entry, ...]) -> torch.Tensor:
             lens.append(len(entry.data))
         h = model.hidden(x)
         rows = torch.arange(len(chunk), device="cuda")
-        z = h[rows, torch.tensor(lens, device="cuda") - 1]
+        if pool == "mean":
+            mask = (
+                torch.arange(width, device="cuda")[None, :]
+                < torch.tensor(lens, device="cuda")[:, None]
+            )
+            z = (h * mask[..., None]).sum(1) / torch.tensor(lens, device="cuda")[
+                :, None
+            ]
+        else:
+            z = h[rows, torch.tensor(lens, device="cuda") - 1]
         out[a : a + len(chunk)] = F.normalize(z, dim=-1).cpu()
     return out
 
@@ -1671,6 +1682,8 @@ def fit_gate(
     neural: bool = True,
     kind: str = "logistic",
     holdout: bool = False,
+    tau_pct: float = 95.0,
+    alpha: float = 0.5,
 ) -> dict:
     rng = np.random.default_rng(0)
     picks = rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
@@ -1683,7 +1696,7 @@ def fit_gate(
         if holdout and idx % HOLDOUT == 0:
             continue
         logc = math.log(float(count[idx]) / total)
-        score = match_score(hs[t], e_c[idx], int(count[idx]), total, 0.5)
+        score = match_score(hs[t], e_c[idx], int(count[idx]), total, alpha)
         raw.append(score)
         feats.append(
             [
@@ -1702,13 +1715,13 @@ def fit_gate(
             "tau": 1e9,
             "alpha": 0.5,
         }
-    tau = float(np.percentile(means, 95))
+    tau = float(np.percentile(means, tau_pct))
     if kind == "knn":
         return {
             "kind": "knn",
             "theta": float(np.median(raw)),
             "tau": tau,
-            "alpha": 0.5,
+            "alpha": alpha,
             "samples": len(feats),
         }
     y = torch.tensor([float(m <= tau) for m in means])
@@ -1731,7 +1744,7 @@ def fit_gate(
         "mu": mu.tolist(),
         "sd": sd.tolist(),
         "tau": tau,
-        "alpha": 0.5,
+        "alpha": alpha,
         "samples": len(feats),
     }
 
@@ -1750,8 +1763,16 @@ def adapter_eval(
     pack_size: int,
     stream_bytes: int,
     neural: bool = True,
+    threshold: float = 0.5,
+    identity: str = "",
 ) -> dict:
+    """`identity` charges the span's name: "" (oracle), "count" or "index".
+
+    A copy must tell the decoder *which* entry; the oracle rate omits it. The
+    count prior is the cheapest decodable code, the fixed index the priciest.
+    """
     count = torch.tensor([e.count for e in entries])
+    fixed = math.log2(max(len(entries), 1))
     tau = float(gate["tau"])
     alpha = float(gate["alpha"])
     bits = 0.0
@@ -1776,17 +1797,22 @@ def adapter_eval(
             ]
             pi = gate_prob(gate, feat)
             passes = float(nll[t : t + length].mean()) <= tau
-            if pi >= 0.5 and passes:
-                bits += entropy(pi)
+            if pi >= threshold and passes:
+                span_bits = entropy(pi)
+                if identity == "count":
+                    span_bits += math.log2(total / max(int(count[idx]), 1))
+                elif identity == "index":
+                    span_bits += fixed
+                bits += span_bits
                 copies += 1
                 copy_bytes += length
                 if held:
-                    h_bits += entropy(pi)
+                    h_bits += span_bits
                     h_bytes += length
                     h_copies += 1
                 t += length
                 continue
-            if pi >= 0.5 and not passes:
+            if pi >= threshold and not passes:
                 verify_fail += 1
         bits += float(nll[t]) / math.log(2) + entropy(pi)
         fallbacks += 1
@@ -2143,6 +2169,42 @@ def run_p0(cfg: Config, gates: list[str], out: Path) -> dict:
             cfg.stream_bytes,
             neural=neural,
         )
+        charged = adapter_eval(
+            model,
+            pack.entries,
+            trie,
+            total,
+            e_c,
+            gate,
+            test,
+            test_nll,
+            test_hs,
+            test_n,
+            pack_size,
+            cfg.stream_bytes,
+            neural=neural,
+            identity="count",
+        )
+        index = adapter_eval(
+            model,
+            pack.entries,
+            trie,
+            total,
+            e_c,
+            gate,
+            test,
+            test_nll,
+            test_hs,
+            test_n,
+            pack_size,
+            cfg.stream_bytes,
+            neural=neural,
+            identity="index",
+        )
+        m["saved_charged"] = charged["saved"]
+        m["charged_bpb"] = charged["adapter_bpb"]
+        m["saved_index"] = index["saved"]
+        m["index_bpb"] = index["adapter_bpb"]
         held = {}
         for name, g in gates_heldout.items():
             held[name] = adapter_eval(
@@ -2438,7 +2500,8 @@ def gates_report() -> int:
                 f"P0: base {b0['base_bpb']:.3f} → adapter "
                 f"{b0['adapter_bpb']:.3f} bpb; rate saved "
                 f"{b0['rate_saved']:+.3f}, pack charge {b0['charge']:.3f}, "
-                f"net **{b0['saved']:+.3f}**; accept {b0['accept']:.1%}, "
+                f"net **{b0.get('saved_charged', b0['saved']):+.3f}** charged "
+                f"(oracle {b0['saved']:+.3f}); accept {b0['accept']:.1%}, "
                 f"coverage {b0.get('coverage', 0.0):.1%}, "
                 f"pack {b0['pack_bytes'] / 1e3:.1f} kB (`{b0['id']}`)."
             )
@@ -2449,13 +2512,17 @@ def gates_report() -> int:
                 if (m.get("mode") or "adapter")
                 in ("adapter", "none", "counts", "knn", "lora")
             ]
+
+            def rank(m: dict) -> tuple[bool, bool]:
+                return (m.get("saved_charged") is not None, bool(m.get("mode")))
+
             seen: dict[tuple[str, str], dict] = {}
             for m in arms:
                 key = (
                     m.get("mode") or "adapter",
                     str(m.get("corpus") or "enwik8_10m"),
                 )
-                if key not in seen or m.get("mode"):
+                if key not in seen or rank(m) > rank(seen[key]):
                     seen[key] = m
             arms = list(seen.values())
             if arms:
@@ -2468,9 +2535,11 @@ def gates_report() -> int:
                     key=lambda m: (str(m.get("corpus")), str(m.get("mode"))),
                 ):
                     corpus = str(m.get("corpus") or "enwik8_10m").replace("enwik8_", "")
+                    charged = m.get("saved_charged")
+                    saved = "—" if charged is None else f"{charged:+.3f}"
                     lines.append(
                         f"| {(m.get('mode') or 'adapter')} | {corpus} | "
-                        f"{m['saved']:+.3f} | "
+                        f"{saved} | "
                         f"{m['charge']:.3f} | "
                         f"{m['accept']:.1%} | {m['pack_bytes'] / 1e3:.1f} |"
                     )
@@ -2636,6 +2705,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status")
     sub.add_parser("report")
     sub.add_parser("gates")
+    sw = sub.add_parser("sweep")
+    sw.add_argument("stage", choices=("P0",))
+    sw.add_argument("--corpus", default="enwik8_10m")
+    sw.add_argument("--slice", type=int, default=300_000)
     c = sub.add_parser("curve")
     c.add_argument("stage", choices=("P1",))
     c.add_argument("--steps", type=int, default=6000)
@@ -2651,6 +2724,8 @@ def main(argv: list[str] | None = None) -> int:
         return space()
     if a.cmd == "gates":
         return gates_report()
+    if a.cmd == "sweep":
+        return sweep_p0(a.corpus, a.slice)
     if a.cmd == "curve":
         return curve(a.stage, a.steps, a.update)
     if a.cmd == "search":
@@ -2677,3 +2752,219 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def rank_auc(score: list[float], label: list[int]) -> float:
+    """The Mann-Whitney AUC: 0.5 is no signal, 1.0 is a perfect ranking."""
+    n1 = int(sum(label))
+    n0 = len(label) - n1
+    if not n1 or not n0:
+        return 0.5
+    order = np.argsort(np.asarray(score))
+    ranks = np.empty(len(score))
+    ranks[order] = np.arange(1, len(score) + 1)
+    pos = float(np.sum(np.where(np.asarray(label) == 1, ranks, 0.0)))
+    return (pos - n1 * (n1 + 1) / 2) / (n1 * n0)
+
+
+def heldout_auc(
+    model: Trunk,
+    entries: tuple[Entry, ...],
+    trie: dict,
+    train: bytes,
+    total: int,
+    e_c: torch.Tensor,
+    nll: torch.Tensor,
+    hs: torch.Tensor,
+    n_eval: int,
+    alpha: float = 0.5,
+    samples: int = 60_000,
+) -> dict:
+    """Does each gate feature predict "the base finds the span cheap"? Held-out."""
+    rng = np.random.default_rng(0)
+    picks = np.sort(
+        rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
+    )
+    count = torch.tensor([e.count for e in entries])
+    cos, lens, logc, means = [], [], [], []
+    for t in picks.tolist():
+        length, idx = longest_match(trie, train, t)
+        if length < 2 or t + length > n_eval or idx % HOLDOUT != 0:
+            continue
+        cos.append(match_score(hs[t], e_c[idx], int(count[idx]), total, 0.0))
+        lens.append(length)
+        logc.append(math.log(float(count[idx]) / total))
+        means.append(float(nll[t : t + length].mean()))
+    if len(means) < 100:
+        return {"n": len(means)}
+    tau = float(np.percentile(means, 95))
+    y = [int(m <= tau) for m in means]
+    return {
+        "n": len(means),
+        "pos": float(sum(y)) / len(y),
+        "tau": tau,
+        "auc_cos": rank_auc(cos, y),
+        "auc_length": rank_auc(lens, y),
+        "auc_logc": rank_auc(logc, y),
+    }
+
+
+def sweep_p0(corpus: str = "enwik8_10m", slice_bytes: int = 300_000) -> int:
+    """Sweep the adapter's choices on one slice: pooling, prior, tau, accept.
+
+    Two questions: is the linchpin negative a pooling artifact, and is the pack
+    policy (alpha, tau, threshold) off its optimum?
+    """
+    cfg = Config(
+        arm=Arm.ADAPTER,
+        corpus=corpus,
+        base="byte-20m",
+        params=20_000_000,
+        dict_size=4096,
+        min_count=32,
+    )
+    out = RUNS / "sweep-p0"
+    path = base_path(cfg)
+    if not path.exists():
+        raise SystemExit(f"sweep: missing base {path}")
+    ckpt = torch.load(path, map_location="cuda", weights_only=False)
+    model = Trunk(256, ckpt["d"], ckpt["layers"], ckpt["heads"], ckpt["seq"]).cuda()
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+    raw = corpus_bytes(corpus)
+    split = cfg.stream_bytes - cfg.val_bytes
+    train, test = raw[:split], raw[split : split + cfg.val_bytes]
+    ids = torch.frombuffer(bytearray(raw), dtype=torch.uint8).long()
+    pack, pack_size, total = load_pack(cfg, train, out)
+    trie = make_trie(pack.entries)
+    fit_ids = ids[:1_000_000]
+    fit_nll, fit_hs, fit_n = stream_nll(model, fit_ids)
+    sl = min(slice_bytes, len(test))
+    data = test[len(test) - sl :]
+    ts = split + len(test) - sl
+    sl_ids = ids[ts : ts + sl]
+    test_nll, test_hs, test_n = stream_nll(model, sl_ids)
+    print(
+        f"sweep P0 `{corpus}`: pack {pack_size / 1e3:.1f} kB · slice {sl} B",
+        flush=True,
+    )
+    rows: list[dict] = []
+    emb = {
+        pool: span_embeddings(model, pack.entries, pool) for pool in ("last", "mean")
+    }
+    for pool in ("last", "mean"):
+        for name, neural in (("tied", True), ("counts", False)):
+            gate = fit_gate(
+                model,
+                pack.entries,
+                trie,
+                train[:1_000_000],
+                total,
+                emb[pool],
+                fit_nll,
+                fit_hs,
+                fit_n,
+                neural=neural,
+                holdout=True,
+            )
+            m = adapter_eval(
+                model,
+                pack.entries,
+                trie,
+                total,
+                emb[pool],
+                gate,
+                data,
+                test_nll,
+                test_hs,
+                test_n,
+                pack_size,
+                cfg.stream_bytes,
+                neural=neural,
+            )
+            rows.append(
+                {
+                    "pool": pool,
+                    "gate": name,
+                    "alpha": 0.5,
+                    "tau_pct": 95.0,
+                    "threshold": 0.5,
+                    "saved": m["saved"],
+                    "accept": m["accept"],
+                    "held_bpb": m["held_bpb"],
+                    "held_accept": m["held_accept"],
+                    "w": gate["w"],
+                }
+            )
+            print(
+                f"  {pool:5s} {name:7s} net {m['saved']:+.3f} · "
+                f"held {m['held_bpb']:.3f} · accept {m['accept']:.1%} · "
+                f"w0 {gate['w'][0]:+.3f}",
+                flush=True,
+            )
+    best = max((r for r in rows if r["gate"] == "tied"), key=lambda r: r["saved"])
+    e_c = emb[best["pool"]]
+    for alpha in (0.0, 1.0):
+        for tau_pct in (95.0, 99.0):
+            gate = fit_gate(
+                model,
+                pack.entries,
+                trie,
+                train[:1_000_000],
+                total,
+                e_c,
+                fit_nll,
+                fit_hs,
+                fit_n,
+                neural=True,
+                holdout=True,
+                tau_pct=tau_pct,
+                alpha=alpha,
+            )
+            for threshold in (0.5, 0.7):
+                m = adapter_eval(
+                    model,
+                    pack.entries,
+                    trie,
+                    total,
+                    e_c,
+                    gate,
+                    data,
+                    test_nll,
+                    test_hs,
+                    test_n,
+                    pack_size,
+                    cfg.stream_bytes,
+                    threshold=threshold,
+                )
+                rows.append(
+                    {
+                        "pool": best["pool"],
+                        "gate": "tied",
+                        "alpha": alpha,
+                        "tau_pct": tau_pct,
+                        "threshold": threshold,
+                        "saved": m["saved"],
+                        "accept": m["accept"],
+                        "held_bpb": m["held_bpb"],
+                        "held_accept": m["held_accept"],
+                        "w": gate["w"],
+                    }
+                )
+                print(
+                    f"  {best['pool']:5s} alpha {alpha:g} tau {tau_pct:g} "
+                    f"pi {threshold:g} · net {m['saved']:+.3f} · "
+                    f"accept {m['accept']:.1%} · held {m['held_bpb']:.3f}",
+                    flush=True,
+                )
+    write_json(
+        REPORTS / "sweep-p0.json",
+        {"corpus": corpus, "slice": sl, "pack_bytes": pack_size, "rows": rows},
+    )
+    top = max(rows, key=lambda r: r["saved"])
+    print(
+        f"best: {top['pool']} alpha {top['alpha']:g} tau {top['tau_pct']:g} "
+        f"pi {top['threshold']:g} · net {top['saved']:+.3f}",
+        flush=True,
+    )
+    return 0

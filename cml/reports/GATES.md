@@ -2,14 +2,14 @@
 
 | run | mode | train MB | params | steps | payload | bigram | gates |
 |---|---|---:|---:|---:|---:|---:|---|
-| `p0-adapter-75cb215f-s0` | adapter | 9.0 | 21.9M | 0 | 0.997 | — | P0a:✓ P0b:✓ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✓ |
-| `p0-code-79525d79-s0` | adapter | 0.6 | 21.9M | 0 | 2.691 | — | P0a:✓ P0b:✓ P0c:✓ P0d:✗ P0e:✓ P0f:✓ P0g:✓ P0h:✗ |
+| `p0-adapter-4e989907-s0` | adapter | 9.0 | 21.9M | 0 | 0.997 | — | P0a:✗ P0b:✓ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✓ |
+| `p0-code-79525d79-s0` | adapter | 0.6 | 21.9M | 0 | 2.739 | — | P0a:✗ P0b:✓ P0c:✓ P0d:✗ P0e:✓ P0f:✓ P0g:✓ P0h:✗ |
 | `p0-counts-cd1b81b1-s0` | counts | 9.0 | 21.9M | 0 | 0.996 | — | P0a:✓ P0b:✓ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✓ |
 | `p0-knn-52bc18fc-s0` | knn | 9.0 | 21.9M | 0 | 1.239 | — | P0a:✓ P0b:✗ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✓ |
 | `p0-linchpin-5fb03736-s0` | adapter | 9.0 | 21.9M | 0 | 0.997 | — | P0h:✗ |
 | `p0-lora-4ab0bed1-s0` | lora | 9.0 | 21.9M | 2000 | 1.821 | — | P0a:✗ P0b:✗ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✗ |
 | `p0-none-43a7007c-s0` | none | 9.0 | 21.9M | 0 | 1.827 | — | P0a:✗ P0b:✗ P0c:✓ P0d:— P0e:✓ P0f:✓ P0g:✗ |
-| `p0-structured-6ae3c23c-s0` | adapter | 9.0 | 21.9M | 0 | 0.997 | — | P0a:✓ P0b:✓ P0c:✓ P0d:✓ P0e:✓ P0f:✓ P0g:✓ |
+| `p0-structured-ba0c26de-s0` | adapter | 9.0 | 21.9M | 0 | 0.997 | — | P0a:✗ P0b:✓ P0c:✓ P0d:✓ P0e:✓ P0f:✓ P0g:✓ |
 | `p0-zeroshot-a5704c19-s0` | adapter | 0.6 | 21.9M | 0 | 2.690 | — | P1e:✗ |
 | `p1-check-8m-9237d73f-s0` | adapter | 8.0 | 20.5M | 6000 | 1.992 | 2.709 | P1a:✓ P1b:✓ |
 | `p1-class-10m-289cc414-s0` | adapter | 9.0 | 39.9M | 2000 | 2.096 | 2.667 | P1a:✓ P1b:✓ P1c:— P1d:— P1e:— |
@@ -25,22 +25,22 @@
 
 The seed-0 P1 payload is **1.920 bpb** at 20.5M parameters and 6000 steps (`p1-class-10m-3084fd95-s0`); seeds 0-2 at that point are **1.912 ± 0.008**. The same-slice count bigram is 2.667; the v9 reference on the 10 MB block is 2.696 (2.729 is the 10 MB-prefix rate).
 
-P0: base 1.827 → adapter 0.997 bpb; rate saved +0.830, pack charge 0.072, net **+0.758**; accept 79.4%, coverage 79.6%, pack 90.1 kB (`p0-adapter-75cb215f-s0`).
+P0: base 1.827 → adapter 0.997 bpb; rate saved +0.830, pack charge 0.072, net **-2.224** charged (oracle +0.758); accept 79.4%, coverage 79.6%, pack 90.1 kB (`p0-adapter-4e989907-s0`).
 
 | arm | corpus | saved | charge | accept | pack kB |
 |---|---|---:|---:|---:|---:|
-| adapter | 10m | +0.758 | 0.072 | 79.4% | 90.1 |
-| counts | 10m | +0.758 | 0.072 | 79.4% | 90.1 |
-| knn | 10m | +0.516 | 0.072 | 37.8% | 90.1 |
-| lora | 10m | -0.033 | 0.039 | 0.0% | 0.0 |
-| none | 10m | +0.000 | 0.000 | 0.0% | 0.0 |
-| adapter | src | +1.645 | 0.284 | 90.7% | 23.1 |
+| counts | 10m | — | 0.072 | 79.4% | 90.1 |
+| knn | 10m | — | 0.072 | 37.8% | 90.1 |
+| lora | 10m | — | 0.039 | 0.0% | 0.0 |
+| none | 10m | — | 0.000 | 0.0% | 0.0 |
+| adapter | 10m | -2.224 | 0.072 | 79.4% | 90.1 |
+| adapter | src | -0.403 | 0.284 | 90.8% | 23.1 |
 
 Linchpin (held-out 10% of `D`): tied 0.510 vs counts-only 0.510 bpb on 79309 B → gap **-0.000**; accept 79.6% vs 79.6%.
 
-P0d on `src`: **1.05x** wall-clock over 8191 B (4.833 → 3.807 bpb, accept 77.8%); the copies are verified exact, so the emission is lossless.
+P0d on `src`: **1.40x** wall-clock over 8191 B (4.833 → 3.774 bpb, accept 77.6%); the copies are verified exact, so the emission is lossless.
 
-P0d on `synseg`: **2.22x** wall-clock over 8191 B (4.544 → 1.013 bpb, accept 81.4%); the copies are verified exact, so the emission is lossless.
+P0d on `synseg`: **4.28x** wall-clock over 8191 B (4.544 → 1.013 bpb, accept 81.4%); the copies are verified exact, so the emission is lossless.
 
 The second split is the `p1-check-8m` row: train 8 MB and test the 8-9 MB slice, so the win is not one easy slice.
 

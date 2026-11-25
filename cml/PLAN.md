@@ -21,28 +21,23 @@ saturation, not by a capacity slope.
 
 P0 freezes a 21.9M byte base trained 6000 steps on the same 9 MB (base bpb
 1.827), induces a 4096-span pack (90.1 kB), fits the 3-parameter gate, and
-copies exact spans. The adapter reaches **0.997 bpb**; the rate saving is
-+0.830, the pack charge is 0.072, and the **net saving is +0.758**. Acceptance
-is 79.4%, coverage 80%, and provenance 100%. P0a, P0b, P0c, P0e, P0f and P0g
-pass. P0d passes at **2.22x** wall-clock on an 8 kB synthetic structured
-stream (4.544 → 1.013 bpb, 81.4% accepted, copies verified exact), measured on
-a batch-1 KV-cache decoder: one trunk step per byte for the byte arm, one per
-span for the adapter. The equal-charge baselines at 90.1 kB each are measured:
-no-D +0.000, counts-only **+0.758**, kNN +0.516 (37.8% accept), LoRA (rank 1,
-48.4 kB) +0.006 rate at 0.039 charge → net **−0.033**. Counts-only ties the
-tied-embedding gate on *seen* spans (0.996 vs 0.997). The linchpin is measured
-and it **fails**: on the held-out 10% of `D`, tied and counts-only are identical
-(0.510 vs 0.510 bpb on text; 0.445 vs 0.443 on code), and the fitted gate gives
-the embedding weight −0.04 — the gate is a length/count classifier. A copy needs
-byte equality, so semantic similarity has nothing to add in the exact-span
-formulation; B1's tied-embedding claim dies as stated, and the neural part can
-only pay when copies become inexact (holes/fills, B4). On the repo's own 650 kB
-of Python, the adapter saves **+1.932** rate at 23.1 kB (charge 0.284, net
-**+1.648**, accept 90.8%), but P0d there is **1.05x**: code spans average ~3 B,
-so the per-span step pays call overhead. The speed gate is data-bound, and the
-rate gate is not. P1d and P2 are next. The record is `reports/GATES.md` and
-`runs/<id>/metrics.json`; the base is a prerequisite, not a gate row. §11 lists
-the remaining runs, their blockers and their cost.
+copies exact spans. The **oracle** rate — with the span's name free — is
+0.997 bpb, net +0.758. That is not a codec rate: a decoder cannot know which
+entry the encoder chose. Charging the name with the count prior gives **−2.224
+net** (3.97 bpb against the base's 1.83), and a fixed index gives the same
+verdict. P0a now gates `saved_charged` and **fails**; on the repo's 650 kB of
+Python the charge turns +1.621 oracle into **−0.403**. The plan's v6 rule
+holds: the identity is a discrete index, and for a 4096-entry pack it costs
+~9-12 bits per ~3 B span — more than the base spends on those bytes. P0d still
+passes 2.22x on synseg and 1.05x on code, but its bpb pair is an oracle pair,
+so "equal quality" is not yet established. Counts-only ties the tied gate on
+seen spans (0.996 vs 0.997) and on the held-out 10% (0.510/0.510, w0 −0.04),
+and a foreign pack is domain-local (+0.422): both are secondary, because no
+gate can pay for a name. The honest rate in this plan is P1's **1.920 bpb**,
+where the unit ids are paid through the model's own probabilities. The
+equal-charge table compared oracle rates; LoRA's −0.033 is the only decodable
+baseline. The record is `reports/GATES.md` and `runs/<id>/metrics.json`; §11
+states the corrected accounting and the runs that remain.
 
 ## 0. Start here
 
@@ -541,22 +536,21 @@ per-domain adapter only; if the gate cannot beat tuned REST/NEST at equal
 bytes, v0 is an inference technique, not an architecture.
 
 **Measured (2026-11-25).** The base is frozen (`base-byte-20m-s0`, 21.9M,
-6000 steps, test bpb 1.827). `D` is 4096 spans (90.1 kB) induced on the
-9 MB train. The gate is 3 parameters fit on a 1 MB train sample; verification
-is the base's span NLL against the 95th percentile. On the 1 MB test: adapter
-**0.997 bpb**, rate saved +0.830, charge 0.072, net **+0.758**; acceptance
-79.4%, coverage 80%, provenance 100%. P0a/b/c/e/f/g pass. P0d passes at
-**2.22x** on 8191 B of `synseg` generic records with its own 1024-span pack:
-the byte arm steps once per byte for 40.8 s, the adapter once per verified span
-for 18.4 s (a repeat run gave 2.75x; the ratio is step-count bound, not token
-work); 4.544 → 1.013 bpb, 81.4% accepted, 113 verification rollbacks,
-and the emitted bytes are exact (lossless). The equal-charge rows at the same
-90.1 kB are measured by `mode`: no-D +0.000, counts-only +0.758, kNN +0.516,
-LoRA (rank 1, 24,192 params = 48.4 kB, 2000 steps) +0.006 rate at 0.039 charge
-→ net −0.033. Counts-only ties the tied-embedding gate on seen spans
-(0.996 vs 0.997): `|S|` (a fixed 4096-span pack) dominates, so the linchpin
-must be measured on a held-out 10% of `D`, not on the seen-span rate. The
-result at this stage is a lossless copy codec, not a generative quality test.
+6000 steps, test bpb 1.827). `D` is 4096 spans (90.1 kB). The gate is 3
+parameters; verification is the base's span NLL against the 95th percentile
+(the 99th is worth +0.29 oracle bpb). With the span's name free the adapter is
+0.997 bpb, net +0.758; acceptance 79.4%, coverage 80%. **The name is not
+free**: a decoder cannot know which entry the encoder chose, and the count
+prior costs ~9-12 bits per span, so the adapter is 3.97 bpb, net −2.224; a fixed
+index gives −2.174. P0a now gates the charged rate and it **fails**; on the
+repo's 650 kB of code the charged rate is −0.403 against a +1.621 oracle. P0b-g
+pass on oracle terms only. P0d times at 2.2-4.3x on synseg and 1.05-1.40x on
+code over repeats: the ratio is call-overhead bound, and its bpb pair is an
+oracle pair. The equal-charge table compared oracle rates; LoRA's −0.033 is the
+only decodable row and it loses. The linchpin is null (0.510/0.510, w0 −0.04) and
+a foreign pack is domain-local (+0.422); both are moot until a name is paid. The
+honest rate is P1's 1.920 bpb, where the unit ids are paid by the model.
+The result at this stage is a measured accounting defect, not a product.
 
 ### P1 — the class on 10 MB (4-6 h)
 
@@ -752,41 +746,49 @@ TODO5's measured accounting; the 10 MB parse is
 `../runs/v9/fit-seed-16384-16384-10000000.pkl` (`toks`, 3.73M units); the
 100 MB scan is `../runs/v9/scan100.npz`; the seed is 0.
 
-## 11. Next: what the measurements closed, and what is left
+## 11. The corrected accounting, and what is left
 
-Two of the open P0 questions are answered, both as negatives, and one positive
-came with them:
+The P0 rate was not a codec rate. `adapter_eval` charged one gate decision per
+copied span and nothing for the span's name, which a decoder cannot know.
+Charging the name changes every number:
 
-- **The linchpin is negative.** On the held-out 10% of `D` the tied gate and the
-  counts-only gate give the same bpb to three decimals (0.510/0.510 on text,
-  0.445/0.443 on code), and the fitted embedding weight is −0.04. The gate is a
-  length/count classifier. An exact copy needs byte equality, so semantic
-  similarity has no work to do: B1's tied-embedding claim dies in the exact-span
-  formulation. The neural part can only pay when the copy is inexact (holes and
-  fills, B4) or as a ranker over equal-length alternatives.
-- **Zero-shot packs are domain-local.** A text pack (22.7 kB) on the repo's code
-  gives 3.112 bpb against 2.690 tuned → gap **+0.422**, not ≤0.1. Install a pack
-  per domain; the pack is data, not transferable weights.
-- **The code stream is the strongest rate result.** On 650 kB of Python the
-  adapter saves **+1.932** rate at 23.1 kB (net +1.648, accept 90.8%), but P0d
-  there is 1.05x: code spans average ~3 B, so a per-span step pays call overhead.
-  The rate gate is not the speed gate.
+| corpus | base | oracle | count prior | fixed index |
+|---|---:|---:|---:|---:|
+| enwik8 1 MB | 1.827 | +0.758 | **−2.224** | −2.174 |
+| repo code | 4.645 | +1.621 | **−0.403** | −0.216 |
+
+The oracle column is the conditional entropy of the parse given the parse: with
+the name free, "copy" is a decision, not a message. Priced, a 4096-entry pack's
+name costs ~9-12 bits per ~3 B span, more than the base spends on those bytes.
+The plan's own v6 rule said it: a pooled code costs 3.1 bpb while it conveys 1;
+the identity is a discrete index, and here the index *is* the cost.
+
+Consequences:
+
+- P0a now gates `saved_charged` and **fails** on both corpora. The flat copy
+  adapter is dead as a codec; the linchpin and pack-transfer questions are moot
+  until an arm can pay for a name.
+- The equal-charge table compared oracle rates; counts-only and kNN fall the
+  same way. LoRA's −0.033 is the only decodable baseline, and it loses.
+- P0d's timing is unstable: 2.2-4.3x on synseg and 1.05-1.40x on code over
+  repeats, because the ratio is call-overhead bound. Its bpb pair is oracle, so
+  "equal quality" is not established; the charged pair must be re-measured.
+- The τ sweep found the one real hyperparameter: at τ=99 the oracle rate is
+  +1.08 against +0.79 at τ=95 (accept 93% vs 80%); the charged rate is negative
+  either way. Pooling, alpha and the accept threshold move nothing (≤0.001).
+- The honest rate is **P1's 1.920 bpb**: a model that emits unit ids pays for
+  them through its own probabilities. That is the design that can work.
 
 | # | run | pass bar | blocker | cost |
 |---|---|---|---|---|
-| 1 | speculative verification | P0d ≥1.5x on code | batch the forwards of the next k candidate spans | 2 h |
-| 2 | P1d shared trunk | accept per pack byte ≥ P0 × 1.2 | the mixed schedule: a rotating-lexicon data path | 3 h GPU |
-| 3 | P2 class, 100 MB | P2a-d | parse the 90 MB train once | 1 GPU-day |
-| 4 | holes and fills (B4) | +0.05 bpb on held-out slots | a typed-hole event model over the pack | 1-2 weeks |
-| 5 | pack growth vs rent | net saving vs pack bytes | a rent sweep at repo scale | 1 day |
+| 1 | charged P1 (ids at their own probability) | payload ≤1.98 at 100 MB | parse the 90 MB train once | 1 GPU-day |
+| 2 | P0d at a charged pair | ≥1.5x with the charged bpb equal | charge identity in `decode_arm` | 2 h |
+| 3 | P1d shared trunk | accept/byte ≥ P0 × 1.2 | the mixed schedule | 3 h GPU |
+| 4 | holes and fills (B4) | +0.05 bpb with fill ids charged | a typed-hole event model | 1-2 weeks |
 
-Two design notes:
+One design note: a copy codec pays for the name only if the name is *predicted*,
+not indexed. That is what the concept LM does, and it is why the neural part has
+to be the predictor rather than a gate over a table.
 
-- The adapter's value is the pack: a 23 kB span table buys 1.9 bpb on code and
-  0.83 bpb on text over a byte model's fallback. That is a competitive product
-  on structured data and it costs no training.
-- The text win still needs a ≤4 MB trunk and payload ≤1.5 bpb; nothing measured
-  moves that bar. The adapter and the structured rate are the results to defend.
-
-Unblocked now: #1, #5. #2 and #3 are GPU-bound; #4 is the only route to the
-neural part earning its bytes.
+Unblocked now: #2. #1 and #3 are GPU-bound; #4 is the only route to a
+capability claim.
