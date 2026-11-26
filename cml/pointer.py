@@ -14,6 +14,7 @@ has a uniform prior.
 from __future__ import annotations
 
 import random
+import struct
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,7 +25,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import codec
-from cml import Block, KV, block_step, truncate_cache
+from cml import Block, KV, block_step
 
 BYTE = 256
 SEQ = 256
@@ -43,6 +44,19 @@ class PointerConfig:
     seed: int = 0
 
 
+def span_inputs(
+    spans: list[bytes], device: str, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pad spans once; the pack is static, so this is not rebuilt per step."""
+    width = max((len(s) for s in spans), default=1)
+    x = torch.zeros((len(spans), width), dtype=torch.long, device=device)
+    mask = torch.zeros((len(spans), width), dtype=dtype, device=device)
+    for i, span in enumerate(spans):
+        x[i, : len(span)] = torch.frombuffer(bytearray(span), dtype=torch.uint8)
+        mask[i, : len(span)] = 1
+    return x, mask
+
+
 class SpanEncoder(nn.Module):
     """`e_c = Enc(bytes_c)`: a 2-layer byte encoder, pooled over the span."""
 
@@ -55,18 +69,15 @@ class SpanEncoder(nn.Module):
         nn.init.normal_(self.emb.weight, std=0.02)
         nn.init.normal_(self.pos.weight, std=0.02)
 
-    def forward(self, spans: list[bytes], device: str) -> torch.Tensor:
-        width = max((len(s) for s in spans), default=1)
-        dtype = next(self.parameters()).dtype
-        x = torch.zeros((len(spans), width), dtype=torch.long, device=device)
-        mask = torch.zeros((len(spans), width), dtype=dtype, device=device)
-        for i, span in enumerate(spans):
-            x[i, : len(span)] = torch.frombuffer(bytearray(span), dtype=torch.uint8)
-            mask[i, : len(span)] = 1
-        e = self.emb(x) + self.pos.weight[:width]
+    def embed(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        e = self.emb(x) + self.pos.weight[: x.size(1)]
         e = e * mask[..., None]
         z = e.sum(1) / mask.sum(1, keepdim=True).clamp_min(1)
         return self.fc2(F.gelu(self.fc1(z)))
+
+    def forward(self, spans: list[bytes], device: str) -> torch.Tensor:
+        x, mask = span_inputs(spans, device, next(self.parameters()).dtype)
+        return self.embed(x, mask)
 
 
 class PointerLM(nn.Module):
@@ -82,10 +93,18 @@ class PointerLM(nn.Module):
         self.byte = nn.Linear(cfg.d, BYTE)
         nn.init.normal_(self.pos.weight, std=0.02)
         nn.init.normal_(self.wq.weight, std=0.02)
+        self._key: tuple | None = None
+        self._spans: tuple[torch.Tensor, torch.Tensor] | None = None
 
     def embeddings(self, units: tuple[bytes, ...], device: str) -> torch.Tensor:
-        spans = list(units) + [bytes([b]) for b in range(BYTE)]
-        return self.encoder(spans, device)
+        dtype = next(self.encoder.parameters()).dtype
+        key = (units, device, dtype)
+        if key != self._key:
+            spans = list(units) + [bytes([b]) for b in range(BYTE)]
+            self._spans = span_inputs(spans, device, dtype)
+            self._key = key
+        assert self._spans is not None
+        return self.encoder.embed(*self._spans)
 
     def forward(self, ids: torch.Tensor, units: tuple[bytes, ...]) -> tuple:
         b, t = ids.shape
@@ -278,10 +297,10 @@ def _uniform(n: int) -> np.ndarray:
     return _cdf(np.ones(n, dtype=np.int64))
 
 
-def _cache(model: PointerLM, device: str) -> list[KV]:
+def _cache(model: PointerLM, device: str, batch: int = 1) -> list[KV]:
     heads = model.blocks[0].heads
     d = model.cfg.d
-    shape = (1, heads, 0, d // heads)
+    shape = (batch, heads, 0, d // heads)
     return [
         KV(torch.empty(shape, device=device), torch.empty(shape, device=device))
         for _ in model.blocks
@@ -289,7 +308,13 @@ def _cache(model: PointerLM, device: str) -> list[KV]:
 
 
 class PointerCodec:
-    """Encode/decode with the trained pointer; both sides step identically."""
+    """Encode/decode with the trained pointer; both sides step identically.
+
+    Windows are grouped in batches of `batch`: each group is one segment per
+    window, and both sides run the same batched step at each position, so the
+    coded floats agree exactly.  The payload carries one (units, bytes) pair
+    per window segment; `shared` charges it with the header.
+    """
 
     def __init__(
         self,
@@ -298,6 +323,7 @@ class PointerCodec:
         device: str = "cuda",
         adaptive_bytes: bool = False,
         half: bool = False,
+        batch: int = 32,
     ):
         self.model = model.eval()
         if half:
@@ -307,101 +333,194 @@ class PointerCodec:
         self.seq = model.cfg.seq
         self.device = device
         self.adaptive = adaptive_bytes
+        self.batch = batch
         self.emb = model.embeddings(lex.units, device)
         self.first = _uniform(self.k + 1)
         self.bytes = _uniform(BYTE)
 
     @torch.no_grad()
-    def _feed(self, cache: list[KV], elem: int) -> torch.Tensor:
-        if cache[0].k.size(2) >= self.seq:
-            truncate_cache(cache, self.seq - 1)
-        n = cache[0].k.size(2)
-        pos = min(n, self.seq - 1)
-        h = self.emb[elem].view(1, 1, -1) + self.model.pos.weight[pos]
+    def _step(
+        self, cache: list[KV], prev: torch.Tensor, pos: int
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Feed one element per row; return quantised unit, byte and gate CDFs."""
+        h = self.emb[prev] + self.model.pos.weight[min(pos, self.seq - 1)]
         for block, kv in zip(self.model.blocks, cache):
             h = block_step(block, h, kv)
-        return self.model.ln(h)
+        h = self.model.ln(h)
+        ptr = (self.model.wq(h) @ self.emb[: self.k].T)[:, 0]
+        gate = torch.sigmoid(self.model.gate(h))[:, 0, 0]
+        p = torch.softmax(ptr, -1) * gate[:, None]
+        q = torch.cat((p, (1 - gate)[:, None]), 1)
+        q = torch.clamp(torch.round(q.float() * codec.QUANT), min=1).to(torch.int64)
+        bq = torch.softmax(self.model.byte(h)[:, 0], -1)
+        bq = torch.clamp(torch.round(bq.float() * codec.QUANT), min=1).to(torch.int64)
+        return (
+            q.cpu().numpy(),
+            bq.cpu().numpy(),
+            gate.cpu().numpy(),
+        )
+
+    @staticmethod
+    def _cums(q: np.ndarray) -> np.ndarray:
+        return np.concatenate(
+            (np.zeros((q.shape[0], 1), dtype=np.int64), q.cumsum(1)), 1
+        )
+
+    def _code_byte(
+        self,
+        enc: codec.ArithEncoder,
+        b: int,
+        cdf: np.ndarray,
+        arm: codec.ByteArm | None,
+    ) -> None:
+        if arm is None:
+            enc.encode(int(cdf[b]), int(cdf[b + 1]), int(cdf[-1]))
+        else:
+            arm.encode_one(b, enc)
+
+    def _take_byte(
+        self, dec: codec.ArithDecoder, cdf: np.ndarray, arm: codec.ByteArm | None
+    ) -> int:
+        if arm is not None:
+            return arm.decode_one(dec)
+        target = dec.target(int(cdf[-1]))
+        b = int(np.searchsorted(cdf, target, side="right")) - 1
+        dec.update(int(cdf[b]), int(cdf[b + 1]), int(cdf[-1]))
+        return b
 
     @torch.no_grad()
-    def _probs(self, h: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-        ptr = (self.model.wq(h) @ self.emb[: self.k].T).reshape(-1)
-        gate = float(torch.sigmoid(self.model.gate(h)))
-        p = torch.softmax(ptr, -1).cpu().numpy() * gate
-        q = codec.quant(np.append(p, 1 - gate))
-        bq = codec.quant(torch.softmax(self.model.byte(h), -1).cpu().numpy())
-        return q, bq
+    def _encode_group(self, chunks: list[np.ndarray]) -> list[bytes]:
+        b = len(chunks)
+        lens = [len(c) for c in chunks]
+        width = max(lens)
+        ids = np.full((b, width), self.k, dtype=np.int64)
+        for r, c in enumerate(chunks):
+            ids[r, : len(c)] = c
+        encs = [codec.ArithEncoder() for _ in range(b)]
+        arms = [codec.ByteArm() for _ in range(b)] if self.adaptive else [None] * b
+        for r in range(b):
+            elem = int(ids[r, 0])
+            sym = elem if elem < self.k else self.k
+            c = self.first
+            encs[r].encode(int(c[sym]), int(c[sym + 1]), int(c[-1]))
+            if elem >= self.k:
+                self._code_byte(encs[r], elem - self.k, self.bytes, arms[r])
+        cache = _cache(self.model, self.device, b)
+        for i in range(width - 1):
+            prev = torch.as_tensor(ids[:, i], device=self.device).view(b, 1)
+            q, bq, _ = self._step(cache, prev, i)
+            cums = self._cums(q)
+            bq = self._cums(bq)
+            for r in range(b):
+                if i + 1 >= lens[r]:
+                    continue
+                elem = int(ids[r, i + 1])
+                sym = elem if elem < self.k else self.k
+                encs[r].encode(
+                    int(cums[r, sym]), int(cums[r, sym + 1]), int(cums[r, -1])
+                )
+                if elem >= self.k:
+                    self._code_byte(encs[r], elem - self.k, bq[r], arms[r])
+        return [e.finish() for e in encs]
+
+    @torch.no_grad()
+    def _decode_group(
+        self, lens: list[int], segs: list[bytes]
+    ) -> list[tuple[bytes, int, list[tuple[int, int, int]]]]:
+        b = len(lens)
+        width = max(lens)
+        decs = [codec.ArithDecoder(s) for s in segs]
+        arms = [codec.ByteArm() for _ in range(b)] if self.adaptive else [None] * b
+        outs = [bytearray() for _ in range(b)]
+        spans: list[list[tuple[int, int, int]]] = [[] for _ in range(b)]
+        cache = _cache(self.model, self.device, b)
+        prev = np.zeros(b, dtype=np.int64)
+        for r in range(b):
+            c = self.first
+            target = decs[r].target(int(c[-1]))
+            sym = int(np.searchsorted(c, target, side="right")) - 1
+            decs[r].update(int(c[sym]), int(c[sym + 1]), int(c[-1]))
+            start = len(outs[r])
+            if sym < self.k:
+                outs[r] += self.lex.units[sym]
+                elem = sym
+            else:
+                byte = self._take_byte(decs[r], self.bytes, arms[r])
+                outs[r].append(byte)
+                elem = self.k + byte
+            prev[r] = elem
+            spans[r].append((start, len(outs[r]), elem))
+        for i in range(width - 1):
+            t = torch.as_tensor(prev, device=self.device).view(b, 1)
+            q, bq, _ = self._step(cache, t, i)
+            cums = self._cums(q)
+            bq = self._cums(bq)
+            for r in range(b):
+                if i + 1 >= lens[r]:
+                    continue
+                total = int(cums[r, -1])
+                target = decs[r].target(total)
+                sym = int(np.searchsorted(cums[r], target, side="right")) - 1
+                decs[r].update(int(cums[r, sym]), int(cums[r, sym + 1]), total)
+                start = len(outs[r])
+                if sym < self.k:
+                    outs[r] += self.lex.units[sym]
+                    elem = sym
+                else:
+                    byte = self._take_byte(decs[r], bq[r], arms[r])
+                    outs[r].append(byte)
+                    elem = self.k + byte
+                prev[r] = elem
+                spans[r].append((start, len(outs[r]), elem))
+        return [(bytes(o), n, s) for o, n, s in zip(outs, lens, spans)]
 
     def encode(self, data: bytes) -> bytes:
         els = elements(data, self.lex)
-        enc = codec.ArithEncoder()
-        ba = codec.ByteArm()
-        for a in range(0, len(els), self.seq):
-            chunk = els[a : a + self.seq]
-            cache = _cache(self.model, self.device)
-            h = None
-            for i, elem in enumerate(chunk):
-                if h is None:
-                    sym = elem if elem < self.k else self.k
-                    c = self.first
-                    enc.encode(int(c[sym]), int(c[sym + 1]), int(c[-1]))
-                    cb = self.bytes
-                else:
-                    q, bq = self._probs(h)
-                    c = _cdf(q)
-                    sym = elem if elem < self.k else self.k
-                    enc.encode(int(c[sym]), int(c[sym + 1]), int(c[-1]))
-                    cb = _cdf(bq)
-                if elem >= self.k:
-                    b = elem - self.k
-                    if self.adaptive:
-                        ba.encode_one(b, enc)
-                    else:
-                        enc.encode(int(cb[b]), int(cb[b + 1]), int(cb[-1]))
-                if i + 1 < len(chunk):
-                    h = self._feed(cache, elem)
-        return enc.finish()
+        chunks = [els[a : a + self.seq] for a in range(0, len(els), self.seq)]
+        segs = []
+        for g in range(0, len(chunks), self.batch):
+            segs.extend(self._encode_group(chunks[g : g + self.batch]))
+        out = bytearray(struct.pack("<I", len(chunks)))
+        for chunk, seg in zip(chunks, segs):
+            if len(chunk) > 1 << 8 or len(seg) >= 1 << 16:
+                raise ValueError("pointer: window frame too large")
+            out += struct.pack("<BH", len(chunk) - 1, len(seg))
+        for seg in segs:
+            out += seg
+        return bytes(out)
 
-    def decode(self, blob: bytes, nbytes: int, limit: int | None = None) -> bytes:
-        dec = codec.ArithDecoder(blob)
-        ba = codec.ByteArm()
+    def decode(
+        self, blob: bytes, nbytes: int, limit: int | None = None, trace: bool = False
+    ) -> bytes | tuple[bytes, list[tuple[int, int, int]]]:
+        count = struct.unpack_from("<I", blob, 0)[0]
+        lens = []
+        pos = 4
+        for _ in range(count):
+            n, ell = struct.unpack_from("<BH", blob, pos)
+            pos += 3
+            lens.append((n + 1, ell))
+        segs = []
+        for _, ell in lens:
+            segs.append(blob[pos : pos + ell])
+            pos += ell
         out = bytearray()
-        i = 0
-        count = 0
-        cache: list[KV] | None = None
-        h = None
-        while len(out) < nbytes and (limit is None or count < limit):
-            if i == 0:
-                cache = _cache(self.model, self.device)
-                h = None
-            if h is None:
-                c = self.first
-                cb = self.bytes
-            else:
-                q, bq = self._probs(h)
-                c = _cdf(q)
-                cb = _cdf(bq)
-            target = dec.target(int(c[-1]))
-            sym = int(np.searchsorted(c, target, side="right")) - 1
-            dec.update(int(c[sym]), int(c[sym + 1]), int(c[-1]))
-            if sym < self.k:
-                out += self.lex.units[sym]
-                elem = sym
-            else:
-                if self.adaptive:
-                    b = ba.decode_one(dec)
-                else:
-                    target = dec.target(int(cb[-1]))
-                    b = int(np.searchsorted(cb, target, side="right")) - 1
-                    dec.update(int(cb[b]), int(cb[b + 1]), int(cb[-1]))
-                out.append(b)
-                elem = self.k + b
-            if len(out) > nbytes:
-                raise ValueError("pointer: overshot the frame length")
-            count += 1
-            i = (i + 1) % self.seq
-            if limit is not None and count >= limit:
+        spans: list[tuple[int, int, int]] = []
+        units = 0
+        for g in range(0, count, self.batch):
+            group = lens[g : g + self.batch]
+            got = self._decode_group([n for n, _ in group], segs[g : g + self.batch])
+            for chunk, n, chunk_spans in got:
+                off = len(out)
+                out += chunk
+                units += n
+                if trace:
+                    spans.extend((a + off, b + off, s) for a, b, s in chunk_spans)
+            if limit is not None and units >= limit:
                 break
-            h = self._feed(cache, elem)
+        if len(out) > nbytes:
+            raise ValueError("pointer: overshot the frame length")
+        if trace:
+            return bytes(out), spans
         return bytes(out)
 
 

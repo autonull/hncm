@@ -2936,7 +2936,9 @@ def _run_concept(
     pcodec = pointer.PointerCodec(model, active_lex, half=True)
     parse, covered = codec_mod.greedy_parse(data, active_lex)
     stats = codec_mod.parse_stats(parse, active_lex, len(data), covered)
+    t_enc = time.perf_counter()
     payload = pcodec.encode(data)
+    encode_s = time.perf_counter() - t_enc
     frame = codec_mod.pack_frame(
         2, len(data), payload, corpus.sha, corpus.train_sha, active_lex
     )
@@ -2969,6 +2971,10 @@ def _run_concept(
         "proof_units": want,
         "proof_bytes": len(out),
         "coding_dtype": "fp16",
+        "encode_seconds": round(encode_s, 3),
+        "units_per_s": len(parse) / max(encode_s, 1e-9),
+        "steps_per_byte": len(parse) / max(len(data), 1),
+        "bytes_per_s": len(data) / max(encode_s, 1e-9),
         "corpus_sha": corpus.sha,
         "train_sha": corpus.train_sha,
         "lexicon_sha": active_lex.sha,
@@ -3108,6 +3114,7 @@ def run_codec(
     }
     out = RUNS / metrics["id"]
     write_json(out / "metrics.json", metrics)
+    (out / "frame.bin").write_bytes(frame)
     if lex is not None:
         (out / "lexicon.bin").write_bytes(lex.blob())
     print(
@@ -3119,6 +3126,213 @@ def run_codec(
             else ""
         )
     )
+    return 0
+
+
+def _run_frame(run: str):
+    out_dir = RUNS / run
+    metrics = json.loads((out_dir / "metrics.json").read_text())
+    frame = codec_mod.unpack_frame((out_dir / "frame.bin").read_bytes())
+    return out_dir, metrics, frame
+
+
+def _reference(metrics: dict) -> bytes:
+    corpus = code_corpus()
+    if corpus.sha[:12] != metrics["corpus_sha"][:12]:
+        raise SystemExit("pack: the frame's corpus is not the frozen corpus")
+    pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}
+    return pool[metrics["split"]][: metrics["n"]]
+
+
+def _decode_run(out_dir: Path, frame, trace: bool = False):
+    if frame.arm == 0:
+        data = codec_mod.ByteArm().decode(frame.payload, frame.n)
+        spans = [(i, i + 1, -1 - b) for i, b in enumerate(data)]
+        return (data, spans) if trace else data
+    if frame.arm == 1:
+        arm = codec_mod.UnitArm(frame.lexicon)
+        return (
+            arm.trace(frame.payload, frame.n)
+            if trace
+            else arm.decode(frame.payload, frame.n)
+        )
+    if frame.arm == 2:
+        import pointer
+
+        model = pointer.load_model(out_dir / "model.pt")
+        pc = pointer.PointerCodec(model, frame.lexicon, half=True)
+        return pc.decode(frame.payload, frame.n, trace=trace)
+    raise SystemExit(f"pack: unknown arm {frame.arm}")
+
+
+def _run_codec_arm(out_dir: Path, frame):
+    """The arm that produced the frame, rebuilt for a new encode."""
+    if frame.arm == 0:
+        return codec_mod.ByteArm()
+    if frame.arm == 1:
+        return codec_mod.UnitArm(frame.lexicon)
+    import pointer
+
+    return pointer.PointerCodec(
+        pointer.load_model(out_dir / "model.pt"), frame.lexicon, half=True
+    )
+
+
+def pack_verify(run: str) -> int:
+    out_dir, metrics, frame = _run_frame(run)
+    data, spans = _decode_run(out_dir, frame, trace=True)
+    ref = _reference(metrics)
+    adjacent = all(b == c for (_, b, _), (c, _, _) in zip(spans, spans[1:]))
+    covered = sum(b - a for a, b, _ in spans)
+    lex = frame.lexicon
+    lex_off = sum(2 + len(u) for u in lex.units) + 12 if lex else 0
+    print(
+        f"{run}: arm {frame.arm}, {len(data)} B, round-trip "
+        f"{'OK' if data == ref else 'FAIL'}, {len(spans)} elements, "
+        f"provenance {covered}/{len(data)} B "
+        f"{'contiguous' if adjacent else 'GAPPED'}"
+    )
+    if lex:
+        print(
+            f"  pack {len(lex.units)} units / {lex_off} B, "
+            f"metrics lexicon {metrics.get('lexicon_bytes', 0)} B, "
+            f"sha {lex.sha[:12]}"
+        )
+    return 0 if data == ref and adjacent and covered == len(data) else 1
+
+
+def pack_trace(run: str, lo: int, hi: int) -> int:
+    out_dir, _, frame = _run_frame(run)
+    data, spans = _decode_run(out_dir, frame, trace=True)
+    lex = frame.lexicon
+    offs = lex.offsets() if lex else []
+    rows = [s for s in spans if s[0] < hi and s[1] > lo]
+    print(f"{run}: {len(rows)} elements in bytes [{lo}, {hi}) of {len(data)}")
+    print("| start | end | unit | pack offset | bytes |")
+    print("|---:|---:|---:|---:|---|")
+    for start, end, sym in rows[:200]:
+        if sym >= 0 and lex:
+            unit = lex.units[sym]
+            row = f"| {start} | {end} | {sym} | {offs[sym]} | `{unit[:32]!r}` |"
+        else:
+            row = f"| {start} | {end} | lit | — | `{bytes([-1 - sym])!r}` |"
+        print(row)
+    if len(rows) > 200:
+        print(f"... {len(rows) - 200} more")
+    return 0
+
+
+def pack_diff(a: str, b: str) -> int:
+    _, _, fa = _run_frame(a)
+    _, _, fb = _run_frame(b)
+    ua, ub = fa.lexicon, fb.lexicon
+    if ua is None or ub is None:
+        raise SystemExit("pack diff: both frames need a lexicon")
+    sa, sb = set(ua.units), set(ub.units)
+    added, removed = sorted(sb - sa), sorted(sa - sb)
+    print(
+        f"{a}: {len(ua.units)} units / {len(ua.blob())} B sha {ua.sha[:12]}\n"
+        f"{b}: {len(ub.units)} units / {len(ub.blob())} B sha {ub.sha[:12]}\n"
+        f"shared {len(sa & sb)}, added {len(added)}, removed {len(removed)}"
+    )
+    oa, ob = ua.offsets(), ub.offsets()
+    for tag, units, lex, offs in (
+        ("+", added, ub, ob),
+        ("-", removed, ua, oa),
+    ):
+        for unit in units[:20]:
+            print(f"  {tag} {offs[lex.units.index(unit)]:>7} {unit[:40]!r}")
+    return 0
+
+
+def pack_merge(out: str, a: str, b: str, size: int) -> int:
+    _, _, fa = _run_frame(a)
+    _, _, fb = _run_frame(b)
+    if fa.lexicon is None or fb.lexicon is None:
+        raise SystemExit("pack merge: both frames need a lexicon")
+    units = list(fa.lexicon.units)
+    seen = set(units)
+    for unit in fb.lexicon.units:
+        if unit not in seen:
+            units.append(unit)
+            seen.add(unit)
+    units = tuple(units[:size])
+    blob = codec_mod.Lexicon(units).blob()
+    lex = codec_mod.Lexicon(units, sha=hashlib.sha256(blob).hexdigest())
+    path = RUNS / out / "lexicon.bin"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(blob)
+    os.replace(tmp, path)
+    print(
+        f"{out}: {len(lex.units)} units / {len(lex.blob())} B sha {lex.sha[:12]} "
+        f"from {a} + {b} (cap {size})"
+    )
+    return 0
+
+
+def _changed_ranges(parse: list[int], lex, prefix: bytes):
+    """Byte ranges where a parse used a removed unit."""
+    lens = [len(lex.units[s]) if s >= 0 else 1 for s in parse]
+    starts = np.concatenate(([0], np.cumsum(lens)))[:-1]
+    hit = [
+        (int(a), int(a) + n)
+        for a, s, n in zip(starts, parse, lens)
+        if s >= 0 and lex.units[s].startswith(prefix)
+    ]
+    return hit
+
+
+def pack_rm(run: str, prefix: bytes, nbytes: int) -> int:
+    import time
+
+    out_dir, metrics, frame = _run_frame(run)
+    if frame.lexicon is None:
+        raise SystemExit("pack rm: the frame has no lexicon")
+    data = _reference(metrics)[:nbytes]
+    full = frame.lexicon
+    keep = full.drop_prefix(prefix)
+    if len(keep.units) == len(full.units):
+        raise SystemExit(f"pack rm: no unit starts with {prefix!r}")
+    parse_full, _ = codec_mod.greedy_parse(data, full)
+    parse_red, _ = codec_mod.greedy_parse(data, keep)
+    ranges = _changed_ranges(parse_full, full, prefix)
+    nf, nr = len(parse_full), len(parse_red)
+    t0 = time.perf_counter()
+    before = _run_codec_arm(out_dir, frame).encode(data)
+    if frame.arm == 2:
+        import pointer
+
+        model = pointer.load_model(out_dir / "model.pt")
+        after = pointer.PointerCodec(model, keep, half=True)
+        fresh = lambda: pointer.PointerCodec(model, keep, half=True)  # noqa: E731
+    elif frame.arm == 1:
+        after = codec_mod.UnitArm(keep)
+        fresh = lambda: codec_mod.UnitArm(keep)  # noqa: E731
+    else:
+        after = codec_mod.ByteArm()
+        fresh = codec_mod.ByteArm
+    blob = after.encode(data)
+    n = max(len(data), 1)
+    print(
+        f"{run}: rm {prefix!r}: {len(full.units)} -> {len(keep.units)} units, "
+        f"{len(ranges)} affected spans / "
+        f"{sum(b - a for a, b in ranges)} B, parse {nf} -> {nr} symbols"
+    )
+    print(
+        f"  payload {len(before)} -> {len(blob)} B "
+        f"({8 * len(before) / n:.3f} -> {8 * len(blob) / n:.3f} bpb, "
+        f"{8 * (len(blob) - len(before)) / n:+.3f}); "
+        f"{time.perf_counter() - t0:.1f}s"
+    )
+    for a, b in ranges[:20]:
+        print(f"  [{a}, {b}) {data[a:b][:48]!r}")
+    if len(ranges) > 20:
+        print(f"  ... {len(ranges) - 20} more")
+    out = fresh().decode(blob, len(data))
+    if out != data:
+        raise SystemExit("pack rm: round-trip failed")
+    print("  round-trip OK")
     return 0
 
 
@@ -3210,6 +3424,25 @@ def main(argv: list[str] | None = None) -> int:
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
     sub.add_parser("recorded")
+    pk = sub.add_parser("pack")
+    pks = pk.add_subparsers(dest="op", required=True)
+    v = pks.add_parser("verify")
+    v.add_argument("run")
+    t = pks.add_parser("trace")
+    t.add_argument("run")
+    t.add_argument("--range", default="0:256")
+    d = pks.add_parser("diff")
+    d.add_argument("a")
+    d.add_argument("b")
+    m = pks.add_parser("merge")
+    m.add_argument("out")
+    m.add_argument("a")
+    m.add_argument("b")
+    m.add_argument("--size", type=int, default=8192)
+    r = pks.add_parser("rm")
+    r.add_argument("run")
+    r.add_argument("--prefix", required=True)
+    r.add_argument("--bytes", type=int, default=70000)
     a = p.parse_args(argv)
     if a.cmd == "selftest":
         return selftest()
@@ -3266,6 +3499,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if a.cmd == "recorded":
         return recorded_report()
+    if a.cmd == "pack":
+        if a.op == "verify":
+            return pack_verify(a.run)
+        if a.op == "trace":
+            lo, hi = (int(x) for x in a.range.split(":"))
+            return pack_trace(a.run, lo, hi)
+        if a.op == "diff":
+            return pack_diff(a.a, a.b)
+        if a.op == "merge":
+            return pack_merge(a.out, a.a, a.b, a.size)
+        return pack_rm(a.run, a.prefix.encode(), a.bytes)
     p.print_help()
     return 1
 

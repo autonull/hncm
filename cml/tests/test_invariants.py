@@ -286,3 +286,19 @@ def test_src_stream_is_frozen() -> None:
     assert a == b
     assert len(a) > 100_000
     assert b"# --- cml/cml.py ---" in a
+
+
+def test_pack_offsets_and_trace() -> None:
+    train = b"def build(data):\n    return data + data\n" * 40
+    lex = codec.build_lexicon(train, size=64, min_count=4, cap=8)
+    blob = lex.blob()
+    for off, unit in zip(lex.offsets(), lex.units):
+        assert blob[off : off + len(unit)] == unit
+    parse, _ = codec.greedy_parse(train, lex)
+    payload = codec.UnitArm(lex).encode(train, parse)
+    data, spans = codec.UnitArm(lex).trace(payload, len(train))
+    assert data == train
+    assert b"".join(b for a, b, _ in spans for b in [data[a:b]]) == data
+    for start, end, sym in spans:
+        unit = lex.units[sym] if sym >= 0 else bytes([-1 - sym])
+        assert data[start:end] == unit

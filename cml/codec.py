@@ -332,6 +332,18 @@ class Lexicon:
             pos += n
         return cls(tuple(units), sha=_sha(blob))
 
+    def offsets(self) -> list[int]:
+        """The byte offset of each unit's data inside `blob()`."""
+        out = []
+        pos = 12
+        for unit in self.units:
+            out.append(pos + 2)
+            pos += 2 + len(unit)
+        return out
+
+    def drop_prefix(self, prefix: bytes) -> "Lexicon":
+        return Lexicon(tuple(u for u in self.units if not u.startswith(prefix)))
+
 
 def _sha(blob: bytes) -> str:
     import hashlib
@@ -467,6 +479,23 @@ class UnitArm:
             if len(out) > n:
                 raise ValueError("unit arm overshot the frame length")
         return bytes(out)
+
+    def trace(self, blob: bytes, n: int) -> tuple[bytes, list[tuple[int, int, int]]]:
+        """Decode with `(start, end, sym)` provenance for every element."""
+        dec = ArithDecoder(blob)
+        out = bytearray()
+        spans: list[tuple[int, int, int]] = []
+        while len(out) < n:
+            start = len(out)
+            sym = self.decode_one(dec)
+            if sym < 0:
+                out.append(-1 - sym)
+            else:
+                out += self.lex.units[sym]
+            if len(out) > n:
+                raise ValueError("unit arm overshot the frame length")
+            spans.append((start, len(out), sym))
+        return bytes(out), spans
 
 
 def build_lexicon(

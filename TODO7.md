@@ -20,21 +20,26 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
 | M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
-| M4 | **negative probe** | 4.86M trained byte trunk, static coder: 70k **1.916/1.922 bpb**. The pointer loses by **0.787 bpb**; the ≥0.2 bar fails. Caveats: the pointer uses a 2.8 kB active pack, not 90 kB, and n=70k |
-| M5-M7 | **not started** | Ops, text control and the librarian remain |
+| M4 | **negative at 1 MB** | 4.86M trained byte trunk, static coder: 70k **1.916/1.922 bpb**. The 4.97M pointer at **756,752 B** records **2.207/2.237**; the byte model at the same n is pending. Caveat: the active pack is still 2.8 kB (256 units) |
+| M5 | **ops done; demos pending** | `cml pack verify/trace/diff/merge/rm`. Q2: 756,752 B decode, **511,933 elements**, provenance contiguous 100%, `byte → unit id → pack offset` printed. Q3: `rm self` on a 70k unit-arm slice deletes 27 units, hits 4 spans / 18 B, delta +2 B; `rm s` on a 20k pointer slice hits 222 spans; both round-trip. Adapter control and rent sweep remain |
+| M6-M7 | **not started** | The P1 text control and the librarian remain |
 
 Concrete remaining work, in order:
 
-1. **M4 diagnostics.** The trained byte model wins at 70k. Test the two stated remedies
-   before accepting the negative: a larger active pack (512-8192 units, up to
-   the 90 kB charge) and local copy symbols. Raise n to ≥1 MB, which needs an
-   exact batched encode; otherwise the 4-bit base cannot be compared honestly.
-2. **M5-M7.** Ops + Q2/Q3, the P1 text control, then the librarian.
+1. **M4 diagnostics.** The trained byte model wins at 70k and the pointer's 1 MB
+   row is recorded. The exact batched encode is done: windows are coded as
+   per-window segments in groups of 32, so encode and decode share one batched
+   step and a cross-process round-trip holds. Remaining: a larger active pack
+   (`--active 2048/8192`, retrained, in flight) and local copy symbols. If the
+   0.2 bpb bar still fails, accept the negative and write it down.
+2. **M5.** The ops are built. Run the adapter arm as the 30-min negative control
+   and the rent λ sweep; then Q4's class split.
+3. **M6-M7.** The P1 text control, then the librarian.
 
-Two build notes. The causal step is 4.2 ms fp32 / 3.7 ms fp16 per unit, so a
-50k-unit proof is a ~6-minute job; encode-at-scale needs an exact batched CDF
-replay or a fused step. `code_corpus(refreeze=True)` takes a new snapshot;
-normal runs never read the moving working tree.
+Two build notes. The pointer codes 228k units in ~80 s at 756 kB (batch 32),
+and a 50k-unit proof at that length decodes in seconds; per-window framing
+costs ~3 B/window (charged in `header`). `code_corpus(refreeze=True)` takes a
+new snapshot; normal runs never read the moving working tree.
 
 
 ## 0. What is measured (start from this, do not re-derive)
@@ -154,7 +159,7 @@ train. Record `corpus_sha` in every header and metrics.
 | M2 ✅ | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
 | M3 ✅ | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
 | M4 ✗ | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
-| M5 | ops: `pack verify/trace/diff/merge/rm`; Q2/Q3 demos; the adapter arm as a 30-min negative control (flag+index+byte) to confirm −2.2 in a real codec; a rent λ sweep on the pack | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
+| M5 ◐ | ops `verify/trace/diff/merge/rm` ✅; Q2/Q3 demos ✅; the adapter arm as a 30-min negative control (flag+index+byte) and a rent λ sweep remain | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
 | M6 | text control: the P1 trunk concept codec on the 10 MB parse (recorded, vs PPMd 1.992) | recorded bpb within 0.05 of 1.920 + header | 2 h |
 | M7 | library with holes: the librarian lifts a template by anti-unification; slots fill from other units; Q1 | ≥0.1 bpb on slot tokens vs the byte arm | 1-2 d |
 
@@ -207,11 +212,13 @@ read `recorded`/`shared`/`self`; the CE metrics stay in the run store as
   bpb vs the byte model and the *pack-agreement* gap. Bar: ≥0.2 bpb at equal
   total bytes, and the unseen pack within 0.15 bpb of the seen one.
 - **Q2 provenance.** Every decoded byte has `byte → unit id → pack offset`;
-  `trace A:B` prints it; 100% coverage. This is the auditable-memory claim, and
+  `trace A:B` prints it; 100% coverage. Measured: 756,752 B / 511,933 elements,
+  contiguous, on both the unit arm and the pointer arm. This is the auditable-memory claim, and
   no byte codec can produce it.
 - **Q3 editing.** `rm --prefix X` deletes a concept; the affected spans become
   escapes and the delta is localized to their byte ranges; print the ranges and
-  the bpb delta.
+  the bpb delta. Measured: `rm self` removes 27 units, hits 4 spans / 18 B,
+  +2 B payload on a 70k slice, round-trip OK.
 - **Q4 capacity split.** Break the recorded bits down by token class
   (identifier, keyword, operator, literal, whitespace, comment). The claim is
   that the unit arm's win concentrates on identifiers and literals — the small
@@ -241,15 +248,23 @@ cd cml
 uv sync && uv run pytest -q
 uv run cml coder --test
 uv run cml codec --arm byte --corpus code --bytes 1000000
-uv run cml codec --arm byte-model --corpus code --bytes 70000 --steps 3000
+uv run cml codec --arm byte-model --corpus code --bytes 756752 --steps 3000
 uv run cml codec --arm lexicon --corpus code --bytes 200000
-uv run cml codec --arm concept --corpus code --bytes 70000 --proof 50000 --steps 8000 --rotate 8 --full-every 8
+uv run cml codec --arm concept --corpus code --bytes 756752 --proof 50000 --steps 8000 --rotate 8 --full-every 8
+uv run cml codec --arm concept --corpus code --bytes 756752 --proof 50000 --steps 8000 --rotate 8 --full-every 8 --active 2048
 uv run cml recorded
+uv run cml pack verify codec-concept-code-756752
+uv run cml pack trace codec-concept-code-756752 --range 0:256
+uv run cml pack diff codec-lexicon-code-200000 codec-concept-code-756752
+uv run cml pack merge pack-merged codec-lexicon-code-200000 codec-concept-code-756752
+uv run cml pack rm codec-lexicon-code-200000 --prefix self
 ```
 
 The concept arm codes in fp16 for speed; training stays fp32. Its model is
 cached by `(train_sha, active, rotate, full_every, steps, seed)` and copied
-into the run directory. The 50k-unit proof takes ~6 minutes on an RTX 3080.
+into the run directory. Encode groups 32 windows of 256 elements; each window
+is one arithmetic segment, both sides run the same batched step, and the
+segment table is charged in `header`. The 50k-unit proof decodes in seconds.
 
 References: `cml/PLAN.md` §11; `n10.py:241` (`build_full`); `runs/v9/CODEC.md`
 (the header and charge); `reports/GATES.md` (the record).
