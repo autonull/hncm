@@ -39,10 +39,12 @@ Concrete remaining work, in order:
    and the rent λ sweep; then Q4's class split.
 3. **M6-M7.** The P1 text control, then the librarian.
 
-Two build notes. The pointer codes 228k units in ~80 s at 756 kB (batch 32),
-and a 50k-unit proof at that length decodes in seconds; per-window framing
-costs ~3 B/window (charged in `header`). `code_corpus(refreeze=True)` takes a
-new snapshot; normal runs never read the moving working tree.
+Two build notes. The pointer encodes 228k units in 63 s at 756 kB (12 kB/s,
+batch 32); the a2048 pack does 18 kB/s because each window covers more bytes.
+The byte-model run took 3,092 s end-to-end on the same slice. A 50k-unit proof
+decodes in seconds, and per-window framing costs ~3 B/window (charged in
+`header`). Single runs, so treat the rates as indicative. `code_corpus(refreeze=True)`
+takes a new snapshot; normal runs never read the moving working tree.
 
 
 ## 0. What is measured (start from this, do not re-derive)
