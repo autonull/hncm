@@ -311,6 +311,7 @@ class PointerCodec:
         self.first = _uniform(self.k + 1)
         self.bytes = _uniform(BYTE)
 
+    @torch.no_grad()
     def _feed(self, cache: list[KV], elem: int) -> torch.Tensor:
         if cache[0].k.size(2) >= self.seq:
             truncate_cache(cache, self.seq - 1)
