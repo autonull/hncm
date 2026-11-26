@@ -105,6 +105,42 @@ What changed to get there:
 - The `_run_concept` metrics bug (the greedy parse list overwrote `parse` in
   `design`/`parse`) is fixed; metrics now carry the mode string.
 
+### Text LM (P2) — fully trained and promptable
+
+`cml train --corpus enwik8_100m --params 20000000 --steps 30000`
+
+| metric | value |
+|---|---:|
+| params | 20,461,440 (d384, 8 layers) |
+| train / test | 90,000,000 B / 9,999,707 B |
+| steps | 30,000 |
+| test payload | **1.517 bpb** |
+| unigram / bigram | 3.131 / 2.508 |
+| train | 759 s |
+| sample | `cml sample --run text-enwik8_100m-d384l8-s30000` |
+
+The 10 MB P1 model overfits (train 1.516 / test 1.920); the 90 MB run is the
+usable model. `reports/SAMPLE.md` holds a prompt continuation; `reports/STATS.md`
+is the progress dashboard.
+
+### Profile (smoke, 20M, 9 MB)
+
+| item | time |
+|---|---:|
+| tokenize 9 MB | 3.1 s |
+| 100 steps, batch 32 | 2.9 s (142k tok/s) |
+| batch 64 | 4.2 s (196k tok/s) |
+| batch 128 | 7.9 s (209k tok/s) |
+| `torch.compile` batch 64 | 25.4 s (32k tok/s) — reject |
+| eval 1 MB | ~1 s |
+| bigram control | 0.12 s |
+| sample 200 B | 0.23 s |
+
+Low-hanging: the token cache (`units-*.pt`) removes the ~30 s/100 MB tokenize
+on repeat runs; batch 64 gives +28-38% throughput at 20M. Sampling is already
+sub-second; a KV cache is UX only. The 40M preset (batch 32, ~19 min) was
+stopped for profiling; the 20M 100 MB model is the shipped LM.
+
 ## 0a. Progress (M0-M5 + P0)
 
 The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
@@ -172,8 +208,9 @@ The LLM-adaptation branch stops; the auditable codec is the product.
    `cml pack verify/trace/diff/merge/rm` already install, trace, edit and
    re-install. Add the product README and one stable end-to-end path. Do not
    claim a bpb win.
-2. **Keep P0a** as the qualitative LLM demo. Do not claim text bpb until the
-   1 MB enwik8 test.
+2. **The 100 MB text LM is the usable general model.** `cml sample --run
+   text-enwik8_100m-d384l8-s30000` is the entry point; the 20 MB, 90 MB-train
+   run records 1.517 bpb. P0a remains the provenance/pointer demo.
 3. **Reopen the bpb branch only with a new idea**: local copy (r2), market
    admission (r5), or a model/pack adaptation that closes the 0.21-0.28 gap.
    Byte-coder batching and trunk sharing alone cannot fix install.
@@ -216,6 +253,7 @@ moving working tree.
 | P0a Tiny Shakespeare | 1.14M, train loss 2.944, test payload **2.775 bpb** | `runs/lm-shakespeare-tiny-s2000/` |
 | P0b install delta (oracle) | (a) **1.939**, (b) 2.027, (c) 4.898; `(b)-(a)+0.088`, `(c)-(a)+2.959` | `runs/install-code-networkx-a256-s3000/` |
 | P0b transfer (no oracle) | 8k: `(b)-(a)` **+0.280 / +0.209**; 3k: +0.212 / +0.150 → fails | `runs/install-transfer-code-networkx-a256-s8000/` |
+| Text LM, 100 MB | 20.46M, 30k steps, test **1.517 bpb** (unigram 3.131, bigram 2.508) | `runs/text-enwik8_100m-d384l8-s30000/` |
 | the gate | length is the predictor; tied = counts (0.510/0.510), cos AUC 0.427 | `runs/p0-linchpin-5fb03736-s0/` |
 | measured speed (20.46M, batch 32×128) | encode **286k units/s**; `win_step` **6.9 ms/unit** | this session |
 | the only decodable P0 row | LoRA −0.033 | `runs/p0-lora-4ab0bed1-s0/` |

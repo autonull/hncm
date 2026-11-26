@@ -120,6 +120,8 @@ The four bets, and where they live:
   exact-span pack (4096 spans, 90.1 kB, provenance offsets).
 - `span_embeddings`, `stream_nll`, `fit_gate`, `adapter_eval`, `run_p0`: the
   frozen encoder state, the 3-parameter gate, verification, and the copy codec.
+- `cml train`, `cml sample`, `cml stats`: raw-stream training, prompt
+  continuation with temperature/top-k, and the run-store dashboard.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,
@@ -132,6 +134,19 @@ slice (1.912 ± 0.008 over seeds 0-2); 1.962 at 8.9M, 1.926 at 39.9M; the 60M
 fit is 1.919. The same-slice count bigram is 2.667, so the neural margin is
 0.75 bpb. P1a/P1b/P1c pass. The second split (8-9 MB) gives 1.992, so the win
 is not one slice.
+
+## Fully trained text LM
+
+`cml train` tokenizes a raw stream with the v9 lexicon, trains the unit
+`Trunk`, evaluates a held-out slice, and samples. `cml sample` prompts any
+saved run.
+
+- 20,461,440 params (d384, 8 layers), 90 MB train / 10 MB held-out, 30k
+  steps, 759 s.
+- test payload **1.517 bpb** (unigram 3.131, bigram 2.508). The 10 MB P1
+  model (1.920) overfits 1.516/1.920; the 90 MB run is the usable one.
+- `uv run cml sample --run text-enwik8_100m-d384l8-s30000`
+- `reports/LM-100M.md`, `reports/SAMPLE.md`, `reports/STATS.md`.
 
 P0 core is measured: base 1.827 → adapter 0.997 bpb (net +0.758 after the
 0.072 pack charge), acceptance 79.4%, coverage 80%, provenance 100%.
@@ -191,6 +206,9 @@ uv run cml base --params 20_000_000 --steps 6000 --seq 256
 uv run cml run experiments/p0-adapter.toml
 uv run cml lm --corpus shakespeare --tiny --steps 2000 --prompt "ROMEO:" --sample 400
 uv run cml install --corpus code --package networkx --active 256 --steps 3000
+uv run cml train --corpus enwik8_100m --params 20000000 --steps 30000
+uv run cml sample --run text-enwik8_100m-d384l8-s30000
+uv run cml stats
 ```
 
 `run-id = <manifest>-<sha8(config)>-s<seed>`; runs write to

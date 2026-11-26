@@ -1168,6 +1168,345 @@ def run_p1(cfg: Config, gates: list[str], out: Path) -> dict:
     return metrics
 
 
+def _p1_trie(lex: Lexicon) -> dict:
+    """Greedy tokenizer over the v9 lexicon; every byte is a fallback unit."""
+    root: dict = {}
+    for i, unit in enumerate(lex.strings):
+        node = root
+        for b in unit:
+            node = node.setdefault(b, {})
+        node["#"] = i
+    return root
+
+
+def p1_tokens(data: bytes, lex: Lexicon, trie: dict) -> list[int]:
+    out: list[int] = []
+    i = 0
+    while i < len(data):
+        node = trie
+        best: tuple[int, int] | None = None
+        j = i
+        while j < len(data) and data[j] in node:
+            node = node[data[j]]
+            j += 1
+            hit = node.get("#")
+            if hit is not None:
+                best = (j, hit)
+        if best is not None:
+            out.append(best[1])
+            i = best[0]
+        else:
+            out.append(lex.ids[data[i : i + 1]])
+            i += 1
+    return out
+
+
+def _load_p1(run: str):
+    out = RUNS / run
+    data = torch.load(
+        out / "artifacts/model.pt", map_location="cuda", weights_only=False
+    )
+    cfg = data["config"]
+    model = Trunk(
+        data["vocab"], data["d"], data["layers"], data["heads"], cfg["seq"]
+    ).cuda()
+    model.load_state_dict(data["model"])
+    model.eval()
+    path = Path(cfg["lexicon"])
+    if not path.is_absolute():
+        path = ROOT / path
+    return model, read_lexicon(path), data, out
+
+
+@torch.no_grad()
+def p1_sample(
+    model: Trunk,
+    lex: Lexicon,
+    prompt: bytes,
+    nbytes: int,
+    temperature: float = 0.8,
+    top_k: int = 50,
+    seed: int = 0,
+) -> tuple[bytes, int, float]:
+    """Continue `prompt` with a sliding window over the P1 unit trunk."""
+    trie = _p1_trie(lex)
+    ctx = p1_tokens(prompt, lex, trie)
+    if not ctx:
+        ctx = [lex.ids[b" "]]
+    seq = model.pos.num_embeddings
+    device = next(model.parameters()).device
+    torch.manual_seed(seed)
+    out = bytearray()
+    units = 0
+    started = time.perf_counter()
+    while len(out) < nbytes:
+        win = torch.tensor([ctx[-(seq - 1) :]], device=device)
+        logits = model(win)[0, -1].float()
+        if temperature <= 0:
+            nxt = int(logits.argmax())
+        else:
+            logits = logits / temperature
+            if top_k and top_k < logits.numel():
+                values, index = torch.topk(logits, top_k)
+            else:
+                values = logits
+                index = torch.arange(logits.numel(), device=device)
+            nxt = int(index[torch.multinomial(torch.softmax(values, -1), 1)])
+        ctx.append(nxt)
+        out += lex.strings[nxt]
+        units += 1
+        if units > 100_000:
+            break
+    return bytes(out[:nbytes]), units, time.perf_counter() - started
+
+
+def run_sample(
+    run: str,
+    prompt: bytes,
+    nbytes: int,
+    temperature: float,
+    top_k: int,
+    seed: int,
+) -> int:
+    """Prompt a fully trained P1 checkpoint and write the sample."""
+    model, lex, data, out_dir = _load_p1(run)
+    raw, units, secs = p1_sample(model, lex, prompt, nbytes, temperature, top_k, seed)
+    metrics = json.loads((out_dir / "metrics.json").read_text())
+    text = (prompt + raw).decode("utf-8", "replace")
+    print(
+        f"{run}: {data['params'] / 1e6:.2f}M params, "
+        f"{metrics['payload']:.3f} bpb test, "
+        f"{units} units / {len(raw)} B in {secs:.2f}s"
+    )
+    print("=" * 72)
+    print(text)
+    lines = [
+        "# Sample",
+        "",
+        f"- run `{run}`: {data['params']:,} params, "
+        f"{metrics['steps']} steps, seq {model.pos.num_embeddings}",
+        f"- test payload **{metrics['payload']:.3f} bpb** on "
+        f"{metrics['test_bytes']:,} B; unigram {metrics['unigram']:.3f}, "
+        f"bigram {metrics['bigram']:.3f}",
+        f"- prompt `{prompt.decode('utf-8', 'replace')}`; "
+        f"temperature {temperature}, top-k {top_k}, seed {seed}",
+        f"- {units} units / {len(raw)} B in {secs:.2f}s "
+        f"({len(raw) / max(secs, 1e-9):.0f} B/s)",
+        "",
+        "```",
+        text,
+        "```",
+        "",
+    ]
+    report = REPORTS / "SAMPLE.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print(f"wrote {report}")
+    return 0
+
+
+def _unit_ids(raw: bytes, lex: Lexicon, trie: dict, tag: str) -> torch.Tensor:
+    """Tokenize a stream once; cache the int32 ids by raw/lexicon SHA."""
+    sha = hashlib.sha256(raw).hexdigest()
+    path = CACHE / f"units-{sha[:12]}-{lex.sha[:12]}-{len(raw)}-{tag}.pt"
+    if path.exists():
+        try:
+            return torch.load(path, map_location="cpu", weights_only=True).long()
+        except RuntimeError, ValueError, OSError:
+            pass
+    ids = torch.tensor(p1_tokens(raw, lex, trie), dtype=torch.int32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    torch.save(ids, tmp)
+    os.replace(tmp, path)
+    return ids.long()
+
+
+def train_text(
+    corpus: str = "enwik8_100m",
+    params: int = 20_000_000,
+    steps: int = 30_000,
+    seq: int = 128,
+    batch: int = 32,
+    lr: float = 3e-4,
+    val_bytes: int = 10_000_000,
+    seed: int = 0,
+    prompt: bytes = b"The city was founded in",
+    sample_bytes: int = 400,
+    temperature: float = 0.6,
+    top_k: int = 30,
+    lexicon: str = "../runs/v9/fit-seed-16384-16384-10000000.pkl",
+) -> int:
+    """Train the P1 unit trunk on a raw stream, evaluate, and sample it."""
+    raw = corpus_bytes(corpus)
+    if len(raw) <= val_bytes + seq:
+        raise SystemExit("train: the stream is shorter than the validation slice")
+    train_raw, test_raw = raw[:-val_bytes], raw[-val_bytes:]
+    path = Path(lexicon)
+    if not path.is_absolute():
+        path = ROOT / path
+    lex = read_lexicon(path)
+    trie = _p1_trie(lex)
+    print(
+        f"tokenize {len(train_raw) / 1e6:.1f} MB train / "
+        f"{len(test_raw) / 1e6:.1f} MB test ...",
+        flush=True,
+    )
+    train_ids = _unit_ids(train_raw, lex, trie, "train")
+    test_ids = _unit_ids(test_raw, lex, trie, "test")
+    unit_len = torch.tensor([len(u) for u in lex.strings], dtype=torch.long)
+    train_lens = unit_len[train_ids]
+    test_lens = unit_len[test_ids]
+    train_win = windows(train_ids, seq)
+    test_win = windows(test_ids, seq)
+    test_lens_win = test_lens.unfold(0, seq + 1, seq)[:, 1:].contiguous()
+    vocab = len(lex.strings)
+    d, layers, heads = preset(params)
+    torch.manual_seed(seed)
+    model = Trunk(vocab, d, layers, heads, seq).cuda()
+    nparams = sum(p.numel() for p in model.parameters())
+    print(
+        f"train {len(train_raw) / 1e6:.1f} MB / {train_ids.numel() / 1e6:.1f}M "
+        f"units, vocab {vocab}, {nparams / 1e6:.2f}M params, d{d} l{layers}, "
+        f"{steps} steps",
+        flush=True,
+    )
+    opt = torch.optim.AdamW(
+        model.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.1
+    )
+    warmup = max(1, min(100, steps // 20))
+    span = max(1, steps - warmup)
+
+    def lr_at(step: int) -> float:
+        if step < warmup:
+            return (step + 1) / warmup
+        p = min(1.0, (step - warmup) / span)
+        return 0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * p))
+
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_at)
+    model.train()
+    started = time.time()
+    last = 0.0
+    for step in range(steps):
+        idx = torch.randint(0, train_win.size(0), (batch,))
+        x = train_win[idx].cuda(non_blocking=True)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            loss = lm_loss(model, x)
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        last = float(loss.detach())
+        if step % 500 == 0 or step == steps - 1:
+            print(
+                f"  step {step:5d}/{steps} loss {last:.4f} "
+                f"lr {sched.get_last_lr()[0]:.2e} "
+                f"({time.time() - started:.0f}s)",
+                flush=True,
+            )
+    torch.cuda.synchronize()
+    secs = time.time() - started
+    model.eval()
+    bits, nbytes = eval_bits(model, test_win, test_lens_win, batch)
+    payload = bits / nbytes
+    uni, _ = unigram_bits(train_ids, test_win, test_lens_win, vocab)
+    bi, _ = bigram_bits(train_ids, test_win, test_lens_win, vocab)
+    run_id = f"text-{corpus}-d{d}l{layers}-s{steps}"
+    out = RUNS / run_id
+    (out / "artifacts").mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "config": {
+                "seq": seq,
+                "lexicon": lexicon,
+                "steps": steps,
+                "batch": batch,
+                "lr": lr,
+                "params": params,
+                "corpus": corpus,
+                "val_bytes": val_bytes,
+                "seed": seed,
+                "prompt": prompt.decode("utf-8", "replace"),
+                "temperature": temperature,
+                "top_k": top_k,
+            },
+            "vocab": vocab,
+            "d": d,
+            "layers": layers,
+            "heads": heads,
+            "params": nparams,
+        },
+        out / "artifacts" / "model.pt",
+    )
+    sample, units, sample_s = p1_sample(
+        model, lex, prompt, sample_bytes, temperature, top_k, seed
+    )
+    text = (prompt + sample).decode("utf-8", "replace")
+    metrics = {
+        "id": run_id,
+        "arm": "text",
+        "params": nparams,
+        "vocab": vocab,
+        "d": d,
+        "layers": layers,
+        "heads": heads,
+        "seq": seq,
+        "steps": steps,
+        "secs": secs,
+        "train_bytes": int(train_lens.sum()),
+        "train_units": int(train_ids.numel()),
+        "test_bytes": nbytes,
+        "test_units": int(test_ids.numel()),
+        "bytes_per_unit": nbytes / max(int(test_ids.numel()), 1),
+        "bits": bits,
+        "payload": payload,
+        "unigram": uni / nbytes,
+        "bigram": bi / nbytes,
+        "corpus": corpus,
+        "corpus_sha": hashlib.sha256(raw).hexdigest(),
+        "lexicon_sha": lex.sha,
+        "lexicon_bytes": lex.size,
+        "sample_units": units,
+        "sample_seconds": round(sample_s, 3),
+        "git": git_sha(),
+    }
+    write_json(out / "metrics.json", metrics)
+    lines = [
+        f"# Text LM: {corpus}",
+        "",
+        f"- {nparams:,} params (d{d}, {layers} layers, {heads} heads), "
+        f"seq {seq}, {steps} steps",
+        f"- train {len(train_raw):,} B / {train_ids.numel():,} units; "
+        f"test {len(test_raw):,} B / {test_ids.numel():,} units",
+        f"- test payload **{payload:.3f} bpb**; unigram {uni / nbytes:.3f}, "
+        f"bigram {bi / nbytes:.3f}",
+        f"- train {secs:.0f}s, sample {units} units / {len(sample)} B in "
+        f"{sample_s:.2f}s",
+        f"- prompt `{prompt.decode('utf-8', 'replace')}`; temperature "
+        f"{temperature}, top-k {top_k}, seed {seed}",
+        "",
+        "```",
+        text,
+        "```",
+        "",
+    ]
+    report = REPORTS / "LM-100M.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print(
+        f"{run_id}: test payload {payload:.3f} bpb, "
+        f"train {secs:.0f}s, sample {units} units"
+    )
+    print("=" * 72)
+    print(text)
+    print(f"wrote {report}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # P0: the adapter on a frozen byte base
 # ---------------------------------------------------------------------------
@@ -3815,6 +4154,108 @@ def run_install_transfer(
     return 0 if both else 1
 
 
+def stats() -> int:
+    """A compact progress dashboard from the run store."""
+    rows = []
+    for path in sorted(RUNS.glob("*/metrics.json")):
+        try:
+            rows.append(json.loads(path.read_text()))
+        except ValueError, OSError:
+            continue
+
+    def pref(prefix: str) -> list[dict]:
+        return [d for d in rows if str(d.get("id", "")).startswith(prefix)]
+
+    text = sorted(pref("text-"), key=lambda d: d["payload"])
+    lm = sorted(pref("lm-"), key=lambda d: d["payload_bpb"])
+    codec = [d for d in pref("codec-") if d.get("n")]
+    best: dict[tuple, dict] = {}
+    for d in codec:
+        key = (d.get("corpus"), d.get("n"))
+        if key not in best or d["payload_bpb"] < best[key]["payload_bpb"]:
+            best[key] = d
+    install = pref("install-code-")
+    transfer = pref("install-transfer-")
+    lines = [
+        "# CML stats",
+        "",
+        f"- metrics files: {len(rows)}",
+        f"- codec runs: {len(pref('codec-'))}; text runs: {len(text)}; "
+        f"P0a runs: {len(lm)}; install runs: {len(install)}; "
+        f"transfer runs: {len(transfer)}",
+        "",
+        "## Text LM",
+        "",
+        "| run | params | train B | test B | steps | bpb |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for d in text:
+        lines.append(
+            f"| `{d['id']}` | {d['params']:,} | {d.get('train_bytes', 0):,} | "
+            f"{d.get('test_bytes', 0):,} | {d.get('steps', 0):,} | "
+            f"**{d['payload']:.3f}** |"
+        )
+    lines += [
+        "",
+        "## Best codec row per slice (payload)",
+        "",
+        "| corpus | n | payload | shared | units | coverage | run |",
+        "|---|---:|---:|---:|---:|---:|---|",
+    ]
+    for key in sorted(best, key=lambda k: (k[0] or "", k[1] or 0), reverse=True):
+        d = best[key]
+        lines.append(
+            f"| {key[0]} | {key[1]:,} | **{d['payload_bpb']:.3f}** | "
+            f"{d['shared_bpb']:.3f} | {d.get('units', 0)} | "
+            f"{(d.get('coverage') or 0):.3f} | `{d['id']}` |"
+        )
+    lines += [
+        "",
+        "## P0a (Shakespeare prompt)",
+        "",
+        "| run | params | pack B | payload bpb | train loss | coverage |",
+        "|---|---:|---:|---:|---:|---:|",
+    ]
+    for d in lm:
+        lines.append(
+            f"| `{d['id']}` | {d['params']:,} | {d.get('lexicon_bytes', 0):,} | "
+            f"**{d['payload_bpb']:.3f}** | {d.get('train_loss', 0):.3f} | "
+            f"{d.get('coverage', 0):.3f} |"
+        )
+    lines += [
+        "",
+        "## P0b install / transfer",
+        "",
+        "| run | kind | (b)-(a) | (c)-(a) | gate |",
+        "|---|---|---:|---:|---|",
+    ]
+    for d in install:
+        d_ba = d.get("delta_b_minus_a", 0.0)
+        d_ca = d.get("delta_c_minus_a", 0.0)
+        ok = d.get("pass_delta") and d.get("pass_gain")
+        lines.append(
+            f"| `{d['id']}` | oracle | {d_ba:+.3f} | {d_ca:+.3f} | "
+            f"{'PASS' if ok else 'FAIL'} |"
+        )
+    for d in transfer:
+        for run in d.get("directions", []):
+            ok = run["pass_delta"] and run["pass_gain"]
+            lines.append(
+                f"| `{d['id']}` | {run['direction']} | "
+                f"{run['delta_b_minus_a']:+.3f} | "
+                f"{run['delta_c_minus_a']:+.3f} | "
+                f"{'PASS' if ok else 'FAIL'} |"
+            )
+    lines += [""]
+    report = REPORTS / "STATS.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print("\n".join(lines))
+    print(f"wrote {report}")
+    return 0
+
+
 def templates(run: str, top: int = 10) -> int:
     """r7: lift a line template with a hole by anti-unification."""
     import re
@@ -4141,6 +4582,7 @@ def main(argv: list[str] | None = None) -> int:
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
     sub.add_parser("recorded")
+    sub.add_parser("stats")
     dm = sub.add_parser("demo")
     dm.add_argument("run")
     dm.add_argument("--bytes", type=int, default=20000)
@@ -4160,6 +4602,27 @@ def main(argv: list[str] | None = None) -> int:
     lm.add_argument("--cap", type=int, default=16)
     lm.add_argument("--proof", type=int, default=4000)
     lm.add_argument("--seed", type=int, default=0)
+    sp = sub.add_parser("sample")
+    sp.add_argument("--run", default="text-enwik8_100m-d384l8-s30000")
+    sp.add_argument("--prompt", default="The city was founded in")
+    sp.add_argument("--bytes", type=int, default=400)
+    sp.add_argument("--temperature", type=float, default=0.6)
+    sp.add_argument("--top-k", type=int, default=30)
+    sp.add_argument("--seed", type=int, default=0)
+    tr = sub.add_parser("train")
+    tr.add_argument("--corpus", default="enwik8_100m")
+    tr.add_argument("--params", type=int, default=20_000_000)
+    tr.add_argument("--steps", type=int, default=30_000)
+    tr.add_argument("--seq", type=int, default=128)
+    tr.add_argument("--batch", type=int, default=32)
+    tr.add_argument("--lr", type=float, default=3e-4)
+    tr.add_argument("--val-bytes", type=int, default=10_000_000)
+    tr.add_argument("--seed", type=int, default=0)
+    tr.add_argument("--prompt", default="The city was founded in")
+    tr.add_argument("--sample-bytes", type=int, default=400)
+    tr.add_argument("--temperature", type=float, default=0.6)
+    tr.add_argument("--top-k", type=int, default=30)
+    tr.add_argument("--lexicon", default="../runs/v9/fit-seed-16384-16384-10000000.pkl")
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -4265,6 +4728,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if a.cmd == "recorded":
         return recorded_report()
+    if a.cmd == "stats":
+        return stats()
     if a.cmd == "demo":
         return run_demo(a.run, a.bytes)
     if a.cmd == "generate":
@@ -4282,6 +4747,26 @@ def main(argv: list[str] | None = None) -> int:
             a.cap,
             a.proof,
             a.seed,
+        )
+    if a.cmd == "sample":
+        return run_sample(
+            a.run, a.prompt.encode(), a.bytes, a.temperature, a.top_k, a.seed
+        )
+    if a.cmd == "train":
+        return train_text(
+            a.corpus,
+            a.params,
+            a.steps,
+            a.seq,
+            a.batch,
+            a.lr,
+            a.val_bytes,
+            a.seed,
+            a.prompt.encode(),
+            a.sample_bytes,
+            a.temperature,
+            a.top_k,
+            a.lexicon,
         )
     if a.cmd == "install":
         if a.transfer:
