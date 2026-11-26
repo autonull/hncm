@@ -21,7 +21,7 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
 | M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
 | M4 | **negative at 1 MB** | 756,752 B, matched params: byte-model 4.86M **1.693/1.694/27.404**; pointer 4.97M a256 **2.207/2.237/28.498**; a2048 **2.187/2.421/28.682**. The pointer loses **0.543 shared / 1.094 self**. A 10× pack buys −0.020 payload but costs +0.204 charge, so the pack lever is dead. Local copy symbols are not built |
-| M5 | **ops done; demos pending** | `cml pack verify/trace/diff/merge/rm`. Q2: 756,752 B decode, **511,933 elements**, provenance contiguous 100%, `byte → unit id → pack offset` printed. Q3: `rm self` on a 70k unit-arm slice deletes 27 units, hits 4 spans / 18 B, delta +2 B; `rm s` on a 20k pointer slice hits 222 spans; both round-trip. Adapter control and rent sweep remain |
+| M5 | **ops + Q2/Q3 done** | `cml pack verify/trace/diff/merge/rm`. Q2: 756,752 B decode, **511,933 elements**, provenance contiguous 100%, `byte → unit id → pack offset` printed. Q3: `rm self` on a 70k unit-arm slice deletes 27 units, hits 4 spans / 18 B, delta +2 B; `rm s` on a 20k pointer slice hits 222 spans; both round-trip. Adapter control and rent sweep remain |
 | M6-M7 | **not started** | The P1 text control and the librarian remain |
 
 Concrete remaining work, in order:
