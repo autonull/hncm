@@ -1309,6 +1309,24 @@ def code_corpus(refreeze: bool = False) -> CodeCorpus:
     )
 
 
+def shakespeare_corpus() -> CodeCorpus:
+    """Tiny Shakespeare, frozen by SHA, split at a line boundary 90/10."""
+    raw = (CACHE / "shakespeare.txt").read_bytes()
+    sha = hashlib.sha256(raw).hexdigest()
+    cut = raw.rfind(b"\n", 0, int(len(raw) * 0.9)) + 1
+    train, test = raw[:cut], raw[cut:]
+    files = (("shakespeare.txt", 0, len(raw)),)
+    return CodeCorpus(
+        raw, train, test, files, cut, sha, hashlib.sha256(train).hexdigest()
+    )
+
+
+def text_corpus(name: str) -> CodeCorpus:
+    if name == "shakespeare":
+        return shakespeare_corpus()
+    raise SystemExit(f"corpus: unknown text corpus {name}")
+
+
 def synseg_bytes(n: int, seed: int = 0) -> bytes:
     """A structured synthetic stream: repetitive records with short fields."""
     rng = random.Random(seed)
@@ -2889,6 +2907,7 @@ def _pointer_for(
     full_every: int,
     span: str = "content",
     head: str = "gate",
+    seq: int = 256,
 ):
     import pointer
 
@@ -2896,7 +2915,8 @@ def _pointer_for(
     tag = f"r{rotate}f{full_every}-" if rotate else ""
     design = "" if (span, head) == ("content", "gate") else f"{span[0]}{head[0]}-"
     path = CACHE / (
-        f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{tag}s{steps}-n{seed}.pt"
+        f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{tag}"
+        f"s{steps}-q{seq}-n{seed}.pt"
     )
     if path.exists():
         try:
@@ -2904,7 +2924,7 @@ def _pointer_for(
         except RuntimeError, KeyError, ValueError, AttributeError:
             pass
     cfg = pointer.PointerConfig(
-        active=active, steps=steps, seed=seed, span=span, head=head
+        active=active, steps=steps, seed=seed, span=span, head=head, seq=seq
     )
     if rotate:
         streams = pointer.pack_streams(corpus.train, lex.units, active, rotate)
@@ -2935,11 +2955,13 @@ def _run_concept(
     suffix: str = "",
     span: str = "content",
     head: str = "gate",
+    parse: str = "greedy",
+    seq: int = 256,
 ) -> dict:
     import pointer
 
     model, active_lex = _pointer_for(
-        corpus, lex, active, steps, seed, rotate, full_every, span, head
+        corpus, lex, active, steps, seed, rotate, full_every, span, head, seq
     )
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{suffix}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
@@ -2947,7 +2969,7 @@ def _run_concept(
     parse, covered = codec_mod.greedy_parse(data, active_lex)
     stats = codec_mod.parse_stats(parse, active_lex, len(data), covered)
     t_enc = time.perf_counter()
-    payload = pcodec.encode(data)
+    payload = pcodec.encode(data, parse=parse)
     encode_s = time.perf_counter() - t_enc
     frame = codec_mod.pack_frame(
         2, len(data), payload, corpus.sha, corpus.train_sha, active_lex
@@ -2981,9 +3003,10 @@ def _run_concept(
         "proof_units": want,
         "proof_bytes": len(out),
         "coding_dtype": "fp16",
-        "design": f"{span}-{head}",
+        "design": f"{span}-{head}-{parse}",
         "span": span,
         "head": head,
+        "parse": parse,
         "encode_seconds": round(encode_s, 3),
         "units_per_s": len(parse) / max(encode_s, 1e-9),
         "steps_per_byte": len(parse) / max(len(data), 1),
@@ -3024,12 +3047,12 @@ def run_codec(
     seed: int,
     span: str = "content",
     head: str = "gate",
+    parse: str = "greedy",
+    seq: int = 256,
 ) -> int:
     """One `cml codec` run: encode a frozen slice, decode it, record the bpb."""
-    if corpus_name != "code":
-        raise SystemExit("codec: only --corpus code is wired")
     t0 = time.perf_counter()
-    corpus = code_corpus()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
     pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}[split]
     data = pool[:nbytes]
     if arm == "byte-model":
@@ -3048,6 +3071,8 @@ def run_codec(
     if arm == "concept":
         lex = _lexicon_for(corpus, units, min_count, cap)
         design = "" if (span, head) == ("content", "gate") else f"-{span[0]}{head[0]}"
+        if parse != "greedy":
+            design += "-p"
         suffix = (f"-a{active}" if active != 256 else "") + design
         metrics = _run_concept(
             corpus,
@@ -3066,6 +3091,8 @@ def run_codec(
             suffix,
             span,
             head,
+            parse,
+            seq,
         )
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
@@ -3173,8 +3200,8 @@ def run_arena(
     for code in [d.strip() for d in designs.split(",") if d.strip()]:
         if code not in DESIGNS:
             raise SystemExit(f"arena: unknown design {code}")
-        span, head = DESIGNS[code]
-        print(f"== arena {code}: span={span} head={head}", flush=True)
+        span, head, parse = DESIGNS[code]
+        print(f"== arena {code}: span={span} head={head} parse={parse}", flush=True)
         run_codec(
             "concept",
             corpus_name,
@@ -3191,8 +3218,11 @@ def run_arena(
             seed,
             span,
             head,
+            parse,
         )
         design = "" if (span, head) == ("content", "gate") else f"-{span[0]}{head[0]}"
+        if parse != "greedy":
+            design += "-p"
         suffix = (f"-a{active}" if active != 256 else "") + design
         path = RUNS / f"codec-concept-{corpus_name}-{nbytes}{suffix}" / "metrics.json"
         rows.append(json.loads(path.read_text()))
@@ -3321,11 +3351,11 @@ def _run_frame(run: str):
 
 
 def _reference(metrics: dict) -> bytes:
-    corpus = code_corpus()
-    if corpus.sha[:12] != metrics["corpus_sha"][:12]:
-        raise SystemExit("pack: the frame's corpus is not the frozen corpus")
-    pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}
-    return pool[metrics["split"]][: metrics["n"]]
+    for corpus in (code_corpus(), shakespeare_corpus()):
+        if corpus.sha[:12] == metrics["corpus_sha"][:12]:
+            pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}
+            return pool[metrics["split"]][: metrics["n"]]
+    raise SystemExit("pack: the frame's corpus is not frozen")
 
 
 def _decode_run(out_dir: Path, frame, trace: bool = False):
@@ -3594,7 +3624,7 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument(
         "--arm", choices=("byte", "byte-model", "lexicon", "concept"), default="byte"
     )
-    co.add_argument("--corpus", default="code")
+    co.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
     co.add_argument("--bytes", type=int, default=1_000_000)
     co.add_argument("--split", choices=("train", "test", "all"), default="test")
     co.add_argument("--units", type=int, default=8192)

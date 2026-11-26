@@ -8,6 +8,40 @@ This file supersedes the analysis phase. Read `cml/PLAN.md` §11 for the
 corrected accounting (the P0 oracle −2.224) and `TODO6.md` for the frozen
 state.
 
+## P0. Top priority: quick end-to-end training/generation on Tiny Shakespeare
+
+Ahead of every other item in this file. The deliverable is **one command** that,
+for several r1-r7 configurations in the same system, trains on the Tiny
+Shakespeare train split, installs the pack, encodes the held-out split, decodes a
+proof, and generates a sample. One table, no baseline hunt.
+
+```
+cml lm --corpus shakespeare --designs gc,jc,jn,jcp \
+       --steps 3000 --bytes 111540 --proof 4000 --sample 400
+```
+
+For each design it: induces the 8192-unit lexicon from the train split and
+installs the first 256 units; trains the concept model with rotating packs
+(`full_every=8`); encodes the 111,540-byte test slice; decodes a 4,000-unit
+proof; samples 400 bytes from the installed pack; prints train loss,
+payload/shared bpb, install bytes and the sample; and writes `reports/LM.md`.
+
+- **Acceptance:** >=3 configs in the same run, every round-trip exact, every
+  sample printed, the whole set inside **15 minutes** on the RTX 3080.
+- **Configs:** `gc` (content-gate, the M3 baseline), `jc` (content-joint),
+  `jn` (n-gram joint), `jcp` (content-joint, priced parse).
+- **Not in P0:** the trained byte model (the slow recorded comparison). The
+  adaptive byte arm is the interim reference; `--corpus code` stays the codec
+  claim.
+- **State:** the corpus is wired (`--corpus shakespeare`, 1,115,394 B, split
+  90/10 at a line boundary, SHA pinned). Smoke:
+  `codec-concept-shakespeare-5000-nj` trains in 3.5 s and records
+  3.930/6.264 at 5 kB / 100 steps (not a result; the pack dominates).
+  Missing: the `cml lm` wrapper and `reports/LM.md`.
+- **Compute:** ~3 min per config at 3k steps; encode ~2 s per 100 kB; the set
+  fits in one session. Risk: 5.2M params overfit 1 MB of text; report the
+  train/test gap and use 2-4k steps, not 8k.
+
 ## 0a. Progress after the first build (M0-M3)
 
 The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
@@ -84,13 +118,12 @@ with holes; `cml generate` samples from the installed pack.
 
 Concrete remaining work, in order:
 
-1. **Close the 0.028 pack charge, not the model.** The matrix now has a 1 MB
-   tie on payload. The priced parse and a 64/128/256-unit pack sweep decide
-   `shared`; the 2048-unit run tests whether coverage pays its 0.23 charge.
-   Then local copy (r2) as the next axis.
-2. **M5.** Ops/demo/generate are built. Remaining: the rent λ sweep and Q4's
-   class split. The adapter control is the pack charge itself.
-3. **M6-M7.** The P1 text control, then templates with holes (`cml templates`).
+1. **P0 first:** the Tiny Shakespeare quick end-to-end demo above (`cml lm`,
+   several configs, generation). Nothing else starts until this prints.
+2. **Close the 0.028 pack charge on code.** The 1 MB matrix has a payload tie;
+   the priced parse and a 64/128-unit sweep decide `shared`.
+3. **M5 remaining:** the rent λ sweep and Q4's class split.
+4. **M6-M7:** the P1 text control, then templates with holes.
 
 Two build notes. The pointer encodes 228k units in 63 s at 756 kB (12 kB/s,
 batch 32); the a2048 pack does 18 kB/s because each window covers more bytes.
