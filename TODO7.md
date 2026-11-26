@@ -60,6 +60,24 @@ round-trip OK), and a pack induced on bytes the model never trained on (2.193
 payload, exact round-trip). `cml templates` lifts e.g. 23 repeated dict literals
 with holes; `cml generate` samples from the installed pack.
 
+### Next queue (fresh session)
+
+1. **Rerun the priced parse.** `--parse` is now passed to the runner; the
+   earlier attempt silently reran greedy and overwrote the 70k `-nj` row
+   (proof 30000). Command:
+   `cml codec --bytes 70000 --span ngram --head joint --parse priced`.
+2. **Seq 512.** `--seq 512` at 756 kB halves the per-window framing
+   (0.028 -> 0.014 bpb) and doubles the unit context. The model cache now
+   keys on `q<seq>`. Command:
+   `cml codec --bytes 756752 --span ngram --head joint --seq 512`.
+3. **Pack sweep** 64 / 128 / 512 units at 756 kB. The open question is where
+   the marginal payload gain equals the pack charge; 256 units is at 1.692 +
+   0.028. The 2048-unit n-gram joint run is in flight
+   (`codec-concept-code-756752-a2048-nj`).
+4. **Local copy (r2)** as the next matrix axis: a window-local copy symbol for
+   spans the installed pack cannot cover.
+5. **Q4** class split and the rent λ sweep on the matrix rows.
+
 Concrete remaining work, in order:
 
 1. **Close the 0.028 pack charge, not the model.** The matrix now has a 1 MB

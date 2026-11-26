@@ -3609,6 +3609,7 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--span", choices=("content", "ngram"), default="content")
     co.add_argument("--head", choices=("gate", "joint"), default="gate")
     co.add_argument("--parse", choices=("greedy", "priced"), default="greedy")
+    co.add_argument("--seq", type=int, default=256)
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
     sub.add_parser("recorded")
@@ -3701,6 +3702,8 @@ def main(argv: list[str] | None = None) -> int:
             a.seed,
             a.span,
             a.head,
+            a.parse,
+            a.seq,
         )
     if a.cmd == "coder":
         if not a.test:
