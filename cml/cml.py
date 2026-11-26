@@ -1939,19 +1939,44 @@ def run_screen(
     ):
         bigram2[(a, b)][c] += 1
 
-    names = ("byte", "counts", "library", "pointer", "trunk")
-    score = {n: {"exact": 0, "top1": 0, "bits": 0.0, "decisions": 0} for n in names}
+    names = ("byte", "copy", "counts", "library", "pointer", "trunk")
+    score = {
+        n: {"exact": 0, "top1": 0, "bits": 0.0, "decisions": 0, "hits": 0}
+        for n in names
+    }
     for i, target, span in zip(pos.tolist(), targets.tolist(), true_spans):
+        start = int(offsets[i])
         ctx = ids[max(0, i - seq + 1) : i].cuda()
         if ctx.numel() == 0:
             continue
         q = _next_q(pmodel, ctx, active_lex.units)
         prob = float(q[target])
         pred = int(q.argmax())
+        pbits = -math.log2(max(prob, 1e-12))
         score["pointer"]["exact"] += pred == target
         score["pointer"]["top1"] += pred == target
-        score["pointer"]["bits"] += -math.log2(max(prob, 1e-12))
+        score["pointer"]["bits"] += pbits
         score["pointer"]["decisions"] += 1
+        hit = False
+        cbits = 1 + pbits
+        cpred = pred
+        if i >= 3:
+            a, b = int(ids[i - 2]), int(ids[i - 1])
+            lo = 0
+            head = ids[lo : i - 2]
+            prev = ids[lo + 1 : i - 1]
+            idx = torch.nonzero((head == a) & (prev == b)).flatten()
+            if idx.numel():
+                j = int(idx[-1]) + lo + 2
+                if j < i:
+                    hit = True
+                    cpred = int(ids[j])
+                    cbits = 1 + math.log2(i - j + 1)
+        score["copy"]["exact"] += cpred == target
+        score["copy"]["top1"] += cpred == target
+        score["copy"]["bits"] += cbits
+        score["copy"]["decisions"] += 1
+        score["copy"]["hits"] += int(hit)
 
         logits = tmodel(ctx.view(1, -1)).detach()
         tq = torch.softmax(logits[:, -1], -1)[0]
@@ -1991,7 +2016,6 @@ def run_screen(
         score["library"]["bits"] += -math.log2(max(lprob, 1e-12))
         score["library"]["decisions"] += 1
 
-        start = int(offsets[i])
         bctx = data[max(0, start - seq) : start]
         cache = bc._cache()
         h = None
@@ -2028,6 +2052,7 @@ def run_screen(
                 "top1": s["top1"] / n,
                 "bits_per_span": s["bits"] / n,
                 "decisions_per_span": s["decisions"] / n,
+                "hit_rate": s["hits"] / n,
             }
         )
     rows.sort(key=lambda r: (-r["exact"], -r["top1"], r["decisions_per_span"]))
@@ -2059,6 +2084,21 @@ def run_screen(
         "bpb_after": 8 * len(after) / n,
         "roundtrip": edit_out == data,
     }
+    extra = tuple(u for u in lex.units[len(active_lex.units) :][:64])
+    merged_units = active_lex.units + extra
+    merged = codec_mod.Lexicon(merged_units)
+    pc_merged = pointer.PointerCodec(pmodel, merged, half=True)
+    merged_payload = pc_merged.encode(data)
+    merged_out = pc_merged.decode(merged_payload, len(data))
+    merge = {
+        "units_before": len(active_lex.units),
+        "units_after": len(merged.units),
+        "payload_before": len(before),
+        "payload_after": len(merged_payload),
+        "bpb_before": 8 * len(before) / n,
+        "bpb_after": 8 * len(merged_payload) / n,
+        "roundtrip": merged_out == data,
+    }
     secs = time.perf_counter() - t0
     lines = [
         "# Capability screen: held-out span reconstruction",
@@ -2071,11 +2111,12 @@ def run_screen(
         "first symbol is right; decisions count emitted symbols.",
         "",
         "| mechanism | family | exact span | top-1 | bits/span | "
-        "decisions/span |",
-        "|---|---|---:|---:|---:|---:|",
+        "decisions/span | copy hit |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
     family = {
         "byte": "r1 baseline",
+        "copy": "r2 copy+pointer",
         "counts": "r1/r6 order-1",
         "library": "r7 order-2",
         "pointer": "r3/r4/r6",
@@ -2085,7 +2126,8 @@ def run_screen(
         lines.append(
             f"| {r['mechanism']} | {family[r['mechanism']]} | "
             f"{r['exact']:.3f} | {r['top1']:.3f} | "
-            f"{r['bits_per_span']:.3f} | {r['decisions_per_span']:.2f} |"
+            f"{r['bits_per_span']:.3f} | {r['decisions_per_span']:.2f} | "
+            f"{r['hit_rate']:.3f} |"
         )
     lines += [
         "",
@@ -2102,6 +2144,19 @@ def run_screen(
         f"{edit['bpb_after']:.3f} | "
         f"{edit['bpb_after'] - edit['bpb_before']:+.3f} | "
         f"{'OK' if edit['roundtrip'] else 'FAIL'} |",
+        "",
+        "## Merge capability (r5)",
+        "",
+        "Append 64 ranked units beyond the active pack; re-encode the same "
+        f"{len(data):,} B with the larger pack and read it back.",
+        "",
+        "| units before | units after | payload before | payload after | "
+        "delta | round-trip |",
+        "|---:|---:|---:|---:|---:|:---:|",
+        f"| {merge['units_before']} | {merge['units_after']} | "
+        f"{merge['bpb_before']:.3f} | {merge['bpb_after']:.3f} | "
+        f"{merge['bpb_after'] - merge['bpb_before']:+.3f} | "
+        f"{'OK' if merge['roundtrip'] else 'FAIL'} |",
     ]
     best = rows[0]
     lines += [
@@ -2124,6 +2179,7 @@ def run_screen(
             "rows": rows,
             "spans": take,
             "edit": edit,
+            "merge": merge,
             "seconds": round(secs, 3),
             "seed": seed,
         },

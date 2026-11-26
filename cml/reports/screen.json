@@ -5,35 +5,48 @@
    "exact": 0.48,
    "top1": 0.48,
    "bits_per_span": 2.5904231310418537,
-   "decisions_per_span": 1.0
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.0
   },
   {
    "mechanism": "pointer",
    "exact": 0.415,
    "top1": 0.415,
    "bits_per_span": 3.133062536448256,
-   "decisions_per_span": 1.0
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.0
+  },
+  {
+   "mechanism": "copy",
+   "exact": 0.38,
+   "top1": 0.38,
+   "bits_per_span": 8.611299564982803,
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.91
   },
   {
    "mechanism": "byte",
    "exact": 0.21,
    "top1": 0.61,
    "bits_per_span": 12.711350813993354,
-   "decisions_per_span": 3.04
+   "decisions_per_span": 3.04,
+   "hit_rate": 0.0
   },
   {
    "mechanism": "library",
    "exact": 0.15,
    "top1": 0.15,
    "bits_per_span": 2.4648969232618603,
-   "decisions_per_span": 1.0
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.0
   },
   {
    "mechanism": "counts",
    "exact": 0.04,
    "top1": 0.04,
    "bits_per_span": 2.814919674260652,
-   "decisions_per_span": 1.0
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.0
   }
  ],
  "spans": 200,
@@ -48,6 +61,15 @@
   "bpb_after": 2.0913142857142857,
   "roundtrip": true
  },
- "seconds": 262.629,
+ "merge": {
+  "units_before": 256,
+  "units_after": 320,
+  "payload_before": 17019,
+  "payload_after": 17968,
+  "bpb_before": 1.9450285714285713,
+  "bpb_after": 2.0534857142857144,
+  "roundtrip": true
+ },
+ "seconds": 262.484,
  "seed": 0
 }

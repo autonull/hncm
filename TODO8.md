@@ -60,6 +60,7 @@ reconstruction, bits/span, and decisions/span on the same task:
 |---|---|---:|---:|---:|---:|
 | trunk | r3/r4 control | 0.480 | 0.480 | 2.590 | 1.00 |
 | pointer | r3/r4/r6 | 0.415 | 0.415 | 3.133 | 1.00 |
+| copy | r2 copy+pointer | 0.380 | 0.380 | 8.611 | 1.00 |
 | byte | r1 baseline | 0.210 | 0.610 | 12.711 | 3.04 |
 | library | r7 order-2 | 0.150 | 0.150 | 2.465 | 1.00 |
 | counts | r1/r6 order-1 | 0.040 | 0.040 | 2.815 | 1.00 |
@@ -71,6 +72,12 @@ re-encode the same 70,000 B with the surviving pack.
 |---:|---:|---:|---:|---:|---:|:---:|
 | 256 | 120 | 4,384 | 1.945 | 2.091 | +0.146 | OK |
 
+Merge capability (`r5`): append 64 ranked units beyond the active pack.
+
+| units before | units after | payload before | payload after | delta | round-trip |
+|---:|---:|---:|---:|---:|:---:|
+| 256 | 320 | 1.945 | 2.053 | +0.108 | OK |
+
 - The concept action space reconstructs **2.0x** more exact spans than byte
   (0.415 vs 0.210) with **3.0x** fewer decisions (1.00 vs 3.04). This is the
   first direct capability win for the multi-byte action space; it is not a
@@ -80,11 +87,15 @@ re-encode the same 70,000 B with the surviving pack.
 - `r7` order-2 context doubles counts (0.040 -> 0.150) but still trails the
   pointer. A shallow library is not the missing capability; deeper composition
   or retrieval is.
+- `r2` copy finds a prior context pair 91.0% of the time, but the copied next
+  unit is exact only 38.0% (8.611 bits/span), below the pointer. A two-unit
+  copy table is not enough; long-span copy and its charge remain untested.
 - `r5` deletion is measurable without a gradient: 256 -> 120 units, 4,384 B
-  affected, **+0.146 bpb**, exact round-trip. Deletion changes the policy and
-  keeps the code honest; it is not yet a win.
-- Still missing: `r2` charged copy bypass, `r5` merge and held-out win-rate
-  delta, `r7` template/hole composition. Do not call this full r1-r7 coverage.
+  affected, **+0.146 bpb**, exact round-trip. Merge 256 -> 320 units costs
+  **+0.108 bpb** and also round-trips. Both change the policy and keep the
+  code honest; neither is a win yet.
+- Still missing: `r7` template/hole composition and the `r5` held-out
+  win-rate delta. Do not call this full r1-r7 coverage.
 ### 11.2 Remaining work
 - **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
   preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.
