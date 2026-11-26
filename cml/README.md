@@ -124,6 +124,9 @@ The four bets, and where they live:
   frozen encoder state, the 3-parameter gate, verification, and the copy codec.
 - `cml train`, `cml sample`, `cml stats`: raw-stream training, prompt
   continuation with temperature/top-k, and the run-store dashboard.
+- `cml train --units codec --model pointer|trunk`: the 5.21M concept LM on the
+  256-unit pack, its 4.93M fixed-vocab control, decision accounting, and
+  `reports/CONCEPT.md` (1.600 / 1.516 bpb, exact round-trip).
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,

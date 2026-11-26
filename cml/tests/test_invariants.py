@@ -311,6 +311,17 @@ def test_pack_offsets_and_trace() -> None:
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="pointer codec uses cuda")
+def test_concept_roundtrip_and_stats() -> None:
+    data = b"alpha beta alpha"
+    lex = codec.Lexicon((b"alpha ", b"beta "))
+    ids, lens = cml._concept_stream(data, lex)
+    assert cml._concept_roundtrip(ids, lex) == data
+    stats = cml._concept_stats(ids, lens, lex)
+    assert stats["nbytes"] == len(data)
+    assert stats["decisions"] == ids.numel()
+    assert stats["bytes_per_decision"] == len(data) / ids.numel()
+
+
 def test_pointer_design_matrix() -> None:
     import pointer
 

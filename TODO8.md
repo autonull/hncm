@@ -9,6 +9,59 @@ gradient step. The gate is preference reward per compute, not bpb.
 `TODO7.md` remains the codec record and the auditable-codec product. This file
 is the synergy plan.
 
+## Progress (2026-11-26)
+| M | status | evidence |
+|---|---|---|
+| M0 | **done** | §0 pins DPO, span repair, verifiable bytes, and the byte/word/concept controls |
+| M1 | **printed; H1 partial** | 5.21M pointer: **1.600 bpb**, 1.692 payload, 1.722 shared, 50k-unit round-trip; 4.93M trunk control: **1.516 bpb**; `reports/CONCEPT.md` |
+| M2 | **blocked** | H1's decision gate fails under the printed all-symbol definition; resolve §11.1 first |
+| M3-M5 | not started | |
+### M1 measurements
+| model | params | steps | epochs | bits/byte | payload | shared | B/dec all | B/dec span |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| pointer | 5.21M | 8,000 | 13.4 | 1.600 | 1.692 | 1.722 | 1.478 | 3.498 |
+| trunk | 4.93M | 8,000 | 13.4 | 1.516 | - | - | 1.478 | 3.498 |
+- 8,000 steps draws 65.5M elements: 13.4 epoch-equivalents over 4,897,323
+  train elements. With `rotate=8`, only 1/8 of the steps read the full pack;
+  the rest cycle four chunk packs. The first 20,000-step trial (no rotation,
+  seq 128) was 33.5 full-pack epochs and overfit: train loss 0.709
+  nats/decision, test 1.769 bpb (2.615 nats/decision). It is an overfit
+  control, not a larger-data test.
+- Both models read the same 256-unit greedy parse: pack 2,771 B, coverage
+  0.453, literal fraction 0.809.
+- The trunk is the fixed-vocabulary control: slightly better at this scale,
+  but a new concept needs a new row and a retrain.
+- H1: bits/byte **PASS** (1.600 ≤ 1.75), round-trip **PASS** (50,000 units /
+  81,531 B), all-symbol B/decision **FAIL** (1.478 < 2.5), span-only
+  B/decision **PASS** (3.498 ≥ 2.5).
+### 11.1 The decision-gate inconsistency
+The 256-unit pack covers 45.3% of test bytes. The parse has 511,933 decisions
+for 756,752 B: **1.478 B/decision** over all symbols, or **3.498 B/decision**
+over matched spans. H1 passes the 2.5 bar only if a literal escape is not a
+policy decision. H3 asks for 2x fewer decisions: concept uses 0.676
+decisions/byte, only **1.48x fewer** than byte decisions; span-only is
+0.130 span decisions/byte, **7.7x fewer**.
+Choose before M2:
+1. **All symbols (strict).** H1 fails and H3's decision clause fails. The
+   action-space claim at 256 cannot pass; a larger pack or a new metric is
+   required.
+2. **Span policy.** A policy decision is a matched concept; the byte escape is
+   charged separately. H1 passes (3.50), H3 has 7.7x fewer decisions. Report
+   the 0.809 literal fraction and the escape bytes; do not call this 2x fewer
+   all-symbol decisions.
+Recommendation: use span-policy decisions for the RLFP action claim, keep
+all-symbol decisions as the honest compression cost, and gate H3 on both.
+Do not switch definitions silently.
+### 11.2 Remaining work
+- **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
+  preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.
+- **M2 SFT.** Train the concept policy on the same pack; verify the random
+  (~50%) and SFT (>55%) pairwise baselines.
+- **M3.** Run concept/byte/word DPO at equal pairs and compute; report H3 with
+  both decision definitions and held-out win rate.
+- **Scale test.** 20M/20k is deferred: it overfits at this corpus size and the
+  host restarted during the long runs. Re-run only on a stable host with
+  checkpointing; the 5.21M pointer is the H1 feasibility point.
 ## 0. RLFP definition
 
 **RLFP = RL from Preferences.** It covers RLHF (reward model + PPO), DPO,
@@ -70,14 +123,16 @@ Architectural choice:
 | pointer, content-addressed | zero weights; recompute `e_c` | preferred for editability |
 | Trunk, tied unit embeddings | new row + retrain | fixed-pack baseline |
 
-The 5.2M codec pointer is the proof; a 20M pointer is the scale test. Do not
-train another fixed-vocab LM and call it the concept model.
+The 5.2M codec pointer is the proof and the built M1 model. The 20M pointer is
+a deferred scale test: at 7.2 MB it overfits before scale helps, and long runs
+restarted the host. Do not train another fixed-vocab LM and call it the concept
+model.
 
 ## 3. Hypotheses and gates
 
 | id | hypothesis | gate |
 |---|---|---|
-| H1 | a 20M concept LM reads the codec pack | test bits/byte **≤ 1.75** on 756,752 B; round-trip exact; ≥2.5 B/decision |
+| H1 | a 5M concept LM reads the codec pack | test bits/byte **≤ 1.75** on 756,752 B; round-trip exact; ≥2.5 B/decision; 20M is deferred scale |
 | H2 | the preference task is learnable | ≥10k verifiable pairs; SFT pairwise accuracy > 55%; random ≈ 50% |
 | H3 | concept actions give RLFP leverage | concept DPO beats byte DPO by **≥5 points** pairwise accuracy at equal compute, or matches it with **≥2x fewer decisions** |
 | H4 | pack edits change the policy without gradients | `rm`/`merge` moves win rate in the predicted direction; provenance 100% |
@@ -91,23 +146,27 @@ auditable-policy claim. Do not gate on bpb; report it as context.
 | M | ships | acceptance | cost |
 |---|---|---|---|
 | M0 | pin RLFP: method, task, reward, metrics | DPO chosen; repair task and pair generator specified; byte/word/concept controls named | 0.5 d |
-| M1 | concept LM | `cml train --corpus code --units codec --model pointer\|trunk`; 20M pointer; H1 on 756,752 B; `reports/CONCEPT.md` | 2-3 h |
-| M2 | preference data + SFT baseline | ≥10k pairs; SFT concept policy; byte and word controls; `reports/RLFP-DATA.md` | 1 d |
+| M1 | **printed; H1 partial** | `cml train --corpus code --units codec --model pointer\|trunk`; 5.21M pointer at 8k steps; H1 bpb/round-trip pass; all-symbol decision gate fails; `reports/CONCEPT.md` | done |
+| M2 | **blocked** | resolve §11.1, then ≥10k pairs; SFT concept policy; byte and word controls; `reports/RLFP-DATA.md` | 1 d |
 | M3 | DPO loop | concept vs byte vs word at equal compute; H3; `reports/RLFP.md` | 1-2 d |
 | M4 | pack edits | `rm`/`merge` after DPO; H4; `reports/RLFP-EDIT.md` | 1 d |
 | M5 | decision | scale if H3/H4 pass; otherwise record the negative and return to the auditable codec | 1 d |
 
-M1 starts now. M2-M3 are the bet. M4 is the unique part; no byte-level
-post-training can delete a concept and measure the policy response.
+M1 is printed. Resolve the §11.1 decision definition before M2. M2-M3 are the
+bet. M4 is the unique part; no byte-level post-training can delete a concept
+and measure the policy response.
 
 ## 5. Target interfaces
 
-These commands do not exist yet; they are the interface contract.
+The M1 concept commands exist. The `cml rl` commands are still the interface
+contract; do not build them before M2 pairs.
 
 ```bash
 # concept LM on the codec vocabulary (M1)
-uv run cml train --corpus code --units codec --model pointer --params 20000000 --steps 20000
-uv run cml train --corpus code --units codec --model trunk --params 20000000 --steps 20000
+uv run cml train --corpus code --units codec --model pointer --params 5000000 --steps 8000
+uv run cml train --corpus code --units codec --model trunk --params 5000000 --steps 8000
+# 8k steps = 13.4 epochs over 4.9M train elements; 20M/20k is the deferred
+# overfit control.
 
 # preference pairs and SFT baseline (M2)
 uv run cml rl --task repair --make-pairs --pairs 10000 --pack <lexicon>
@@ -171,7 +230,7 @@ Artifacts: `reports/CONCEPT.md`, `reports/RLFP-DATA.md`, `reports/RLFP.md`,
   measure calibration and the win-rate delta, not just the mean.
 - **Fixed-vocab control.** A Trunk needs a new row for a new concept, so it is
   the control, not the target.
-- **Kill H1:** concept LM > 1.9 bits/byte at 20M on 756,752 B → the vocabulary
+- **Kill H1:** concept LM > 1.9 bits/byte at 5M/8k on 756,752 B → the vocabulary
   is not carrying structure; stop.
 - **Kill H3:** concept DPO does not beat byte DPO at equal compute → the
   synergy claim fails; ship the auditable codec.
@@ -193,8 +252,9 @@ Artifacts: `reports/CONCEPT.md`, `reports/RLFP-DATA.md`, `reports/RLFP.md`,
 1. **Pin M0.** Write the repair task, the pair rule, and the DPO loss. Name the
    byte and word controls.
 2. **M1.** Add `--units codec` and `--model pointer|trunk` to `cml train`;
-   tokenize the 756 kB train split with the 256-unit pack; train a 20M
-   pointer; print bits/byte, B/decision, and round-trip. If H1 fails, stop.
+   tokenize the 7.24 MB train split with the 256-unit pack; train a 5M
+   pointer at 8k steps; print bits/byte, B/decision, and round-trip. H1
+   bpb/round-trip pass; resolve the decision gate in §11.1 before M2.
 3. **M2.** Build 10k repair pairs from the code test split; train the SFT
    concept policy; verify the random and SFT baselines.
 4. **M3.** Run concept/byte/word DPO at equal pairs and compute; report H3.

@@ -894,6 +894,15 @@ def byte_preset(params: int) -> tuple[int, int, int]:
     return 576, 10, 8
 
 
+def pointer_preset(params: int) -> tuple[int, int]:
+    """d and layers for a pointer near the requested parameter count."""
+    if params <= 12_000_000:
+        return 256, 6
+    if params <= 26_000_000:
+        return 448, 8
+    return 512, 10
+
+
 class Block(nn.Module):
     def __init__(self, d: int, heads: int):
         super().__init__()
@@ -1505,6 +1514,316 @@ def train_text(
     print(text)
     print(f"wrote {report}")
     return 0
+
+
+def _concept_stream(data: bytes, lex: codec_mod.Lexicon):
+    """Ids and byte lengths for the codec parse: units, then escaped bytes."""
+    import pointer
+
+    ids = torch.from_numpy(pointer.elements(data, lex))
+    k = len(lex.units)
+    unit_len = torch.tensor([len(u) for u in lex.units], dtype=torch.long)
+    lens = torch.where(ids < k, unit_len[ids.clamp(max=k - 1)], torch.ones_like(ids))
+    return ids, lens
+
+
+def _concept_stats(ids: torch.Tensor, lens: torch.Tensor, lex: codec_mod.Lexicon):
+    """Decisions per byte, and the span-only view that the action space sees."""
+    k = len(lex.units)
+    span = ids < k
+    span_decisions = int(span.sum())
+    span_bytes = int(lens[span].sum())
+    decisions = int(ids.numel())
+    nbytes = int(lens.sum())
+    return {
+        "nbytes": nbytes,
+        "decisions": decisions,
+        "decisions_per_byte": decisions / max(nbytes, 1),
+        "bytes_per_decision": nbytes / max(decisions, 1),
+        "span_decisions": span_decisions,
+        "span_bytes": span_bytes,
+        "span_bytes_per_decision": span_bytes / max(span_decisions, 1),
+        "coverage": span_bytes / max(nbytes, 1),
+        "literal_fraction": 1 - span_decisions / max(decisions, 1),
+    }
+
+
+@torch.no_grad()
+def _trunk_bits(
+    model: Trunk, ids: torch.Tensor, lens: torch.Tensor, seq: int
+) -> tuple[float, int]:
+    """Bits and bytes over every token, including the final short window."""
+    model.eval()
+    device = next(model.parameters()).device
+    bits = 0.0
+    nbytes = 0
+    for a in range(0, ids.numel() - 1, seq):
+        x = ids[a : a + seq + 1].to(device).view(1, -1)
+        logits = model(x[:, :-1])
+        ce = F.cross_entropy(
+            logits.reshape(-1, logits.size(-1)), x[:, 1:].reshape(-1), reduction="none"
+        )
+        bits += float(ce.double().sum()) / math.log(2)
+        nbytes += int(lens[a + 1 : a + x.size(1)].sum())
+    return bits, nbytes
+
+
+def _concept_roundtrip(ids: torch.Tensor, lex: codec_mod.Lexicon) -> bytes:
+    k = len(lex.units)
+    out = bytearray()
+    for i in ids.tolist():
+        out += lex.units[i] if i < k else bytes([i - k])
+    return bytes(out)
+
+
+def train_concept(
+    corpus_name: str = "code",
+    model_kind: str = "pointer",
+    params: int = 20_000_000,
+    steps: int = 20_000,
+    seq: int = 256,
+    batch: int = 32,
+    lr: float = 3e-4,
+    seed: int = 0,
+    active: int = 256,
+    units: int = 8192,
+    min_count: int = 16,
+    cap: int = 16,
+    proof: int = 50_000,
+    rotate: int = 8,
+    full_every: int = 8,
+) -> int:
+    """M1: train a concept LM on the codec pack and write CONCEPT.md."""
+    import pointer
+
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    lex = _lexicon_for(corpus, units, min_count, cap)
+    active_lex = codec_mod.Lexicon(lex.units[:active])
+    k = len(active_lex.units)
+    rid = f"concept-{model_kind}-{corpus_name}-p{params // 1_000_000}m-s{steps}"
+    out = RUNS / rid
+    out.mkdir(parents=True, exist_ok=True)
+    test_ids, test_lens = _concept_stream(corpus.test, active_lex)
+    stats = _concept_stats(test_ids, test_lens, active_lex)
+    payload = b""
+    header_bytes = 0
+    proof_units = min(proof, int(test_ids.numel()))
+    proof_bytes = 0
+    train_loss = None
+    encode_s = None
+    if model_kind == "pointer":
+        d, layers = pointer_preset(params)
+        model, active_lex, losses = _pointer_for(
+            corpus,
+            lex,
+            active,
+            steps,
+            seed,
+            rotate,
+            full_every,
+            seq=seq,
+            span="ngram",
+            head="joint",
+            d=d,
+            layers=layers,
+        )
+        heads = model.cfg.heads
+        train_loss = sum(losses[-50:]) / max(len(losses[-50:]), 1)
+        pointer.save_model(out / "model.pt", model, model.cfg, losses)
+        test = pointer.eval_bpb(model, corpus.test, active_lex, seq=seq)
+        bits_per_byte = test["payload_bpb"]
+        pcodec = pointer.PointerCodec(model, active_lex, half=True)
+        t_enc = time.perf_counter()
+        payload = pcodec.encode(corpus.test)
+        encode_s = time.perf_counter() - t_enc
+        frame = codec_mod.pack_frame(
+            2, len(corpus.test), payload, corpus.sha, corpus.train_sha, active_lex
+        )
+        header_bytes = len(frame) - len(payload)
+        got = pcodec.decode(payload, len(corpus.test), limit=proof_units)
+        if got != corpus.test[: len(got)]:
+            raise SystemExit("concept: pointer round-trip failed")
+        proof_bytes = len(got)
+        (out / "frame.bin").write_bytes(frame)
+        roundtrip_kind = "pointer-codec"
+    elif model_kind == "trunk":
+        d, layers, heads = preset(params)
+        torch.manual_seed(seed)
+        model = Trunk(k + 256, d, layers, heads, seq).cuda()
+        train_ids, train_lens = _concept_stream(corpus.train, active_lex)
+        train_win = windows(train_ids, seq)
+        train_loss = train_loop(model, train_win, steps, batch, lr)
+        bits, nbytes = _trunk_bits(model, test_ids, test_lens, seq)
+        bits_per_byte = bits / max(nbytes, 1)
+        got = _concept_roundtrip(test_ids[:proof_units], active_lex)
+        if got != corpus.test[: len(got)]:
+            raise SystemExit("concept: trunk parse round-trip failed")
+        proof_bytes = len(got)
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "vocab": k + 256,
+                "d": d,
+                "layers": layers,
+                "heads": heads,
+                "seq": seq,
+                "params": params,
+                "pack_sha": hashlib.sha256(active_lex.blob()).hexdigest(),
+            },
+            out / "model.pt",
+        )
+        roundtrip_kind = "parse"
+    else:
+        raise SystemExit(f"train: unknown model {model_kind}")
+    nparams = sum(p.numel() for p in model.parameters())
+    n = len(corpus.test)
+    pack_bytes = len(active_lex.blob())
+    pack_sha = hashlib.sha256(active_lex.blob()).hexdigest()
+    metrics = {
+        "id": rid,
+        "arm": "concept-lm",
+        "model": model_kind,
+        "units": "codec",
+        "span": "ngram" if model_kind == "pointer" else "parse",
+        "head": "joint" if model_kind == "pointer" else "trunk",
+        "corpus": corpus_name,
+        "split": "test",
+        "n": n,
+        "bytes": n,
+        "params": nparams,
+        "d": d,
+        "layers": layers,
+        "heads": heads,
+        "seq": seq,
+        "steps": steps,
+        "batch": batch,
+        "lr": lr,
+        "seed": seed,
+        "pack_units": k,
+        "pack_bytes": pack_bytes,
+        "pack_sha": pack_sha,
+        "train_bytes": len(corpus.train),
+        "test_bytes": n,
+        "train_elements": None,
+        "test_elements": stats["decisions"],
+        "decisions": stats["decisions"],
+        "decisions_per_byte": stats["decisions_per_byte"],
+        "bytes_per_decision": stats["bytes_per_decision"],
+        "span_decisions": stats["span_decisions"],
+        "span_bytes": stats["span_bytes"],
+        "span_bytes_per_decision": stats["span_bytes_per_decision"],
+        "coverage": stats["coverage"],
+        "literal_fraction": stats["literal_fraction"],
+        "bits_per_byte": bits_per_byte,
+        "teacher_bpb": bits_per_byte,
+        "payload_bpb": 8 * len(payload) / n if payload else None,
+        "payload_bytes": len(payload) if payload else None,
+        "header_bytes": header_bytes,
+        "shared_bpb": 8 * (len(payload) + header_bytes) / n if payload else None,
+        "roundtrip": True,
+        "roundtrip_kind": roundtrip_kind,
+        "proof_units": proof_units,
+        "proof_bytes": proof_bytes,
+        "train_loss": train_loss,
+        "encode_seconds": round(encode_s, 3) if encode_s is not None else None,
+        "corpus_sha": corpus.sha,
+        "train_sha": corpus.train_sha,
+        "git": git_sha(),
+        "seconds": round(time.perf_counter() - t0, 3),
+    }
+    write_json(out / "metrics.json", metrics)
+    (out / "lexicon.bin").write_bytes(active_lex.blob())
+    report = _write_concept_report()
+    print(
+        f"{rid}: {nparams / 1e6:.2f}M params, {bits_per_byte:.3f} bpb, "
+        f"{stats['bytes_per_decision']:.3f} B/decision "
+        f"({stats['span_bytes_per_decision']:.3f} span-only), "
+        f"round-trip {proof_units} units OK"
+    )
+    print(f"wrote {report}")
+    return 0
+
+
+def _fmt(value: float | None) -> str:
+    return "-" if value is None else f"{value:.3f}"
+
+
+def _write_concept_report() -> Path:
+    """One table for every concept LM run; H1 verdict uses the best pointer."""
+    rows = []
+    for path in sorted(RUNS.glob("concept-*/metrics.json")):
+        rows.append(json.loads(path.read_text()))
+    lines = [
+        "# Concept LM (M1)",
+        "",
+        "Tokenize the code corpus with the 256-unit codec pack, then train on",
+        "unit ids. `pointer` is content-addressed; `trunk` needs a new row for",
+        "a new unit and is the fixed-vocab control.",
+        "",
+        "| model | params | steps | bits/byte | payload | shared | "
+        "B/decision | span B/dec | coverage | round-trip | pack B | run |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+    ]
+    for m in rows:
+        lines.append(
+            f"| {m['model']} | {m['params'] / 1e6:.2f}M | {m['steps']} | "
+            f"{m['bits_per_byte']:.3f} | {_fmt(m['payload_bpb'])} | "
+            f"{_fmt(m['shared_bpb'])} | {m['bytes_per_decision']:.3f} | "
+            f"{m['span_bytes_per_decision']:.3f} | {m['coverage']:.3f} | "
+            f"{m['roundtrip_kind']} | {m['pack_bytes']:,} | `{m['id']}` |"
+        )
+    ptr = [m for m in rows if m["model"] == "pointer"]
+    best = min(ptr, key=lambda m: m["bits_per_byte"]) if ptr else None
+    lines += ["", "## H1", ""]
+    if best is None:
+        lines += ["No pointer run yet."]
+    else:
+        bpb = best["bits_per_byte"]
+        payload = best["payload_bpb"]
+        shared = best["shared_bpb"]
+        bpd = best["bytes_per_decision"]
+        span_bpd = best["span_bytes_per_decision"]
+        bpb_pass = bpb <= 1.75 and payload <= 1.75 and shared <= 1.75
+        rt_pass = bool(best["roundtrip"])
+        dec_pass = bpd >= 2.5
+        span_pass = span_bpd >= 2.5
+        lines += [
+            f"- **bits/byte** {bpb:.3f} (payload {payload:.3f}, "
+            f"shared {shared:.3f}) ≤ 1.75: "
+            f"{'PASS' if bpb_pass else 'FAIL'} (kill at 1.9)",
+            f"- **round-trip** {best['proof_units']:,} units / "
+            f"{best['proof_bytes']:,} B: {'PASS' if rt_pass else 'FAIL'} "
+            f"({best['roundtrip_kind']})",
+            f"- **B/decision** {bpd:.3f} ≥ 2.5: "
+            f"{'PASS' if dec_pass else 'FAIL'}",
+            f"- **span-only B/decision** {span_bpd:.3f} ≥ 2.5: "
+            f"{'PASS' if span_pass else 'FAIL'}",
+            f"- literal fraction {best['literal_fraction']:.3f}; the 256-unit "
+            "pack covers only 45% of test bytes, so an escape costs one decision "
+            "for one byte.",
+            "",
+            "The conjunction is the issue: at 256 units the payload gate passes, "
+            "but the decision gate cannot. The span-only figure is the action-",
+            "space view; the overall figure charges the byte escape. Do not",
+            "reinterpret the gate silently; either accept the escape charge or",
+            "choose a larger pack for RLFP and pay its header.",
+        ]
+    lines += [
+        "",
+        "## Controls and next",
+        "",
+        "- `trunk` is the fixed-vocabulary control: the same parse, integer ids.",
+        "- M2 needs 10k span-repair pairs and an SFT concept policy; no `cml rl`",
+        "  until the concept LM prints.",
+        "- M3 compares concept/byte/word DPO at equal pairs and compute.",
+        "",
+    ]
+    report = REPORTS / "CONCEPT.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -4611,6 +4930,15 @@ def main(argv: list[str] | None = None) -> int:
     sp.add_argument("--seed", type=int, default=0)
     tr = sub.add_parser("train")
     tr.add_argument("--corpus", default="enwik8_100m")
+    tr.add_argument("--units", choices=("word", "codec"), default="word")
+    tr.add_argument("--model", choices=("pointer", "trunk"), default="trunk")
+    tr.add_argument("--active", type=int, default=256)
+    tr.add_argument("--concept-seq", type=int, default=256)
+    tr.add_argument("--rotate", type=int, default=8)
+    tr.add_argument("--full-every", type=int, default=8)
+    tr.add_argument("--min-count", type=int, default=16)
+    tr.add_argument("--cap", type=int, default=16)
+    tr.add_argument("--proof", type=int, default=50_000)
     tr.add_argument("--params", type=int, default=20_000_000)
     tr.add_argument("--steps", type=int, default=30_000)
     tr.add_argument("--seq", type=int, default=128)
@@ -4753,6 +5081,26 @@ def main(argv: list[str] | None = None) -> int:
             a.run, a.prompt.encode(), a.bytes, a.temperature, a.top_k, a.seed
         )
     if a.cmd == "train":
+        if a.units == "codec":
+            if a.corpus not in ("code", "shakespeare"):
+                raise SystemExit("train: --units codec needs code or shakespeare")
+            return train_concept(
+                a.corpus,
+                a.model,
+                a.params,
+                a.steps,
+                a.concept_seq,
+                a.batch,
+                a.lr,
+                a.seed,
+                a.active,
+                8192,
+                a.min_count,
+                a.cap,
+                a.proof,
+                a.rotate,
+                a.full_every,
+            )
         return train_text(
             a.corpus,
             a.params,
