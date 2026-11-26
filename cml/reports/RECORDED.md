@@ -18,6 +18,7 @@ installed lexicon, which the frame carries); `self` adds the 4-bit base.
 | concept | code | 1ccd9ffc | 70000 | 1.946 | 2.268 | 299.886 | 30000 | 2771 | ✓ | `codec-concept-code-70000-nj` |
 | concept | code | 1ccd9ffc | 756752 | 2.207 | 2.237 | 28.498 | 50000 | 2771 | ✓ | `codec-concept-code-756752` |
 | concept | code | 1ccd9ffc | 756752 | 2.187 | 2.421 | 28.682 | 50000 | 22079 | ✓ | `codec-concept-code-756752-a2048` |
+| concept | code | 1ccd9ffc | 756752 | 1.798 | 2.032 | 29.562 | 50000 | 22079 | ✓ | `codec-concept-code-756752-a2048-nj` |
 | concept | code | 1ccd9ffc | 756752 | 1.692 | 1.722 | 29.252 | 50000 | 2771 | ✓ | `codec-concept-code-756752-nj` |
 | hybrid | code | 1ccd9ffc | 5000 | 1.725 | 2.054 | 3893.254 | 1004 B | 156 | ✓ | `codec-hybrid-code-5000` |
 | hybrid | code | 1ccd9ffc | 70000 | 1.930 | 1.954 | 279.897 | 10000 B | 156 | ✓ | `codec-hybrid-code-70000` |

@@ -54,6 +54,11 @@ vs the 4.86M byte-model **1.693 / 1.694**. The payload tie is the result: the
 installed pack replaces trained vocabulary capacity. The 2,771 B pack charge is
 the whole remaining deficit; the priced parse and a smaller pack target it.
 
+The pack-size test is decisive: 2048 units / 22,079 B records **1.798 / 2.032**
+at the same n. Coverage rises 0.453 -> 0.817, but the 2048-way head loses more
+payload than the coverage buys, and the charge adds 0.204. The optimum is on the
+small side; test 64/128 next, not larger.
+
 The qualitative loop, measured by `cml demo` on the 70k n-gram joint run:
 install (256 units / 2,771 B), provenance 70,000/70,000 B, `rm` (298 spans,
 round-trip OK), and a pack induced on bytes the model never trained on (2.193
@@ -70,10 +75,9 @@ with holes; `cml generate` samples from the installed pack.
    (0.028 -> 0.014 bpb) and doubles the unit context. The model cache now
    keys on `q<seq>`. Command:
    `cml codec --bytes 756752 --span ngram --head joint --seq 512`.
-3. **Pack sweep** 64 / 128 / 512 units at 756 kB. The open question is where
-   the marginal payload gain equals the pack charge; 256 units is at 1.692 +
-   0.028. The 2048-unit n-gram joint run is in flight
-   (`codec-concept-code-756752-a2048-nj`).
+3. **Pack sweep** 64 / 128 / 512 units at 756 kB. 2048 units is measured and
+   worse (1.798 / 2.032), so the optimum is at or below 256; the question is
+   where the marginal payload gain equals the pack charge.
 4. **Local copy (r2)** as the next matrix axis: a window-local copy symbol for
    spans the installed pack cannot cover.
 5. **Q4** class split and the rent λ sweep on the matrix rows.
