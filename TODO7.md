@@ -69,24 +69,37 @@ Start with `jn` (n-gram joint), the 1 MB winner. Add `gc` and `jc` only if the
 install deltas separate them. `jcp` (priced) is a parse probe, not a P0 config:
 at 70k it chose the same parse as greedy.
 
-### P0 status (2026-11-26) — both arms done, both gates pass
+### P0 status (2026-11-26) — P0a works; the install claim fails without oracle leakage
 
 | arm | command | result | artifact |
 |---|---|---|---|
 | P0a | `cml lm --corpus shakespeare --tiny --steps 2000 --prompt "ROMEO:" --sample 400` | 1,143,680 params (d128, 4 layers); train loss **2.944** nats/elem; train bpb **2.412**; test payload **2.775 bpb** on 111,558 B, coverage **0.690**; 256-unit / **1,409 B** pack; 4,000-unit proof OK; 400 B sample tagged per span | `reports/LM.md`, `runs/lm-shakespeare-tiny-s2000/` |
-| P0b | `cml install --corpus code --package networkx --active 256 --steps 3000` | same 5.2M model, 3000 steps, 54 held-out networkx files / 756,536 B: **(a) train 1.939**, **(b) package 2.027**, **(c) none 4.898 bpb**; `(b)-(a)=+0.088` (bar 0.15), `(c)-(a)=+2.959` (bar 0.20) | `reports/INSTALL.md`, `runs/install-code-networkx-a256-s3000/` |
+| P0b (oracle) | `cml install --corpus code --package networkx --active 256 --steps 3000` | **(a) train 1.939**, **(b) package 2.027**, **(c) none 4.898 bpb**; `(b)-(a)=+0.088`, `(c)-(a)=+2.959` | `reports/INSTALL.md`, `runs/install-code-networkx-a256-s3000/` |
+| P0b (no oracle) | `cml install --corpus code --package networkx --active 256 --steps 3000 --transfer` | 3000 steps: **A→B +0.212**, **B→A +0.150**; 8000 steps: **A→B +0.280**, **B→A +0.209** bpb | `reports/INSTALL-TRANSFER.md`, `runs/install-transfer-code-networkx-a256-s*/` |
 
-The install is causal at this slice: the same trained model reads a pack
-induced on the target package within **0.088 bpb** of its train pack, and the
-train pack beats all literals by **2.959 bpb**. The no-pack arm also shows the
-pack is doing the work, not the byte head.
+P0a works: the model continues a prompt and tags every emitted span.
+
+**The install delta does not survive a genuine unseen pack.** The P0b oracle
+pack `(b)` is induced on the exact bytes it encodes, so its +0.088 is circular.
+When the pack is induced on one half of networkx's held-out files and encodes
+the other half, the same trained model loses **+0.21 to +0.28 bpb** against its
+train pack — outside the 0.15 bar in both directions at 8,000 steps. The train
+pack still beats all literals by 3.6-3.8 bpb; that measures the pack's value,
+not install.
+
+**Decision: stop the LLM-adaptation branch** per the P0b fallback. Ship the
+auditable codec: provenance, `rm`, `merge`, install. That product works and is
+unique without a bpb win.
 
 What changed to get there:
 
 - `cml lm` feeds the prompt through the coder's window/cache path and tags
   each emitted span `copy@<pack offset>` or `~neural`.
 - `cml install` encodes the held-out package with three packs and writes the
-  gate. The no-pack arm exposed a zero-unit bug in `PointerLM._inputs`; fixed.
+  oracle gate.
+- `cml install --transfer` induces the pack on one held-out half and encodes
+  the other, both directions. It returns non-zero when the 0.15 bar fails.
+- The no-pack arm exposed a zero-unit bug in `PointerLM._inputs`; fixed.
 - `PointerCodec.continuation` resets the cache at every `seq` boundary (the
   old `sample` grew the cache without bound).
 - The `_run_concept` metrics bug (the greedy parse list overwrote `parse` in
@@ -103,7 +116,7 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M0 | **done** | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`; `cml coder --test` passes 10k fixed + 10k adaptive symbols and a 200 kB byte round-trip |
 | M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
-| M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
+| M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** at 70k (the 756k transfer fails — see P0 status) |
 | M4 | **1 MB tie; matrix owns it** | 756,752 B: byte-model 4.86M **1.693/1.694/27.404**; pointer n-gram+joint 5.21M **1.692/1.722/29.252** with a 256-unit (2,771 B) pack. Payload is **equal to the byte model**; `shared` loses only the **0.028** pack charge. The matrix lifted the 70k payload 2.386 → 2.139 → 2.039 → **1.946**, and the 1 MB payload 2.207 → **1.692**. Priced parse ties greedy at 70k; 2048 units is a measured negative |
 | M5 | **ops + Q2/Q3 done** | `cml pack verify/trace/diff/merge/rm`; `cml demo` installs, traces, edits, then installs an unseen pack; `cml generate` samples from the pack. Q2: 756,752 B, 511,933 elements, provenance contiguous 100%. Q3: `rm self` hits 4 spans / 18 B, +2 B, round-trip; pointer `rm s` hits 222 spans |
 | M6-M7 | **not started** | The P1 text control and the librarian remain |
@@ -122,7 +135,7 @@ slice, pack and proof, and writes `reports/ARENA.md`.
 | pack | 256 / 2048 / 8192 | r3/r5 rent | 2048 is a measured negative: 1.798/2.032 vs 1.692/1.722 |
 | copy | none, window-local | r2 | next |
 | templates | none, holes | r7 librarian | next |
-| adapter | no pack, installed | r1/r3 | P0b: installed 2.027 vs train 1.939, no pack 4.898 |
+| adapter | no pack, installed | r1/r3 | oracle install 2.027; unseen pack **+0.21-0.28** bpb → branch stops |
 
 Rows at 70k, 256 units, 8k steps, proof 50k (payload / shared):
 
@@ -151,37 +164,45 @@ payload, exact round-trip). `cml templates` lifts e.g. 23 repeated dict literals
 with holes; `cml generate` samples from the installed pack. P0b replaces the
 single unseen-pack demo with the measured three-pack install delta above.
 
-### Next queue (after P0)
+### Next queue (after the P0 verdict)
 
-1. **Batch the byte coder** (window segments) and **share the trunk** across
-   head variants. Then re-run the code matrix at 756 kB. These two cut the
-   matrix compute by ~10x.
-2. **Local copy (r2)** and **market admission (r5)** are the remaining bpb
-   levers; price them. Do not sweep pack size (256 is optimal).
-3. **Q4** class split and the rent λ sweep.
-4. **M6-M7:** the P1 text control on the 1 MB enwik8 test, then templates
-   with holes.
+The LLM-adaptation branch stops; the auditable codec is the product.
+
+1. **Ship the auditable codec.** `cml demo` and
+   `cml pack verify/trace/diff/merge/rm` already install, trace, edit and
+   re-install. Add the product README and one stable end-to-end path. Do not
+   claim a bpb win.
+2. **Keep P0a** as the qualitative LLM demo. Do not claim text bpb until the
+   1 MB enwik8 test.
+3. **Reopen the bpb branch only with a new idea**: local copy (r2), market
+   admission (r5), or a model/pack adaptation that closes the 0.21-0.28 gap.
+   Byte-coder batching and trunk sharing alone cannot fix install.
+4. **Diagnostics, not gates:** Q4 class split and the rent λ sweep.
+5. **M6/M7** are optional; the P1 text control and templates are not on the
+   product path.
 
 Concrete remaining work, in order:
 
-1. `cml arena` at 756 kB with the batched byte coder and the shared trunk;
-   confirm the 1 MB tie is not a one-seed artifact.
-2. Local copy (r2): LZ distance+length inside the last 1-4 kB; charge the
-   distance and prove the range.
-3. Market admission (r5): admit a unit only when measured saving > charge.
-4. Q4: class split of the recorded bits (identifier/keyword/operator/literal/
-   whitespace/comment); the rent λ sweep.
-5. M6: the P1 trunk concept codec on the 1 MB enwik8 test. M7: templates
-   with holes.
+1. Write the product section in `cml/README.md`: install, provenance, trace,
+   `rm`, `merge`, and the limit (no bpb win on an unseen pack).
+2. Run `cml demo` and `cml pack verify` on the recorded 756 kB row as the
+   acceptance test.
+3. If the bpb branch reopens: local copy (r2) first; it is the only lever
+   that adds bytes the static pack cannot hold. Then market admission (r5).
+4. Q4 class split and the rent λ sweep are diagnostics; report them only if
+   they explain the 0.21-0.28 gap.
+5. M6 (1 MB enwik8) and M7 (templates) remain optional.
 
 Two build notes. The pointer encodes 228k units in 63 s at 756 kB (12 kB/s,
 batch 32); the a2048 pack does 18 kB/s because each window covers more bytes.
 The 3000-step install encodes the 756,536 B package in 75 s (train pack),
-71 s (package pack) and 124 s (all literals). The byte-model run took 3,092 s
-end-to-end on the same slice. A 50k-unit proof decodes in seconds, and
-per-window framing costs ~3 B/window (charged in `header`). Single runs, so
-treat the rates as indicative. `code_corpus(refreeze=True)` takes a new
-snapshot; normal runs never read the moving working tree.
+71 s (package pack) and 124 s (all literals). The no-oracle transfer takes
+255 s at 3,000 steps and 619 s at 8,000 steps (338 s train + 6 encodes). The
+byte-model run took 3,092 s end-to-end on the same slice. A 50k-unit proof
+decodes in seconds, and per-window framing costs ~3 B/window (charged in
+`header`). Single runs, so treat the rates as indicative.
+`code_corpus(refreeze=True)` takes a new snapshot; normal runs never read the
+moving working tree.
 
 
 ## 0. What is measured (start from this, do not re-derive)
@@ -193,7 +214,8 @@ snapshot; normal runs never read the moving working tree.
 | P0 adapter charged (name paid) | 3.97 bpb, **−2.224 net** → P0a fails | `runs/p0-adapter-4e989907-s0/` |
 | P0 code oracle / charged | 2.739 / **−0.403** | `runs/p0-code-79525d79-s0/` |
 | P0a Tiny Shakespeare | 1.14M, train loss 2.944, test payload **2.775 bpb** | `runs/lm-shakespeare-tiny-s2000/` |
-| P0b install delta | (a) **1.939**, (b) 2.027, (c) 4.898; `(b)-(a)+0.088`, `(c)-(a)+2.959` | `runs/install-code-networkx-a256-s3000/` |
+| P0b install delta (oracle) | (a) **1.939**, (b) 2.027, (c) 4.898; `(b)-(a)+0.088`, `(c)-(a)+2.959` | `runs/install-code-networkx-a256-s3000/` |
+| P0b transfer (no oracle) | 8k: `(b)-(a)` **+0.280 / +0.209**; 3k: +0.212 / +0.150 → fails | `runs/install-transfer-code-networkx-a256-s8000/` |
 | the gate | length is the predictor; tied = counts (0.510/0.510), cos AUC 0.427 | `runs/p0-linchpin-5fb03736-s0/` |
 | measured speed (20.46M, batch 32×128) | encode **286k units/s**; `win_step` **6.9 ms/unit** | this session |
 | the only decodable P0 row | LoRA −0.033 | `runs/p0-lora-4ab0bed1-s0/` |

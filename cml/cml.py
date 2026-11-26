@@ -3484,6 +3484,34 @@ def run_lm(
     return 0
 
 
+def _encode_row(
+    model, data: bytes, lex: codec_mod.Lexicon, proof: int
+) -> dict[str, object]:
+    """Encode one pack on one slice; decode the proof and return the row."""
+    import pointer
+
+    pc = pointer.PointerCodec(model, lex, half=True)
+    ids, covered = codec_mod.greedy_parse(data, lex)
+    stats = codec_mod.parse_stats(ids, lex, len(data), covered)
+    t_enc = time.perf_counter()
+    payload = pc.encode(data)
+    encode_s = time.perf_counter() - t_enc
+    want = min(proof, len(ids))
+    out = pc.decode(payload, len(data), limit=want)
+    return {
+        "units": len(lex.units),
+        "lexicon_bytes": len(lex.blob()),
+        "payload_bytes": len(payload),
+        "payload_bpb": 8 * len(payload) / max(len(data), 1),
+        "coverage": stats["coverage"],
+        "mean_unit": stats["mean_unit"],
+        "literals": stats["literals"],
+        "encode_seconds": round(encode_s, 3),
+        "proof_bytes": len(out),
+        "roundtrip": out == data[: len(out)],
+    }
+
+
 def run_install(
     corpus_name: str = "code",
     package: str = "networkx",
@@ -3526,36 +3554,15 @@ def run_install(
     )
     rows = []
     for tag, name, lex in packs:
-        pc = pointer.PointerCodec(model, lex, half=True)
-        ids, covered = codec_mod.greedy_parse(data, lex)
-        stats = codec_mod.parse_stats(ids, lex, len(data), covered)
-        t_enc = time.perf_counter()
-        payload = pc.encode(data)
-        encode_s = time.perf_counter() - t_enc
-        want = min(proof, len(ids))
-        out = pc.decode(payload, len(data), limit=want)
-        ok = out == data[: len(out)]
-        rows.append(
-            {
-                "pack": tag,
-                "name": name,
-                "units": len(lex.units),
-                "lexicon_bytes": len(lex.blob()),
-                "payload_bytes": len(payload),
-                "payload_bpb": 8 * len(payload) / max(len(data), 1),
-                "coverage": stats["coverage"],
-                "mean_unit": stats["mean_unit"],
-                "literals": stats["literals"],
-                "encode_seconds": round(encode_s, 3),
-                "proof_bytes": len(out),
-                "roundtrip": ok,
-            }
-        )
+        row = _encode_row(model, data, lex, proof)
+        row.update(pack=tag, name=name)
+        rows.append(row)
         print(
-            f"  ({tag}) {name:8s}: {len(lex.units):3d} units / "
-            f"{len(lex.blob()):5d} B, {len(payload):6d} B payload, "
-            f"{rows[-1]['payload_bpb']:.3f} bpb, "
-            f"coverage {stats['coverage']:.3f}, proof {'OK' if ok else 'FAIL'}",
+            f"  ({tag}) {name:8s}: {row['units']:3d} units / "
+            f"{row['lexicon_bytes']:5d} B, {row['payload_bytes']:6d} B payload, "
+            f"{row['payload_bpb']:.3f} bpb, "
+            f"coverage {row['coverage']:.3f}, proof "
+            f"{'OK' if row['roundtrip'] else 'FAIL'}",
             flush=True,
         )
     a, b, c = (row["payload_bpb"] for row in rows)
@@ -3641,6 +3648,171 @@ def run_install(
     )
     print(f"wrote {report}")
     return 0
+
+
+def _file_halves(corpus: CodeCorpus, files: list[tuple[str, int, int]]):
+    """Split the package's held-out files into two concatenated halves."""
+    k = len(files) // 2
+    a = b"".join(corpus.raw[start:end] for _, start, end in files[:k])
+    b = b"".join(corpus.raw[start:end] for _, start, end in files[k:])
+    return a, b
+
+
+def run_install_transfer(
+    corpus_name: str = "code",
+    package: str = "networkx",
+    active: int = 256,
+    steps: int = 3000,
+    units: int = 8192,
+    min_count: int = 16,
+    cap: int = 16,
+    proof: int = 4000,
+    seed: int = 0,
+    rotate: int = 8,
+    full_every: int = 8,
+) -> int:
+    """P0b without the oracle: pack on one held-out half, encode the other."""
+    import pointer
+
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    _, files = _package_files(corpus, package)
+    if len(files) < 2:
+        raise SystemExit("install: the package needs at least two held-out files")
+    left, right = _file_halves(corpus, files)
+    halves = (("A->B", left, right), ("B->A", right, left))
+    train_lex = _lexicon_for(corpus, units, min_count, cap)
+    model, train_pack, losses = _pointer_for(
+        corpus,
+        train_lex,
+        active,
+        steps,
+        seed,
+        rotate,
+        full_every,
+        span="ngram",
+        head="joint",
+        seq=256,
+    )
+    run_dir = RUNS / f"install-transfer-{corpus_name}-{package}-a{active}-s{steps}"
+    pointer.save_model(run_dir / "model.pt", model, model.cfg, losses)
+    runs = []
+    for label, pack_src, held in halves:
+        package_pack = codec_mod.build_lexicon(pack_src, active, min_count, cap)
+        rows = []
+        for tag, name, lex in (
+            ("a", "train", train_pack),
+            ("b", "half", package_pack),
+            ("c", "none", codec_mod.Lexicon(())),
+        ):
+            row = _encode_row(model, held, lex, proof)
+            row.update(pack=tag, name=name)
+            rows.append(row)
+            print(
+                f"  {label} ({tag}) {name:5s}: {row['units']:3d} units / "
+                f"{row['lexicon_bytes']:5d} B, {row['payload_bytes']:6d} B, "
+                f"{row['payload_bpb']:.3f} bpb, "
+                f"coverage {row['coverage']:.3f}, proof "
+                f"{'OK' if row['roundtrip'] else 'FAIL'}",
+                flush=True,
+            )
+        a, b, c = (row["payload_bpb"] for row in rows)
+        d_ba, d_ca = b - a, c - a
+        delta_ok = abs(d_ba) <= 0.15
+        gain_ok = d_ca >= 0.2
+        runs.append(
+            {
+                "direction": label,
+                "pack_source_bytes": len(pack_src),
+                "heldout_bytes": len(held),
+                "pack_bytes": len(package_pack.blob()),
+                "rows": rows,
+                "delta_b_minus_a": d_ba,
+                "delta_c_minus_a": d_ca,
+                "pass_delta": delta_ok,
+                "pass_gain": gain_ok,
+            }
+        )
+        (run_dir / f"pack-{label.replace('->', '')}.bin").write_bytes(
+            package_pack.blob()
+        )
+    write_json(
+        run_dir / "metrics.json",
+        {
+            "id": run_dir.name,
+            "corpus": corpus_name,
+            "corpus_sha": corpus.sha,
+            "train_sha": corpus.train_sha,
+            "package": package,
+            "files": len(files),
+            "split": len(files) // 2,
+            "steps": steps,
+            "active": active,
+            "rotate": rotate,
+            "full_every": full_every,
+            "params": sum(p.numel() for p in model.parameters()),
+            "directions": runs,
+            "git": git_sha(),
+            "seconds": round(time.perf_counter() - t0, 3),
+        },
+    )
+    lines = [
+        "# Install transfer (P0b, no oracle)",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, train "
+        f"{len(corpus.train):,} B, test {len(corpus.test):,} B",
+        f"- package `{package}`: {len(files)} held-out files split at "
+        f"{len(files) // 2}; A {len(left):,} B, B {len(right):,} B",
+        f"- {steps} steps, {active} active units, ngram-joint, seq {model.cfg.seq}",
+        "",
+        "`(b)` is induced on one half and encodes the other, so the pack never",
+        "touches the bytes in its payload.  `(a)` is the train pack; `(c)` is",
+        "all literals.",
+        "",
+        "| direction | pack | units | pack B | payload B | payload bpb | coverage | proof |",
+        "|---|---|---:|---:|---:|---:|---:|:---:|",
+    ]
+    for run in runs:
+        for row in run["rows"]:
+            lines.append(
+                f"| {run['direction']} | ({row['pack']}) {row['name']} | "
+                f"{row['units']} | {row['lexicon_bytes']} | "
+                f"{row['payload_bytes']} | {row['payload_bpb']:.3f} | "
+                f"{row['coverage']:.3f} | "
+                f"{'OK' if row['roundtrip'] else 'FAIL'} |"
+            )
+    lines += [
+        "",
+        "| direction | `(b)-(a)` | `(c)-(a)` | gate |",
+        "|---|---:|---:|---|",
+    ]
+    for run in runs:
+        ok = run["pass_delta"] and run["pass_gain"]
+        lines.append(
+            f"| {run['direction']} | {run['delta_b_minus_a']:+.3f} | "
+            f"{run['delta_c_minus_a']:+.3f} | {'PASS' if ok else 'FAIL'} |"
+        )
+    both = all(r["pass_delta"] and r["pass_gain"] for r in runs)
+    lines += [
+        "",
+        "Bars: `|(b)-(a)| <= 0.15` and `(c)-(a) >= 0.20`, in both directions.",
+        f"Overall: **{'PASS' if both else 'FAIL'}**.",
+        "",
+    ]
+    report = REPORTS / "INSTALL-TRANSFER.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    for run in runs:
+        print(
+            f"{run['direction']}: (a) {run['rows'][0]['payload_bpb']:.3f}, "
+            f"(b) {run['rows'][1]['payload_bpb']:.3f}, "
+            f"(c) {run['rows'][2]['payload_bpb']:.3f} bpb; "
+            f"(b)-(a) {run['delta_b_minus_a']:+.3f}, "
+            f"(c)-(a) {run['delta_c_minus_a']:+.3f}"
+        )
+    print(f"{'PASS' if both else 'FAIL'}: wrote {report}")
+    return 0 if both else 1
 
 
 def templates(run: str, top: int = 10) -> int:
@@ -4000,6 +4172,7 @@ def main(argv: list[str] | None = None) -> int:
     ins.add_argument("--seed", type=int, default=0)
     ins.add_argument("--rotate", type=int, default=8)
     ins.add_argument("--full-every", type=int, default=8)
+    ins.add_argument("--transfer", action="store_true")
     tp = sub.add_parser("templates")
     tp.add_argument("run")
     tp.add_argument("--top", type=int, default=10)
@@ -4111,6 +4284,20 @@ def main(argv: list[str] | None = None) -> int:
             a.seed,
         )
     if a.cmd == "install":
+        if a.transfer:
+            return run_install_transfer(
+                a.corpus,
+                a.package,
+                a.active,
+                a.steps,
+                a.units,
+                a.min_count,
+                a.cap,
+                a.proof,
+                a.seed,
+                a.rotate,
+                a.full_every,
+            )
         return run_install(
             a.corpus,
             a.package,
