@@ -157,6 +157,9 @@ The four bets, and where they live:
 - `cml breadth`: small hyperparameter grids for copy, library, edit prefixes,
   and speculative draft length; `reports/BREADTH.md`. Copy key 1 -> 6 moves
   0.135 -> 0.650 exact; library order 1 -> 5 moves 0.030 -> 0.205.
+- `cml portfolio`: aggregates every measured arm into a Pareto frontier and a
+  50/30/20 allocation (frontier/near/exploration); `reports/PORTFOLIO.md`.
+  It parks families without killing them.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,

@@ -1,325 +1,257 @@
-# TODO8 — concepts as the post-training action space
+# TODO8 — a portfolio system for concept-native LMs
 
-The codec's multi-byte units are not only a compression alphabet. They are the
-concept model's vocabulary and RLFP's action space. A model that predicts and
-acts on these units makes fewer, longer decisions; a preference signal can be
-projected onto exact concepts; and `rm`/`merge` edit the policy without a
-gradient step. The gate is preference reward per compute, not bpb.
+The codec's multi-byte units are not only a compression alphabet. They are a
+candidate action space for an exact, editable code LM. This file is a **portfolio
+plan**, not a single-bet plan: every relevant family gets a fair grid, a shared
+task, and a budget. The system keeps a Pareto frontier and invests more only
+where a family earns it. A family is never killed by one configuration.
 
-`TODO7.md` remains the codec record and the auditable-codec product. This file
-is the synergy plan.
+`TODO7.md` remains the codec record and the auditable-codec product. `cml/PLAN.md`
+holds the older design; this file is the active experiment system.
 
-## Progress (2026-11-26)
-| M | status | evidence |
+## 1. The system
+
+The unit of work is an **arm**:
+
+```
+arm = (family, mechanism, hyperparameters, data, seed, compute)
+```
+
+Each arm runs the same task suite and writes one capability vector:
+
+```
+exact_span, bits_per_span, decisions_per_span,
+copy_hit, target_calls, edit_delta, roundtrip,
+payload_bpb, shared_bpb, pack_bytes, seconds
+```
+
+The system does five things:
+
+1. **Baseline** every family on a fast shared task.
+2. **Grid** each family over its own hyperparameters.
+3. **Pareto-rank** the arms; no single metric decides.
+4. **Combine** promoted mechanisms (concept + copy, edit + spec, pack + library).
+5. **Scale** only combinations that survive the frontier.
+
+The goal is not one metric. The goal is to find the most useful, unique
+end-to-end combinations and keep the evidence for every family.
+
+## 2. Shared tasks
+
+| task | input | output | cost | use |
+|---|---|---|---|---|
+| **T1 span repair** | 70k held-out bytes, 200 matched spans | exact span, bits/span, decisions/span | seconds-minutes | fast capability |
+| **T2 compression** | 756,752 B held-out code | payload/shared bpb, round-trip, provenance | minutes | codec claim |
+| **T3 edit** | T1 plus a deleted/merged prefix | survivor exact, removed count, bpb delta, round-trip | minutes | causal editability |
+| **T4 draft** | T1 contexts | accepted concepts per target call, K | minutes | speculative value |
+| **T5 install** | held-out package/half | bpb delta, provenance | minutes | transferable vocabulary |
+| **T6 library** | T1 contexts plus train templates | exact, fill accuracy | hours | composition |
+| **T7 preference** | 10k repair pairs | pairwise accuracy, win rate, KL | hours-days | RLFP, optional |
+
+T1 is the common screen. T2 is the honest compression check. T3-T6 test the
+properties that make the architecture different from a byte LM. T7 is not the
+first gate; it runs only when a combination earns it.
+
+## 3. Families and first grids
+
+| family | mechanism | current evidence | first grid | task |
+|---|---|---|---|---|
+| **r1** adapter/install | charged copy / equal bytes | oracle +0.758; charged −2.224; P0a fails | dict size, charge, no-pack, transfer | T5 |
+| **r2** copy/hybrid | copy a prior context | key 1→6: exact 0.135→0.650; key 6 6.193 bits, 0.475 hit | key 2-8, confidence, offset threshold, pointer fallback | T1, T4 |
+| **r3** PhraseLM | lexicon-agnostic heads | concept-only 0.650; unconstrained 0.415 | gate/joint, concept-only, temperature, three heads | T1, T2 |
+| **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
+| **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb; space +0.146; newline +0.228; merge +0.108 | prefix choice, merge size, held-out win rate | T3 |
+| **r6** CMT/pack | tied entries, provenance | 2,771 B pack; 100% round-trip | active 128-2048, install/transfer, pack bytes | T2, T5 |
+| **r7** CoLib/library | holes, templates, composition | order 1→5: exact 0.030→0.205 | order 5, template/hole, retrieval, anti-unification | T6 |
+| **r8** speculative | pointer drafts, trunk verifies | K=8: 1.560 accepted/call; K=4: 1.410 | K 2-16, draft cost, verifier calls | T4 |
+| **r9** RLFP/DPO | preference projection | untested; decision gate is span-policy | pairs 2k-10k, SFT, DPO, KL | T7 |
+| **r10** scale | larger model/data | 20M overfits at 7.2 MB; host restarts | 5M/10M/20M, more unique code | T2 |
+
+The family list is not a kill list. It is the current search space. A family
+with a weak first grid gets another config before it is parked.
+
+## 4. What is established
+
+| result | number | evidence |
 |---|---|---|
-| M0 | **done** | §0 pins DPO, span repair, verifiable bytes, and the byte/word/concept controls |
-| M1 | **printed; H1 pass (span-policy)** | 5.21M pointer: **1.600 bpb**, 1.692 payload, 1.722 shared, 50k-unit round-trip; concept-only exact **0.650**; all-symbol 1.478 B/dec reported; `reports/CONCEPT.md` |
-| M2 | **ready (span-policy)** | concept-only exact **0.650** vs 0.415 unconstrained; all-symbol B/dec stays the compression cost |
-| M3-M5 | not started | |
-### M1 measurements
-| model | params | steps | epochs | bits/byte | payload | shared | B/dec all | B/dec span |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| pointer | 5.21M | 8,000 | 13.4 | 1.600 | 1.692 | 1.722 | 1.478 | 3.498 |
-| trunk | 4.93M | 8,000 | 13.4 | 1.516 | - | - | 1.478 | 3.498 |
-- 8,000 steps draws 65.5M elements: 13.4 epoch-equivalents over 4,897,323
-  train elements. With `rotate=8`, only 1/8 of the steps read the full pack;
-  the rest cycle four chunk packs. The first 20,000-step trial (no rotation,
-  seq 128) was 33.5 full-pack epochs and overfit: train loss 0.709
-  nats/decision, test 1.769 bpb (2.615 nats/decision). It is an overfit
-  control, not a larger-data test.
-- Both models read the same 256-unit greedy parse: pack 2,771 B, coverage
-  0.453, literal fraction 0.809.
-- The trunk is the fixed-vocabulary control: slightly better at this scale,
-  but a new concept needs a new row and a retrain.
-- H1: bits/byte **PASS** (1.600 ≤ 1.75), round-trip **PASS** (50,000 units /
-  81,531 B), all-symbol B/decision **FAIL** (1.478 < 2.5), span-only
-  B/decision **PASS** (3.498 ≥ 2.5).
-### 11.1 The decision-gate inconsistency
-The 256-unit pack covers 45.3% of test bytes. The parse has 511,933 decisions
-for 756,752 B: **1.478 B/decision** over all symbols, or **3.498 B/decision**
-over matched spans. H1 passes the 2.5 bar only if a literal escape is not a
-policy decision. H3 asks for 2x fewer decisions: concept uses 0.676
-decisions/byte, only **1.48x fewer** than byte decisions; span-only is
-0.130 span decisions/byte, **7.7x fewer**.
-Choose before M2:
-1. **All symbols (strict).** H1 fails and H3's decision clause fails. The
-   action-space claim at 256 cannot pass; a larger pack or a new metric is
-   required.
-2. **Span policy.** A policy decision is a matched concept; the byte escape is
-   charged separately. H1 passes (3.50), H3 has 7.7x fewer decisions. Report
-   the 0.809 literal fraction and the escape bytes; do not call this 2x fewer
-   all-symbol decisions.
-Recommendation: adopt span-policy decisions for the RLFP action claim, keep
-all-symbol decisions as the honest compression cost, and gate H3 on both.
-The concept-only screen is the evidence: 0.650 exact vs 0.415 unconstrained,
-1.72 vs 3.13 bits/span. Do not switch definitions silently.
-### Capability screen (2026-11-26)
-`cml screen` removes 200 matched spans from held-out code and measures exact
-reconstruction, bits/span, and decisions/span on the same task:
+| concept-only T1 | **0.650 exact / 1.720 bits / 1.00 decision** | `reports/SCREEN.md` |
+| trunk T1 | 0.480 exact / 2.590 bits / 1.00 decision | `reports/SCREEN.md` |
+| byte T1 | 0.210 exact / 12.711 bits / 3.04 decisions | `reports/SCREEN.md` |
+| concept vs byte | 3.1x exact, 3.0x fewer decisions, 7.4x fewer bits | `reports/SCREEN.md` |
+| compression | 1.600 teacher / 1.692 payload / 1.722 shared | `reports/CONCEPT.md` |
+| round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
+| local deletion | 35 removed; 165 survivors ±0.006; +0.146 bpb | `reports/EDIT-CURVE.md` |
+| merge | 256→320; +0.108 bpb; exact | `reports/SCREEN.md` |
+| copy key 6 | 0.650 exact, 0.475 hit, 6.193 bits | `reports/BREADTH.md` |
+| library order 5 | 0.205 exact, 5.970 bits | `reports/BREADTH.md` |
+| edit prefixes | `self` −0.000, `return` +0.026, indent +0.028, space +0.146, newline +0.228 | `reports/BREADTH.md` |
+| spec K=8 | 1.560 accepted concepts per trunk call | `reports/BREADTH.md` |
 
-| mechanism | family | exact span | top-1 | bits/span | decisions/span |
-|---|---|---:|---:|---:|---:|
-| **concept** | **r3/r4 concept-only** | **0.650** | 0.650 | **1.720** | 1.00 |
-| trunk | r3/r4 control | 0.480 | 0.480 | 2.590 | 1.00 |
-| pointer | r3/r4/r6 unconstrained | 0.415 | 0.415 | 3.133 | 1.00 |
-| copy | r2 copy+pointer | 0.380 | 0.380 | 8.611 | 1.00 |
-| byte | r1 baseline | 0.210 | 0.610 | 12.711 | 3.04 |
-| library | r7 order-2 | 0.150 | 0.150 | 2.465 | 1.00 |
-| counts | r1/r6 order-1 | 0.040 | 0.040 | 2.815 | 1.00 |
+The concept-only action space is the current frontier on T1. The trunk wins
+teacher-forced compression but not the concept action space. Neither result
+settles the portfolio.
 
-Edit capability (`r5`): remove every unit starting with a space.
+### 4.1 Hypotheses
 
-| stage | units | n | removed | base | exact | delta | bits/span |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| full | 256 | 200 | 0 | 0.415 | 0.415 | +0.000 | 3.133 |
-| delete | 120 | 165 | 35 | 0.485 | 0.491 | +0.006 | 2.716 |
-| restore64 | 184 | 180 | 20 | 0.461 | 0.456 | -0.006 | 2.796 |
-| restore-all | 256 | 200 | 0 | 0.415 | 0.415 | +0.000 | 3.133 |
-
-Full re-encode: `delete` costs **+0.146 bpb**, `merge` 256 -> 320 costs
-**+0.108 bpb**; both round-trip exactly.
-
-- **The concept-only action space wins the capability screen.** 0.650 exact
-  spans beat the trunk (0.480) and byte (0.210), at 1.72 bits/span and one
-  decision. The unconstrained pointer (0.415) lets a literal escape win; that
-  is the wrong action for a concept interface. Restricting the choice to the
-  pack is the architecture, not a trick.
-- Concept-only is **3.1x** byte exactness at **3.0x** fewer decisions and
-  **7.4x** fewer bits/span.
-- Deletion is **local**: 35 removed targets lose their exact concept by
-  construction; 165 survivors stay at their full-pack base (+0.006). The cost
-  is the literal escape (+0.146 bpb), not collateral damage.
-- Speculative block: one-step acceptance **0.717**; a 4-concept draft yields
-  **1.310 accepted concepts per trunk call** (8.0% all accepted). That is a
-  real but modest target-call reduction, not 2x.
-- **Do not kill copy or library on one config.** Copy key 1 -> 6 moves exact
-  **0.135 -> 0.650**; key 6 matches the concept baseline, but at **6.193
-  bits/span** and 0.475 hit. It is a fallback for repeated contexts, not a
-  replacement. Library order 1 -> 5 moves **0.030 -> 0.205**; still far.
-- Edit-prefix sweep: `self` **-0.000 bpb**, `return` +0.026, indent +0.028,
-  space +0.146, newline +0.228; all round-trip. Deleting a rare keyword is
-  nearly free; deleting whitespace is not.
-- Speculative K: 2 -> 1.065, 4 -> 1.410, 8 -> **1.560**, 16 -> 1.505
-  accepted/call. K=8 is the best draft length.
-- Still missing: `r7` template/hole composition and the `r5` held-out
-  win-rate delta.
-### 11.2 Remaining work
-- **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
-  preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.
-- **M2 SFT.** Train the concept policy on the same pack; verify the random
-  (~50%) and SFT (>55%) pairwise baselines.
-- **M3.** Run concept/byte/word DPO at equal pairs and compute; report H3 with
-  both decision definitions and held-out win rate.
-- **Scale test.** 20M/20k is deferred: it overfits at this corpus size and the
-  host restarted during the long runs. Re-run only on a stable host with
-  checkpointing; the 5.21M pointer is the H1 feasibility point.
-## 0. RLFP definition
-
-**RLFP = RL from Preferences.** It covers RLHF (reward model + PPO), DPO,
-IPO/KTO/ORPO/SimPO, and preference-based GRPO. The plan does not treat these as
-one algorithm; it pins one first and keeps the others as controls.
-
-- **Default: DPO.** Offline, stable, no reward model, cheap on pre-tokenized
-  pairs. It is the fastest test of the action-space claim.
-- **Second: PPO/GRPO** with a reward model or a verifiable reward, only if DPO
-  leaves headroom or online exploration is required.
-- **Preference source:** verifiable code repair. Preferred = the patch passes
-  tests or reconstructs the held-out bytes; dispreferred = it fails. This is
-  self-supervised and auditable. Model-generated pairs are the fallback when
-  the task is too easy.
-- **Metrics:** pairwise accuracy, win rate against the SFT policy, reward
-  margin, KL to the reference, decisions per byte, and GPU-hours.
-
-## 1. What is measured (do not re-derive)
-
-| fact | number | where |
+| id | claim | status |
 |---|---|---|
-| codec, 756,752 B, 256 units | **1.692 payload / 1.722 shared** | `runs/codec-concept-code-756752-nj/` |
-| byte model, same slice | 1.693 / 1.694 | `runs/codec-byte-model-code-756752/` |
-| oracle install | +0.088 bpb, circular | `runs/install-code-networkx-a256-s3000/` |
-| no-oracle install | +0.209 / +0.280 bpb, 8k | `runs/install-transfer-code-networkx-a256-s8000/` |
-| text LM, 90 MB / 10 MB | 20.46M, **1.517 bpb**, promptable | `runs/text-enwik8_100m-d384l8-s30000/` |
-| 10 MB P1 model | 1.920 bpb; train 1.516 → overfit | `runs/p1-class-10m-3084fd95-s0/` |
-| codec ops | provenance 100%, `trace`, `rm`, `merge` | `reports/INSTALL*.md` |
-| compute | 20M/90 MB/30k steps = 759 s; batch 64 +28-38% at 20M | profile in `TODO7.md` |
+| H1 | the 5M concept LM reads the codec pack | **pass on bpb/round-trip**; span-policy 3.498 B/decision; all-symbol 1.478 is the compression cost |
+| H2 | copy, edit, and draft add capability | **open**; key 6 copy 0.650, `self` edit −0.000, K=8 1.560 accepted/call |
+| H3 | concept DPO beats byte DPO | **untested**; only after a combination reaches the T1-T4 frontier |
+| H4 | pack edits change behavior without gradients | **local**; removed targets are lost, survivors unchanged |
+| H5 | the combination scales | **deferred**; 20M on 7.2 MB overfits; needs more code |
 
-The install result is the key correction: an unseen pack costs 0.21-0.28 bpb.
-That is a compression cost, not a policy verdict. RLFP can amortize it if a
-concept action replaces several byte actions.
+## 5. Fair allocation
 
-## 2. The missing link
+The system must not spend all energy on the current leader. Use a fixed budget
+per round.
 
-Today the codec has the pack and the text LM has the v9 word lexicon. They are
-separate systems. The pointer reads packs, but it is a codec, not a policy.
-The next build joins them:
+### Round 0: baseline grid
+- Every family gets **3-6 configs** and a **2 h** cap.
+- Fast task T1 first; T2 only for families that compress.
+- Record best, median, and worst, not only the winner.
+- No family is dropped after Round 0.
 
-1. **Concept LM.** Tokenize the code corpus with the codec pack. Train the
-   concept model on those unit ids (pointer or Trunk). The action vocabulary is
-   the pack; every action maps to exact bytes.
-2. **Preference policy.** Treat the concept model's next-concept distribution
-   as the policy. For DPO, the policy is the concept LM and the reference is a
-   frozen copy. For PPO/GRPO, add a value head.
-3. **Concept-level preference projection.** Tokenize preferred and
-   dispreferred responses with the same pack; compute the preference loss on
-   concept tokens. One action covers multiple bytes, so a response has fewer
-   decisions and less credit-assignment variance.
-4. **Editable policy.** `rm`/`merge`/install change the action set. The
-   content-addressed pointer recomputes embeddings without a gradient step; a
-   fixed-vocab Trunk is the control because it needs a new row.
+### Round 1: frontier + exploration
+- **50%** of time to Pareto-frontier arms.
+- **30%** to near-frontier arms (within 20% on one axis).
+- **20%** exploration reserve for parked families and new combinations.
+- Promote combinations, not just single families.
 
-Architectural choice:
+### Round 2: combinations and scale
+- **70%** to the best combinations.
+- **20%** to near-frontier alternatives.
+- **10%** to a deliberate wildcard.
+- Scale only combinations that keep round-trip and provenance.
 
-| model | install/rm cost | use |
+Hard caps:
+- 5M parameters and 70k bytes for the fast loop.
+- 2 h per arm; no 20k-step run.
+- 756k/T2 only for promoted arms.
+- Checkpoint every arm; a host restart must not lose a run.
+
+## 6. Promotion and parking
+
+An arm is **promoted** when it is on the Pareto frontier or gives a clear
+tradeoff:
+
+- exact +10% with bits +10% or less,
+- bits −10% with exact −5% or less,
+- decisions −20% with exact −5% or less,
+- target calls −20% with exact unchanged,
+- a new capability (edit, transfer, library) with exact ≥0.40.
+
+An arm is **parked** when its whole grid is dominated. Parking is not a kill:
+record the grid, the best/worst, and the condition that would reopen it. The
+exploration reserve can reopen any parked family when a new combination or task
+makes it relevant.
+
+Do not:
+- call one config a verdict,
+- compare across different tasks,
+- promote a bpb win that loses round-trip or provenance,
+- start RLFP before a combination survives T1-T4,
+- train 20M on 7.2 MB.
+
+## 7. Combination matrix
+
+The unique result is likely a combination, not a single family.
+
+| combination | tests | why |
 |---|---|---|
-| pointer, content-addressed | zero weights; recompute `e_c` | preferred for editability |
-| Trunk, tied unit embeddings | new row + retrain | fixed-pack baseline |
+| concept + long-key copy | T1, T4 | copy for repeats, concept for novel spans |
+| concept + pack size | T1, T2 | more concepts may raise exactness or reduce decisions |
+| concept + edit | T3 | delete/merge a concept and measure survivors |
+| concept + spec K=8 | T4 | fewer target calls at the same exactness |
+| pack + install | T5 | transfer a pack without a gradient |
+| library + concept | T1, T6 | template composition for holes |
+| all + RLFP | T7 | only after T1-T6 produce a frontier |
 
-The 5.2M codec pointer is the proof and the built M1 model. The 20M pointer is
-a deferred scale test: at 7.2 MB it overfits before scale helps, and long runs
-restarted the host. Do not train another fixed-vocab LM and call it the concept
-model.
+Each combination is an arm with its own budget. Do not assume the best single
+family is the best combination.
 
-## 3. Hypotheses and gates
+## 8. Metrics and artifacts
 
-| id | hypothesis | gate |
-|---|---|---|
-| H1 | a 5M concept LM reads the codec pack | test bits/byte **≤ 1.75** on 756,752 B; round-trip exact; ≥2.5 B/decision; 20M is deferred scale |
-| H2 | the preference task is learnable | ≥10k verifiable pairs; SFT pairwise accuracy > 55%; random ≈ 50% |
-| H3 | concept actions give RLFP leverage | concept DPO beats byte DPO by **≥5 points** pairwise accuracy at equal compute, or matches it with **≥2x fewer decisions** |
-| H4 | pack edits change the policy without gradients | `rm`/`merge` moves win rate in the predicted direction; provenance 100% |
-| H5 | the synergy scales | if H3/H4 pass, scale the concept model and pairs; if not, record the negative |
+Every run records:
+- config, seed, git, corpus/pack SHA,
+- exact, bits/span, decisions/span,
+- copy hit and offset cost,
+- target calls and draft length,
+- edit delta, removed/survivor counts,
+- payload/shared bpb and round-trip,
+- seconds and GPU-hours.
 
-H3 is the claim. H1 is the feasibility check. H2 is the data check. H4 is the
-auditable-policy claim. Do not gate on bpb; report it as context.
+Artifacts:
+- `reports/SCREEN.md`, `reports/BREADTH.md`, `reports/EDIT-CURVE.md`,
+- `reports/PORTFOLIO.md` and `portfolio.json` (new),
+- per-arm `runs/<id>/metrics.json`.
 
-## 4. Milestones
+`PORTFOLIO.md` must show the frontier, the best config per family, the
+exploration reserve, and the next round's allocation.
+
+## 9. Milestones
 
 | M | ships | acceptance | cost |
 |---|---|---|---|
-| M0 | pin RLFP: method, task, reward, metrics | DPO chosen; repair task and pair generator specified; byte/word/concept controls named | 0.5 d |
-| M1 | **printed; H1 partial** | `cml train --corpus code --units codec --model pointer\|trunk`; 5.21M pointer at 8k steps; H1 bpb/round-trip pass; all-symbol decision gate fails; `reports/CONCEPT.md` | done |
-| M2 | **blocked** | resolve §11.1, then ≥10k pairs; SFT concept policy; byte and word controls; `reports/RLFP-DATA.md` | 1 d |
-| M3 | DPO loop | concept vs byte vs word at equal compute; H3; `reports/RLFP.md` | 1-2 d |
-| M4 | pack edits | `rm`/`merge` after DPO; H4; `reports/RLFP-EDIT.md` | 1 d |
-| M5 | decision | scale if H3/H4 pass; otherwise record the negative and return to the auditable codec | 1 d |
+| R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d |
+| R1 | Round 1: all families | best/median/worst; frontier | 1 d |
+| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d |
+| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d |
+| R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d |
+| R5 | decision | scale the Pareto winner or record the negative | 0.5 d |
 
-M1 is printed. Resolve the §11.1 decision definition before M2. M2-M3 are the
-bet. M4 is the unique part; no byte-level post-training can delete a concept
-and measure the policy response.
+M1 is already printed. R1 is the next build. R4 is not the first gate.
 
-## 5. Target interfaces
+## 10. Interfaces
 
-The M1 concept commands exist. The `cml rl` commands are still the interface
-contract; do not build them before M2 pairs.
-
+Existing:
 ```bash
-# concept LM on the codec vocabulary (M1)
 uv run cml train --corpus code --units codec --model pointer --params 5000000 --steps 8000
-uv run cml train --corpus code --units codec --model trunk --params 5000000 --steps 8000
-# 8k steps = 13.4 epochs over 4.9M train elements; 20M/20k is the deferred
-# overfit control.
-
-# preference pairs and SFT baseline (M2)
-uv run cml rl --task repair --make-pairs --pairs 10000 --pack <lexicon>
-uv run cml rl --task repair --method sft --actions concept --pairs 10000
-
-# DPO action-space comparison (M3)
-uv run cml rl --task repair --method dpo --actions concept --pairs 10000
-uv run cml rl --task repair --method dpo --actions byte --pairs 10000
-uv run cml rl --task repair --method dpo --actions word --pairs 10000
-
-# editable policy (M4)
-uv run cml pack rm <run> --prefix <concept>
-uv run cml rl --task repair --eval-only --run <dpo-run>
+uv run cml screen --spans 200
+uv run cml breadth --spans 200
+uv run cml editcurve --spans 200
 ```
 
-Keep the existing `cml train`, `cml sample`, `cml pack`, and `cml stats`.
-Add `cml rl` only when M1 prints a concept LM; do not build the RL loop first.
+New portfolio interface:
+```bash
+uv run cml portfolio --round 1 --families all --task t1 --budget 2h
+uv run cml portfolio --round 2 --promote frontier --task t1,t3,t4
+uv run cml portfolio --round 3 --combine concept,copy,spec --task t2
+```
+`cml portfolio` runs the grid, scores the vector, writes `PORTFOLIO.md`, and
+returns the next allocation. It must be resumable.
 
-## 6. Preference data
+## 11. Risks
 
-The first task is **span repair**:
+- **Portfolio sprawl.** Too many arms; enforce 2 h and 3-6 configs per family.
+- **Metric tunnel vision.** Pareto, not one number.
+- **Copy leakage.** Never search for the target span in the context; use only
+  prior context. The first copy probe was invalid and was replaced.
+- **Edit tautology.** Removed targets are lost by construction; report
+  survivors separately.
+- **DPO overfit.** Held-out prompts, KL, and both decision definitions.
+- **Scale illusion.** 20M on 7.2 MB overfits; more unique code first.
+- **Host instability.** Checkpoint every arm; no 20k runs.
 
-- Take a held-out function from the code test split.
-- Remove one span (a line, an expression, or a multi-byte unit).
-- Ask the policy to reconstruct the span.
-- Preferred = exact bytes, or the function's tests pass.
-- Dispreferred = a mutation that fails, or a model sample that fails.
+## 12. Next 72 hours
 
-This gives pairs without human labels and without a reward model. Keep a
-held-out prompt set so DPO cannot memorize pairs. For each prompt, report the
-pair construction rule, the reward, and the pack SHA.
-
-If the task is too easy (both sides pass), increase the removal span or use a
-bug-injection mutation. If it is too hard (both sides fail), use a shorter span
-or give the policy the function body.
-
-## 7. Metrics and artifacts
-
-Every run records:
-
-- `pairwise_accuracy`: preferred chosen over dispreferred.
-- `win_rate`: against the SFT policy on held-out prompts.
-- `reward_margin`: mean preferred minus dispreferred log-prob.
-- `kl`: policy to reference.
-- `decisions_per_byte` and `bytes_per_decision`.
-- `bits_per_byte` (context, not the gate).
-- `gpu_seconds` and `pairs`.
-- `pack_sha`, `corpus_sha`, `policy_sha`, `git`.
-
-Artifacts: `reports/CONCEPT.md`, `reports/RLFP-DATA.md`, `reports/RLFP.md`,
-`reports/RLFP-EDIT.md`, plus the usual `runs/<id>/metrics.json` and model.
-
-## 8. Risks and kill criteria
-
-- **Reward hacking.** The repair reward is exact bytes or tests; keep a
-  held-out test set and never train on it.
-- **Vocabulary/task misalignment.** If the concept boundaries do not match the
-  repair span, the policy may need a byte escape. Charge it; report the mix.
-- **DPO overfit.** Use held-out prompts and a KL term; report both.
-- **Edit instability.** `rm`/`merge` can create out-of-distribution concepts;
-  measure calibration and the win-rate delta, not just the mean.
-- **Fixed-vocab control.** A Trunk needs a new row for a new concept, so it is
-  the control, not the target.
-- **Kill H1:** concept LM > 1.9 bits/byte at 5M/8k on 756,752 B → the vocabulary
-  is not carrying structure; stop.
-- **Kill H3:** concept DPO does not beat byte DPO at equal compute → the
-  synergy claim fails; ship the auditable codec.
-- **Kill H4:** pack edits have unpredictable reward effects → the
-  auditable-policy claim fails; do not market it.
-
-## 9. Do not
-
-- Do not gate on bpb. The install no-oracle result already fails that gate.
-- Do not use an oracle pack induced on the encoded bytes.
-- Do not sweep pack size; 256 is optimal for the codec.
-- Do not build PPO/GRPO before DPO shows a signal.
-- Do not train a fixed-vocab concept model and claim install/editability.
-- Do not claim a preference win on training pairs; report held-out prompts.
-- Do not add dependencies; use the existing torch/numpy stack.
-
-## 10. First week, in order
-
-1. **Pin M0.** Write the repair task, the pair rule, and the DPO loss. Name the
-   byte and word controls.
-2. **M1.** Add `--units codec` and `--model pointer|trunk` to `cml train`;
-   tokenize the 7.24 MB train split with the 256-unit pack; train a 5M
-   pointer at 8k steps; print bits/byte, B/decision, and round-trip. H1
-   bpb/round-trip pass; resolve the decision gate in §11.1 before M2.
-3. **M2.** Build 10k repair pairs from the code test split; train the SFT
-   concept policy; verify the random and SFT baselines.
-4. **M3.** Run concept/byte/word DPO at equal pairs and compute; report H3.
-5. **M4.** `rm`/`merge` the post-DPO pack; measure the held-out win-rate
-   delta and provenance without a gradient step.
-
-M1 is the only build that starts before the preference data exists. Everything
-else waits for the concept LM to print.
+1. **R1 copy/hybrid.** Key 4-8, confidence, offset threshold, pointer fallback.
+   Target: exact ≥0.70 at ≤2.5 bits/span, or a new Pareto point.
+2. **R1 pack size.** Active 128/256/512/1024; concept-only T1; record exact,
+   bits, decisions, pack bytes.
+3. **R1 edits.** Prefixes `self`/`return`/indent/space/newline on T3; test
+   whether the free `self` deletion changes held-out behavior.
+4. **R1 spec.** K=4/8/12; accepted/call and draft cost; target ≥1.5.
+5. **R1 library.** Order 5 and template/hole composition; target exact ≥0.40.
+6. **R2 combinations.** concept+copy, concept+edit, concept+spec; pick the
+   Pareto winners.
+7. **R3/R4.** Only then T2 scale and RLFP.
 
 ## References
 
-- `TODO7.md`: the codec, the install negative, and the auditable product.
-- `cml/PLAN.md` §11: the name/charge accounting.
-- `cml/pointer.py`: the content-addressed pack reader.
-- `cml/codec.py`: `Lexicon`, `greedy_parse`, `build_lexicon`, the arms.
+- `TODO7.md`: the codec, install negative, and auditable product.
+- `cml/PLAN.md` §11: name/charge accounting.
+- `cml/pointer.py`: content-addressed pack reader.
+- `cml/codec.py`: `Lexicon`, `greedy_parse`, `build_lexicon`, arms.
 - `cml/cml.py`: `Trunk`, `train_text`, `p1_sample`, `cml train/sample/stats`,
-  and the pack ops.
+  `cml screen/breadth/editcurve`, pack ops.

@@ -1,0 +1,339 @@
+{
+ "arms": [
+  {
+   "family": "r3/r4",
+   "arm": "concept",
+   "exact": 0.65,
+   "bits": 1.7197363641034173,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r3/r4",
+   "arm": "trunk",
+   "exact": 0.48,
+   "bits": 2.5904231310418537,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r3/r4/r6",
+   "arm": "pointer",
+   "exact": 0.415,
+   "bits": 3.133062536448256,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r2",
+   "arm": "copy",
+   "exact": 0.38,
+   "bits": 8.611299564982803,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r1",
+   "arm": "byte",
+   "exact": 0.21,
+   "bits": 12.711350813993354,
+   "decisions": 3.04,
+   "source": "screen"
+  },
+  {
+   "family": "r7",
+   "arm": "library",
+   "exact": 0.15,
+   "bits": 2.4648969232618603,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r1/r6",
+   "arm": "counts",
+   "exact": 0.04,
+   "bits": 2.814919674260652,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  {
+   "family": "r7",
+   "arm": "library-1",
+   "exact": 0.03,
+   "bits": 2.8694727728899414,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r7",
+   "arm": "library-2",
+   "exact": 0.11,
+   "bits": 3.347385018565684,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r7",
+   "arm": "library-3",
+   "exact": 0.195,
+   "bits": 4.697052949106675,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r7",
+   "arm": "library-4",
+   "exact": 0.18,
+   "bits": 5.480754790777089,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r7",
+   "arm": "library-5",
+   "exact": 0.205,
+   "bits": 5.970187541148135,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-1",
+   "exact": 0.135,
+   "bits": 5.944141353159112,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-2",
+   "exact": 0.39,
+   "bits": 8.520738123030316,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-3",
+   "exact": 0.54,
+   "bits": 8.416563722589599,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-4",
+   "exact": 0.605,
+   "bits": 7.430063616627595,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-5",
+   "exact": 0.64,
+   "bits": 6.75309034152385,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r2",
+   "arm": "copy-6",
+   "exact": 0.65,
+   "bits": 6.1931604941701925,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  {
+   "family": "r8",
+   "arm": "spec-2",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "target_calls": 0.9389671361502347,
+   "source": "breadth"
+  },
+  {
+   "family": "r8",
+   "arm": "spec-4",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "target_calls": 0.7092198581560284,
+   "source": "breadth"
+  },
+  {
+   "family": "r8",
+   "arm": "spec-8",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "target_calls": 0.641025641025641,
+   "source": "breadth"
+  },
+  {
+   "family": "r8",
+   "arm": "spec-16",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "target_calls": 0.6644518272425249,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit- ",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.1462857142857143,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit-\n",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.22845714285714286,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit-return",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.0264,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit-self",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": -0.00011428571428571428,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit-=",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.0056,
+   "source": "breadth"
+  },
+  {
+   "family": "r5",
+   "arm": "edit-    ",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.027542857142857143,
+   "source": "breadth"
+  },
+  {
+   "family": "r3/r4",
+   "arm": "concept-pointer-code-p5m-s8000",
+   "exact": null,
+   "bits": 1.5996977685816873,
+   "decisions": 0.6764871450620547,
+   "payload": 1.692242636953718,
+   "source": "concept"
+  },
+  {
+   "family": "r3/r4",
+   "arm": "concept-trunk-code-p5m-s8000",
+   "exact": null,
+   "bits": 1.5160839931000691,
+   "decisions": 0.6764871450620547,
+   "payload": null,
+   "source": "concept"
+  }
+ ],
+ "frontier": [
+  {
+   "family": "r3/r4",
+   "arm": "concept",
+   "exact": 0.65,
+   "bits": 1.7197363641034173,
+   "decisions": 1.0,
+   "source": "screen"
+  }
+ ],
+ "best_family": {
+  "r3/r4": {
+   "family": "r3/r4",
+   "arm": "concept",
+   "exact": 0.65,
+   "bits": 1.7197363641034173,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  "r3/r4/r6": {
+   "family": "r3/r4/r6",
+   "arm": "pointer",
+   "exact": 0.415,
+   "bits": 3.133062536448256,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  "r2": {
+   "family": "r2",
+   "arm": "copy-6",
+   "exact": 0.65,
+   "bits": 6.1931604941701925,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  "r1": {
+   "family": "r1",
+   "arm": "byte",
+   "exact": 0.21,
+   "bits": 12.711350813993354,
+   "decisions": 3.04,
+   "source": "screen"
+  },
+  "r7": {
+   "family": "r7",
+   "arm": "library-5",
+   "exact": 0.205,
+   "bits": 5.970187541148135,
+   "decisions": 1.0,
+   "source": "breadth"
+  },
+  "r1/r6": {
+   "family": "r1/r6",
+   "arm": "counts",
+   "exact": 0.04,
+   "bits": 2.814919674260652,
+   "decisions": 1.0,
+   "source": "screen"
+  },
+  "r8": {
+   "family": "r8",
+   "arm": "spec-2",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "target_calls": 0.9389671361502347,
+   "source": "breadth"
+  },
+  "r5": {
+   "family": "r5",
+   "arm": "edit- ",
+   "exact": null,
+   "bits": null,
+   "decisions": null,
+   "edit_delta": 0.1462857142857143,
+   "source": "breadth"
+  }
+ },
+ "allocation": {
+  "frontier": 0.5,
+  "near": 0.3,
+  "explore": 0.2
+ }
+}
