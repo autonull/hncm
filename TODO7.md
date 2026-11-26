@@ -20,24 +20,55 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
 | M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
-| M4 | **negative at 1 MB** | 756,752 B, matched params: byte-model 4.86M **1.693/1.694/27.404**; pointer 4.97M a256 **2.207/2.237/28.498**; a2048 **2.187/2.421/28.682**. The pointer loses **0.543 shared / 1.094 self**. A 10× pack buys −0.020 payload but costs +0.204 charge, so the pack lever is dead. Local copy symbols are not built |
-| M5 | **ops + Q2/Q3 done** | `cml pack verify/trace/diff/merge/rm`. Q2: 756,752 B decode, **511,933 elements**, provenance contiguous 100%, `byte → unit id → pack offset` printed. Q3: `rm self` on a 70k unit-arm slice deletes 27 units, hits 4 spans / 18 B, delta +2 B; `rm s` on a 20k pointer slice hits 222 spans; both round-trip. Adapter control and rent sweep remain |
+| M4 | **1 MB tie; matrix owns it** | 756,752 B: byte-model 4.86M **1.693/1.694/27.404**; pointer n-gram+joint 5.21M **1.692/1.722/29.252** with a 256-unit (2,771 B) pack. Payload is **equal to the byte model**; `shared` loses only the **0.028** pack charge. The matrix lifted the 70k payload 2.386 → 2.139 → 2.039 → **1.946**, and the 1 MB payload 2.207 → **1.692**. Priced parse and pack-size sweep running |
+| M5 | **ops + Q2/Q3 done** | `cml pack verify/trace/diff/merge/rm`; `cml demo` installs, traces, edits, then installs an unseen pack; `cml generate` samples from the pack. Q2: 756,752 B, 511,933 elements, provenance contiguous 100%. Q3: `rm self` hits 4 spans / 18 B, +2 B, round-trip; pointer `rm s` hits 222 spans |
 | M6-M7 | **not started** | The P1 text control and the librarian remain |
+
+## 0b. The design matrix (r1-r7, not one bet)
+
+The matrix is the plan. `cml arena` runs one row per design on the same frozen
+slice, pack and proof, and writes `reports/ARENA.md`.
+
+| axis | values | idea | state |
+|---|---|---|---|
+| span encoder | content, n-gram-hash | r6 tied content | measured: n-gram wins at k=256 |
+| head | gate, joint softmax | r2/r3 copy-or-compute | measured: joint wins 0.10 |
+| byte I/O | untied, tied embedding | r6 | measured: tied wins 0.25 |
+| parse | greedy, model-priced | r4 safe mode | priced built, row running |
+| pack | 256 / 2048 / 8192 | r3/r5 rent | 2048 at 1 MB running |
+| copy | none, window-local | r2 | next |
+| templates | none, holes | r7 librarian | next |
+| adapter | no pack, installed | r1/r3 | demo (unseen pack) |
+
+Rows at 70k, 256 units, 8k steps, proof 50k (payload / shared):
+
+| design | payload | shared |
+|---|---:|---:|
+| content-gate (tied bytes) | **2.139** | 2.461 |
+| content-joint | **2.039** | 2.361 |
+| n-gram gate | **2.069** | 2.392 |
+| n-gram joint | **1.946** | 2.268 |
+
+The winning design at 756,752 B (256 units): **1.692 payload / 1.722 shared**
+vs the 4.86M byte-model **1.693 / 1.694**. The payload tie is the result: the
+installed pack replaces trained vocabulary capacity. The 2,771 B pack charge is
+the whole remaining deficit; the priced parse and a smaller pack target it.
+
+The qualitative loop, measured by `cml demo` on the 70k n-gram joint run:
+install (256 units / 2,771 B), provenance 70,000/70,000 B, `rm` (298 spans,
+round-trip OK), and a pack induced on bytes the model never trained on (2.193
+payload, exact round-trip). `cml templates` lifts e.g. 23 repeated dict literals
+with holes; `cml generate` samples from the installed pack.
 
 Concrete remaining work, in order:
 
-1. **M4 is a measured negative at 1 MB.** The exact batched encode is done:
-   windows are coded as per-window segments in groups of 32, so encode and
-   decode share one batched step and a cross-process round-trip holds. The
-   larger-pack remedy fails: coverage 0.453 → 0.817, payload −0.020, charge
-   +0.204. Do not tune pack size further. The one untested remedy is local
-   copy symbols (~1 h); if it also fails, close M4 as negative and keep M5/M6.
-   Note the accounting: at the plan's 5.5M byte allowance, `self` would flip
-   only while n < 4.7 MB, so the test slice cannot settle `self`; payload and
-   shared, which are n-free, say the byte model is the better codec.
-2. **M5.** The ops are built. Run the adapter arm as the 30-min negative control
-   and the rent λ sweep; then Q4's class split.
-3. **M6-M7.** The P1 text control, then the librarian.
+1. **Close the 0.028 pack charge, not the model.** The matrix now has a 1 MB
+   tie on payload. The priced parse and a 64/128/256-unit pack sweep decide
+   `shared`; the 2048-unit run tests whether coverage pays its 0.23 charge.
+   Then local copy (r2) as the next axis.
+2. **M5.** Ops/demo/generate are built. Remaining: the rent λ sweep and Q4's
+   class split. The adapter control is the pack charge itself.
+3. **M6-M7.** The P1 text control, then templates with holes (`cml templates`).
 
 Two build notes. The pointer encodes 228k units in 63 s at 756 kB (12 kB/s,
 batch 32); the a2048 pack does 18 kB/s because each window covers more bytes.
@@ -165,7 +196,7 @@ train. Record `corpus_sha` in every header and metrics.
 | M1 ✅ | byte arm: order-2 counts, escape to order-1; `cml codec --arm byte --corpus code` | exact round-trip; recorded bpb on 1 MB | 1.5 h |
 | M2 ✅ | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
 | M3 ✅ | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
-| M4 ✗ | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
+| M4 ◐ | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
 | M5 ◐ | ops `verify/trace/diff/merge/rm` ✅; Q2/Q3 demos ✅; the adapter arm as a 30-min negative control (flag+index+byte) and a rent λ sweep remain | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
 | M6 | text control: the P1 trunk concept codec on the 10 MB parse (recorded, vs PPMd 1.992) | recorded bpb within 0.05 of 1.920 + header | 2 h |
 | M7 | library with holes: the librarian lifts a template by anti-unification; slots fill from other units; Q1 | ≥0.1 bpb on slot tokens vs the byte arm | 1-2 d |

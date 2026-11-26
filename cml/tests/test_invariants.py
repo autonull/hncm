@@ -302,3 +302,32 @@ def test_pack_offsets_and_trace() -> None:
     for start, end, sym in spans:
         unit = lex.units[sym] if sym >= 0 else bytes([-1 - sym])
         assert data[start:end] == unit
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="pointer codec uses cuda")
+def test_pointer_design_matrix() -> None:
+    import pointer
+
+    data = b"def f(x):\n    return x + 1\n" * 6
+    full = codec.build_lexicon(data * 4, size=8, min_count=2, cap=4)
+    lex = codec.Lexicon(full.units[:8])
+    els = pointer.elements(data, lex)
+    for span in ("content", "ngram"):
+        for head in ("gate", "joint"):
+            cfg = pointer.PointerConfig(
+                d=32,
+                layers=1,
+                heads=4,
+                seq=32,
+                active=8,
+                steps=2,
+                batch=2,
+                span=span,
+                head=head,
+            )
+            model, _ = pointer.train_pointer(els, lex.units, cfg)
+            pc = pointer.PointerCodec(model, lex)
+            for parse in ("greedy", "priced"):
+                blob = pc.encode(data, parse=parse)
+                assert pc.decode(blob, len(data)) == data
+            assert len(pc.sample(16, seed=0)) == 16

@@ -13,6 +13,7 @@ has a uniform prior.
 
 from __future__ import annotations
 
+import math
 import random
 import struct
 import time
@@ -42,6 +43,9 @@ class PointerConfig:
     batch: int = 32
     lr: float = 3e-4
     seed: int = 0
+    span: str = "content"  # content | ngram
+    head: str = "gate"  # gate | joint
+    buckets: int = 4096
 
 
 def span_inputs(
@@ -57,6 +61,34 @@ def span_inputs(
     return x, mask
 
 
+def _fnv(gram: bytes, buckets: int) -> int:
+    h = 2166136261
+    for byte in gram:
+        h = ((h ^ byte) * 16777619) & 0xFFFFFFFF
+    return h % buckets
+
+
+def gram_inputs(
+    spans: list[bytes], device: str, dtype: torch.dtype, buckets: int, n: int = 3
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Character n-grams, hashed to buckets; content-addressed and transferable."""
+    grams = []
+    for span in spans:
+        padded = b"\x00" + span + b"\x00"
+        if len(padded) < n:
+            padded += b"\x00" * (n - len(padded))
+        grams.append(
+            [_fnv(padded[i : i + n], buckets) for i in range(len(padded) - n + 1)]
+        )
+    width = max((len(g) for g in grams), default=1)
+    x = torch.zeros((len(grams), width), dtype=torch.long, device=device)
+    mask = torch.zeros((len(grams), width), dtype=dtype, device=device)
+    for i, g in enumerate(grams):
+        x[i, : len(g)] = torch.tensor(g, dtype=torch.long, device=device)
+        mask[i, : len(g)] = 1
+    return x, mask
+
+
 class SpanEncoder(nn.Module):
     """`e_c = Enc(bytes_c)`: a 2-layer byte encoder, pooled over the span."""
 
@@ -69,30 +101,51 @@ class SpanEncoder(nn.Module):
         nn.init.normal_(self.emb.weight, std=0.02)
         nn.init.normal_(self.pos.weight, std=0.02)
 
+    def prepare(self, spans: list[bytes], device: str, dtype: torch.dtype):
+        return span_inputs(spans, device, dtype)
+
     def embed(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         e = self.emb(x) + self.pos.weight[: x.size(1)]
         e = e * mask[..., None]
         z = e.sum(1) / mask.sum(1, keepdim=True).clamp_min(1)
         return self.fc2(F.gelu(self.fc1(z)))
 
-    def forward(self, spans: list[bytes], device: str) -> torch.Tensor:
-        x, mask = span_inputs(spans, device, next(self.parameters()).dtype)
-        return self.embed(x, mask)
+
+class NgramEncoder(nn.Module):
+    """A hashed n-gram encoder: no per-entry parameters, install is a hash."""
+
+    def __init__(self, d: int = 256, w: int = 64, buckets: int = 4096):
+        super().__init__()
+        self.emb = nn.Embedding(buckets, w)
+        self.fc = nn.Linear(w, d)
+        nn.init.normal_(self.emb.weight, std=0.02)
+
+    def prepare(self, spans: list[bytes], device: str, dtype: torch.dtype):
+        return gram_inputs(spans, device, dtype, self.emb.num_embeddings)
+
+    def embed(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        e = self.emb(x) * mask[..., None]
+        z = e.sum(1) / mask.sum(1, keepdim=True).clamp_min(1)
+        return self.fc(F.gelu(z))
 
 
 class PointerLM(nn.Module):
     def __init__(self, cfg: PointerConfig):
         super().__init__()
         self.cfg = cfg
-        self.encoder = SpanEncoder(cfg.d)
+        if cfg.span == "ngram":
+            self.encoder: nn.Module = NgramEncoder(cfg.d, buckets=cfg.buckets)
+        else:
+            self.encoder = SpanEncoder(cfg.d)
         self.pos = nn.Embedding(cfg.seq, cfg.d)
         self.blocks = nn.ModuleList(Block(cfg.d, cfg.heads) for _ in range(cfg.layers))
         self.ln = nn.LayerNorm(cfg.d)
         self.wq = nn.Linear(cfg.d, cfg.d, bias=False)
-        self.gate = nn.Linear(cfg.d, 1)
-        self.byte = nn.Linear(cfg.d, BYTE)
+        self.byte = nn.Embedding(BYTE, cfg.d)
+        self.gate = nn.Linear(cfg.d, 1) if cfg.head == "gate" else None
         nn.init.normal_(self.pos.weight, std=0.02)
         nn.init.normal_(self.wq.weight, std=0.02)
+        nn.init.normal_(self.byte.weight, std=0.02)
         self._key: tuple | None = None
         self._spans: tuple[torch.Tensor, torch.Tensor] | None = None
 
@@ -100,22 +153,32 @@ class PointerLM(nn.Module):
         dtype = next(self.encoder.parameters()).dtype
         key = (units, device, dtype)
         if key != self._key:
-            spans = list(units) + [bytes([b]) for b in range(BYTE)]
-            self._spans = span_inputs(spans, device, dtype)
+            self._spans = self.encoder.prepare(list(units), device, dtype)
             self._key = key
         assert self._spans is not None
         return self.encoder.embed(*self._spans)
 
+    def _inputs(self, ids: torch.Tensor, e_u: torch.Tensor) -> torch.Tensor:
+        k = e_u.size(0)
+        span = ids < k
+        unit = e_u[ids.clamp(max=k - 1)]
+        byte = self.byte((ids - k).clamp(min=0))
+        return torch.where(span[..., None], unit, byte)
+
     def forward(self, ids: torch.Tensor, units: tuple[bytes, ...]) -> tuple:
         b, t = ids.shape
-        e = self.embeddings(units, ids.device)
-        x = e[ids] + self.pos.weight[:t]
+        e_u = self.embeddings(units, ids.device)
+        x = self._inputs(ids, e_u) + self.pos.weight[:t]
         h = x
         for block in self.blocks:
             h = block(h)
         h = self.ln(h)
-        ptr = self.wq(h) @ e[: len(units)].T
-        return ptr, self.gate(h).squeeze(-1), self.byte(h)
+        ptr = self.wq(h) @ e_u.T
+        byte = h @ self.byte.weight.T
+        if self.cfg.head == "joint":
+            return torch.cat((ptr, byte), -1), None, None
+        assert self.gate is not None
+        return ptr, self.gate(h).squeeze(-1), byte
 
 
 def _windows(elements: np.ndarray, seq: int, batch: int, rng: np.random.Generator):
@@ -126,12 +189,14 @@ def _windows(elements: np.ndarray, seq: int, batch: int, rng: np.random.Generato
 
 
 def _loss(model: PointerLM, x: torch.Tensor, y: torch.Tensor, units: tuple[bytes, ...]):
-    ptr, gate, byte = model(x, units)
+    logits, gate, byte = model(x, units)
+    if model.cfg.head == "joint":
+        return F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
     k = len(units)
     span = y < k
     loss = F.binary_cross_entropy_with_logits(gate, span.float())
     if bool(span.any()):
-        loss = loss + F.cross_entropy(ptr[span], y[span])
+        loss = loss + F.cross_entropy(logits[span], y[span])
     lit = ~span
     if bool(lit.any()):
         loss = loss + F.cross_entropy(byte[lit], y[lit] - k)
@@ -248,28 +313,36 @@ def eval_bpb(
             torch.as_tensor(chunk[:-1]).view(1, -1).to(next(model.parameters()).device)
         )
         y = torch.as_tensor(chunk[1:]).to(ids.device)
-        ptr, gate, byte = model(ids, lex.units)
-        gate = gate.view(-1)
-        ptr = ptr.view(t, -1)
-        byte = byte.view(t, -1)
+        logits, gate, byte = model(ids, lex.units)
         span = y < k
-        g = -torch.log2(torch.sigmoid(gate).clamp_min(1e-9))
-        e = -torch.log2((1 - torch.sigmoid(gate)).clamp_min(1e-9))
-        nll = torch.where(span, g, e)
-        if bool(span.any()):
-            nll[span] += -torch.log2(
-                torch.softmax(ptr[span], -1)
-                .gather(1, y[span, None])
+        if model.cfg.head == "joint":
+            nll = -torch.log2(
+                torch.softmax(logits.view(-1, k + BYTE), -1)
+                .gather(1, y.view(-1, 1))
                 .squeeze(1)
                 .clamp_min(1e-12)
             )
-        if bool((~span).any()):
-            nll[~span] += -torch.log2(
-                torch.softmax(byte[~span], -1)
-                .gather(1, (y[~span] - k)[:, None])
-                .squeeze(1)
-                .clamp_min(1e-12)
-            )
+        else:
+            gate = gate.view(-1)
+            ptr = logits.view(t, -1)
+            byte = byte.view(t, -1)
+            g = -torch.log2(torch.sigmoid(gate).clamp_min(1e-9))
+            e = -torch.log2((1 - torch.sigmoid(gate)).clamp_min(1e-9))
+            nll = torch.where(span, g, e)
+            if bool(span.any()):
+                nll[span] += -torch.log2(
+                    torch.softmax(ptr[span], -1)
+                    .gather(1, y[span, None])
+                    .squeeze(1)
+                    .clamp_min(1e-12)
+                )
+            if bool((~span).any()):
+                nll[~span] += -torch.log2(
+                    torch.softmax(byte[~span], -1)
+                    .gather(1, (y[~span] - k)[:, None])
+                    .squeeze(1)
+                    .clamp_min(1e-12)
+                )
         total += float(nll.sum())
         spans += int(span.sum())
         n += t
@@ -335,7 +408,8 @@ class PointerCodec:
         self.adaptive = adaptive_bytes
         self.batch = batch
         self.emb = model.embeddings(lex.units, device)
-        self.first = _uniform(self.k + 1)
+        self.joint = model.cfg.head == "joint"
+        self.first = _uniform(self.k + BYTE if self.joint else self.k + 1)
         self.bytes = _uniform(BYTE)
 
     @torch.no_grad()
@@ -343,22 +417,77 @@ class PointerCodec:
         self, cache: list[KV], prev: torch.Tensor, pos: int
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Feed one element per row; return quantised unit, byte and gate CDFs."""
-        h = self.emb[prev] + self.model.pos.weight[min(pos, self.seq - 1)]
+        h = (
+            self.model._inputs(prev, self.emb)
+            + self.model.pos.weight[min(pos, self.seq - 1)]
+        )
         for block, kv in zip(self.model.blocks, cache):
             h = block_step(block, h, kv)
         h = self.model.ln(h)
-        ptr = (self.model.wq(h) @ self.emb[: self.k].T)[:, 0]
+        h1 = h[:, 0]
+        ptr = (self.model.wq(h) @ self.emb.T)[:, 0]
+        if self.joint:
+            logits = torch.cat((ptr, h1 @ self.model.byte.weight.T), -1)
+            q = torch.softmax(logits, -1).float()
+            q = torch.clamp(torch.round(q * codec.QUANT), min=1).to(torch.int64)
+            return q.cpu().numpy(), None, None
         gate = torch.sigmoid(self.model.gate(h))[:, 0, 0]
         p = torch.softmax(ptr, -1) * gate[:, None]
         q = torch.cat((p, (1 - gate)[:, None]), 1)
         q = torch.clamp(torch.round(q.float() * codec.QUANT), min=1).to(torch.int64)
-        bq = torch.softmax(self.model.byte(h)[:, 0], -1)
+        bq = torch.softmax(h1 @ self.model.byte.weight.T, -1)
         bq = torch.clamp(torch.round(bq.float() * codec.QUANT), min=1).to(torch.int64)
         return (
             q.cpu().numpy(),
             bq.cpu().numpy(),
             gate.cpu().numpy(),
         )
+
+    @torch.no_grad()
+    def _feed(self, cache: list[KV], elem: int, pos: int) -> torch.Tensor:
+        ids = torch.tensor([[elem]], device=self.device, dtype=torch.long)
+        x = (
+            self.model._inputs(ids, self.emb)
+            + self.model.pos.weight[min(pos, self.seq - 1)]
+        )
+        h = x
+        for block, kv in zip(self.model.blocks, cache):
+            h = block_step(block, h, kv)
+        return self.model.ln(h)
+
+    @torch.no_grad()
+    def _probs(self, h: torch.Tensor) -> tuple[np.ndarray, np.ndarray | None]:
+        h1 = h[:, 0]
+        ptr = (self.model.wq(h) @ self.emb.T)[:, 0]
+        if self.joint:
+            logits = torch.cat((ptr, h1 @ self.model.byte.weight.T), -1)
+            q = torch.softmax(logits, -1).float()
+            q = torch.clamp(torch.round(q * codec.QUANT), min=1).to(torch.int64)
+            return q[0].cpu().numpy(), None
+        gate = torch.sigmoid(self.model.gate(h))[:, 0, 0]
+        p = torch.softmax(ptr, -1) * gate[:, None]
+        q = torch.cat((p, (1 - gate)[:, None]), 1)
+        q = torch.clamp(torch.round(q.float() * codec.QUANT), min=1).to(torch.int64)
+        bq = torch.softmax(h1 @ self.model.byte.weight.T, -1)
+        bq = torch.clamp(torch.round(bq.float() * codec.QUANT), min=1).to(torch.int64)
+        return q[0].cpu().numpy(), bq[0].cpu().numpy()
+
+    @staticmethod
+    def _cost(cdf: np.ndarray, sym: int) -> float:
+        return -math.log2((cdf[sym + 1] - cdf[sym]) / cdf[-1])
+
+    @staticmethod
+    def _cands(trie: dict, data: bytes, i: int) -> list[tuple[int, int]]:
+        node = trie
+        out = []
+        for j in range(i, min(len(data), i + 16)):
+            node = node.get(data[j])
+            if node is None:
+                break
+            hit = node.get("#")
+            if hit is not None:
+                out.append((hit, j - i + 1))
+        return out
 
     @staticmethod
     def _cums(q: np.ndarray) -> np.ndarray:
@@ -400,27 +529,36 @@ class PointerCodec:
         arms = [codec.ByteArm() for _ in range(b)] if self.adaptive else [None] * b
         for r in range(b):
             elem = int(ids[r, 0])
-            sym = elem if elem < self.k else self.k
             c = self.first
-            encs[r].encode(int(c[sym]), int(c[sym + 1]), int(c[-1]))
-            if elem >= self.k:
-                self._code_byte(encs[r], elem - self.k, self.bytes, arms[r])
+            if self.joint:
+                encs[r].encode(int(c[elem]), int(c[elem + 1]), int(c[-1]))
+            else:
+                sym = elem if elem < self.k else self.k
+                encs[r].encode(int(c[sym]), int(c[sym + 1]), int(c[-1]))
+                if elem >= self.k:
+                    self._code_byte(encs[r], elem - self.k, self.bytes, arms[r])
         cache = _cache(self.model, self.device, b)
         for i in range(width - 1):
             prev = torch.as_tensor(ids[:, i], device=self.device).view(b, 1)
             q, bq, _ = self._step(cache, prev, i)
             cums = self._cums(q)
-            bq = self._cums(bq)
+            if not self.joint:
+                bq = self._cums(bq)
             for r in range(b):
                 if i + 1 >= lens[r]:
                     continue
                 elem = int(ids[r, i + 1])
-                sym = elem if elem < self.k else self.k
-                encs[r].encode(
-                    int(cums[r, sym]), int(cums[r, sym + 1]), int(cums[r, -1])
-                )
-                if elem >= self.k:
-                    self._code_byte(encs[r], elem - self.k, bq[r], arms[r])
+                if self.joint:
+                    encs[r].encode(
+                        int(cums[r, elem]), int(cums[r, elem + 1]), int(cums[r, -1])
+                    )
+                else:
+                    sym = elem if elem < self.k else self.k
+                    encs[r].encode(
+                        int(cums[r, sym]), int(cums[r, sym + 1]), int(cums[r, -1])
+                    )
+                    if elem >= self.k:
+                        self._code_byte(encs[r], elem - self.k, bq[r], arms[r])
         return [e.finish() for e in encs]
 
     @torch.no_grad()
@@ -441,20 +579,29 @@ class PointerCodec:
             sym = int(np.searchsorted(c, target, side="right")) - 1
             decs[r].update(int(c[sym]), int(c[sym + 1]), int(c[-1]))
             start = len(outs[r])
-            if sym < self.k:
-                outs[r] += self.lex.units[sym]
+            if self.joint:
                 elem = sym
             else:
-                byte = self._take_byte(decs[r], self.bytes, arms[r])
+                elem = sym if sym < self.k else self.k
+            if elem < self.k:
+                outs[r] += self.lex.units[elem]
+            else:
+                byte = (
+                    elem - self.k
+                    if self.joint
+                    else self._take_byte(decs[r], self.bytes, arms[r])
+                )
                 outs[r].append(byte)
-                elem = self.k + byte
+                if not self.joint:
+                    elem = self.k + byte
             prev[r] = elem
             spans[r].append((start, len(outs[r]), elem))
         for i in range(width - 1):
             t = torch.as_tensor(prev, device=self.device).view(b, 1)
             q, bq, _ = self._step(cache, t, i)
             cums = self._cums(q)
-            bq = self._cums(bq)
+            if not self.joint:
+                bq = self._cums(bq)
             for r in range(b):
                 if i + 1 >= lens[r]:
                     continue
@@ -467,15 +614,106 @@ class PointerCodec:
                     outs[r] += self.lex.units[sym]
                     elem = sym
                 else:
-                    byte = self._take_byte(decs[r], bq[r], arms[r])
+                    byte = (
+                        sym - self.k
+                        if self.joint
+                        else self._take_byte(decs[r], bq[r], arms[r])
+                    )
                     outs[r].append(byte)
                     elem = self.k + byte
                 prev[r] = elem
                 spans[r].append((start, len(outs[r]), elem))
         return [(bytes(o), n, s) for o, n, s in zip(outs, lens, spans)]
 
-    def encode(self, data: bytes) -> bytes:
-        els = elements(data, self.lex)
+    @torch.no_grad()
+    def priced_elements(self, data: bytes) -> np.ndarray:
+        """Choose unit vs byte by the model's own prices (r4 safe mode).
+
+        This is only a proposal: the chosen ids are coded by the batched path,
+        which is also what the decoder replays, so exactness is unchanged.
+        """
+        trie = codec.make_trie(self.lex.units)
+        out: list[int] = []
+        i = 0
+        while i < len(data):
+            cache = _cache(self.model, self.device)
+            h = None
+            for n in range(self.seq):
+                if i >= len(data):
+                    break
+                cands = self._cands(trie, data, i)
+                if h is None:
+                    uid, ell = max(cands, key=lambda x: x[1]) if cands else (None, 0)
+                    elem = uid if uid is not None else self.k + data[i]
+                    i += ell if uid is not None else 1
+                else:
+                    q, bq = self._probs(h)
+                    q = self._cums(q[None])[0]
+                    if bq is not None:
+                        bq = self._cums(bq[None])[0]
+                    if bq is None:
+                        byte = self._cost(q, self.k + data[i])
+                    else:
+                        byte = self._cost(q, self.k) + self._cost(bq, data[i])
+                    best: tuple[float, int, int, float] | None = None
+                    for uid, ell in cands:
+                        cost = self._cost(q, uid)
+                        per = cost / ell
+                        if best is None or per < best[0]:
+                            best = (per, uid, ell, cost)
+                    if best is not None and best[3] <= byte * best[2]:
+                        elem = best[1]
+                        i += best[2]
+                    else:
+                        elem = self.k + data[i]
+                        i += 1
+                out.append(elem)
+                if i < len(data) and n + 1 < self.seq:
+                    h = self._feed(cache, elem, n)
+        return np.asarray(out, dtype=np.int64)
+
+    @torch.no_grad()
+    def sample(self, nbytes: int, seed: int = 0) -> bytes:
+        """Generate bytes by sampling the joint head; the pack is the vocabulary."""
+        rng = np.random.default_rng(seed)
+        out = bytearray()
+        cache = _cache(self.model, self.device)
+        h = None
+        n = 0
+        while len(out) < nbytes:
+            if h is None:
+                c = self.first
+                bq = self.bytes
+            else:
+                q, bq = self._probs(h)
+                c = self._cums(q[None])[0]
+                if bq is not None:
+                    bq = self._cums(bq[None])[0]
+            target = int(rng.integers(0, int(c[-1])))
+            sym = int(np.searchsorted(c, target, side="right")) - 1
+            if sym < self.k:
+                out += self.lex.units[sym]
+                elem = sym
+            else:
+                if self.joint:
+                    byte = sym - self.k
+                else:
+                    tb = int(rng.integers(0, int(bq[-1])))
+                    byte = int(np.searchsorted(bq, tb, side="right")) - 1
+                out.append(byte)
+                elem = self.k + byte
+            if len(out) >= nbytes:
+                break
+            h = self._feed(cache, elem, n)
+            n = (n + 1) % self.seq
+        return bytes(out[:nbytes])
+
+    def encode(self, data: bytes, parse: str = "greedy") -> bytes:
+        els = (
+            self.priced_elements(data)
+            if parse == "priced"
+            else elements(data, self.lex)
+        )
         chunks = [els[a : a + self.seq] for a in range(0, len(els), self.seq)]
         segs = []
         for g in range(0, len(chunks), self.batch):
@@ -533,6 +771,27 @@ def save_model(
 
 def load_model(path: Path, device: str = "cuda") -> PointerLM:
     data = torch.load(path, map_location=device, weights_only=False)
-    model = PointerLM(data["cfg"]).to(device)
+    old = data["cfg"]
+    cfg = PointerConfig(
+        **{
+            f: getattr(old, f)
+            for f in (
+                "d",
+                "layers",
+                "heads",
+                "seq",
+                "active",
+                "steps",
+                "batch",
+                "lr",
+                "seed",
+                "span",
+                "head",
+                "buckets",
+            )
+            if hasattr(old, f)
+        }
+    )
+    model = PointerLM(cfg).to(device)
     model.load_state_dict(data["state"])
     return model

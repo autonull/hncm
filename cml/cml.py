@@ -2887,18 +2887,25 @@ def _pointer_for(
     seed: int,
     rotate: int,
     full_every: int,
+    span: str = "content",
+    head: str = "gate",
 ):
     import pointer
 
     active_lex = codec_mod.Lexicon(lex.units[:active])
     tag = f"r{rotate}f{full_every}-" if rotate else ""
-    path = CACHE / f"pointer-{corpus.train_sha[:12]}-a{active}-{tag}s{steps}-n{seed}.pt"
+    design = "" if (span, head) == ("content", "gate") else f"{span[0]}{head[0]}-"
+    path = CACHE / (
+        f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{tag}s{steps}-n{seed}.pt"
+    )
     if path.exists():
         try:
             return pointer.load_model(path), active_lex
-        except RuntimeError, KeyError, ValueError:
+        except RuntimeError, KeyError, ValueError, AttributeError:
             pass
-    cfg = pointer.PointerConfig(active=active, steps=steps, seed=seed)
+    cfg = pointer.PointerConfig(
+        active=active, steps=steps, seed=seed, span=span, head=head
+    )
     if rotate:
         streams = pointer.pack_streams(corpus.train, lex.units, active, rotate)
         model, losses = pointer.train_pointer_streams(
@@ -2926,11 +2933,13 @@ def _run_concept(
     nbytes: int,
     split: str,
     suffix: str = "",
+    span: str = "content",
+    head: str = "gate",
 ) -> dict:
     import pointer
 
     model, active_lex = _pointer_for(
-        corpus, lex, active, steps, seed, rotate, full_every
+        corpus, lex, active, steps, seed, rotate, full_every, span, head
     )
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{suffix}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
@@ -2972,6 +2981,9 @@ def _run_concept(
         "proof_units": want,
         "proof_bytes": len(out),
         "coding_dtype": "fp16",
+        "design": f"{span}-{head}",
+        "span": span,
+        "head": head,
         "encode_seconds": round(encode_s, 3),
         "units_per_s": len(parse) / max(encode_s, 1e-9),
         "steps_per_byte": len(parse) / max(len(data), 1),
@@ -3010,6 +3022,8 @@ def run_codec(
     rotate: int,
     full_every: int,
     seed: int,
+    span: str = "content",
+    head: str = "gate",
 ) -> int:
     """One `cml codec` run: encode a frozen slice, decode it, record the bpb."""
     if corpus_name != "code":
@@ -3033,7 +3047,8 @@ def run_codec(
         return 0
     if arm == "concept":
         lex = _lexicon_for(corpus, units, min_count, cap)
-        suffix = f"-a{active}" if active != 256 else ""
+        design = "" if (span, head) == ("content", "gate") else f"-{span[0]}{head[0]}"
+        suffix = (f"-a{active}" if active != 256 else "") + design
         metrics = _run_concept(
             corpus,
             data,
@@ -3049,6 +3064,8 @@ def run_codec(
             nbytes,
             split,
             suffix,
+            span,
+            head,
         )
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
@@ -3129,6 +3146,170 @@ def run_codec(
             else ""
         )
     )
+    return 0
+
+
+DESIGNS = {
+    "gc": ("content", "gate"),
+    "jc": ("content", "joint"),
+    "gn": ("ngram", "gate"),
+    "jn": ("ngram", "joint"),
+}
+
+
+def run_arena(
+    corpus_name: str,
+    nbytes: int,
+    proof: int,
+    steps: int,
+    active: int,
+    designs: str,
+    rotate: int,
+    full_every: int,
+    seed: int,
+) -> int:
+    """One row per design: same corpus, slice, pack and proof."""
+    rows = []
+    for code in [d.strip() for d in designs.split(",") if d.strip()]:
+        if code not in DESIGNS:
+            raise SystemExit(f"arena: unknown design {code}")
+        span, head = DESIGNS[code]
+        print(f"== arena {code}: span={span} head={head}", flush=True)
+        run_codec(
+            "concept",
+            corpus_name,
+            nbytes,
+            "test",
+            8192,
+            16,
+            16,
+            active,
+            steps,
+            proof,
+            rotate,
+            full_every,
+            seed,
+            span,
+            head,
+        )
+        design = "" if (span, head) == ("content", "gate") else f"-{span[0]}{head[0]}"
+        suffix = (f"-a{active}" if active != 256 else "") + design
+        path = RUNS / f"codec-concept-{corpus_name}-{nbytes}{suffix}" / "metrics.json"
+        rows.append(json.loads(path.read_text()))
+    lines = [
+        "# Design arena",
+        "",
+        "One row per design on the same frozen slice, pack and proof.",
+        "",
+        "| design | span | head | payload | shared | self | units | coverage | proof | enc s | run |",
+        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    ]
+    for m in rows:
+        lines.append(
+            f"| {m.get('design', m['arm'])} | {m.get('span', '?')} | "
+            f"{m.get('head', '?')} | {m['payload_bpb']:.3f} | "
+            f"{m['shared_bpb']:.3f} | {m['self_bpb']:.3f} | {m.get('units', 0)} | "
+            f"{(m.get('coverage') or 0):.3f} | {m.get('proof_units', 0)} | "
+            f"{m.get('encode_seconds') or 0:.1f} | `{m['id']}` |"
+        )
+    best = min(rows, key=lambda m: m["payload_bpb"])
+    lines += [
+        "",
+        f"Best payload: **{best['id']}** ({best['payload_bpb']:.3f} bpb).",
+        "",
+    ]
+    path = REPORTS / "ARENA.md"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, path)
+    print("\n".join(lines))
+    return 0
+
+
+def run_demo(run: str, nbytes: int) -> int:
+    """The end-to-end loop: install -> provenance -> edit -> unseen pack."""
+    import pointer
+
+    out_dir, metrics, frame = _run_frame(run)
+    data, spans = _decode_run(out_dir, frame, trace=True)
+    lex = frame.lexicon
+    assert lex is not None
+    covered = sum(b - a for a, b, _ in spans)
+    print(f"== install: {run}")
+    print(
+        f"  {len(lex.units)} units / {len(lex.blob())} B installed, "
+        f"payload {metrics['payload_bpb']:.3f} bpb, "
+        f"provenance {covered}/{len(data)} B"
+    )
+    print("== provenance: byte -> unit -> pack offset")
+    offs = lex.offsets()
+    for start, end, sym in spans[:5]:
+        if sym < len(lex.units):
+            print(
+                f"  [{start},{end}) unit {sym} @ {offs[sym]} `{lex.units[sym][:24]!r}`"
+            )
+        else:
+            print(f"  [{start},{end}) literal `{bytes([sym - len(lex.units)])!r}`")
+    print("== edit: rm a concept")
+    prefix = lex.units[0][:1] or lex.units[0]
+    pack_rm(run, prefix, min(nbytes, len(data)))
+    print("== install a pack induced on bytes the model never trained on")
+    corpus = code_corpus()
+    other = corpus.test[-max(nbytes, 200_000) :]
+    fresh = codec_mod.build_lexicon(other, 256, 2, 16)
+    units = fresh.units[:256]
+    if len(units) < 8:
+        print("  (not enough units)")
+        return 0
+    model = pointer.load_model(out_dir / "model.pt")
+    pc = pointer.PointerCodec(model, codec_mod.Lexicon(units), half=True)
+    held = data[:nbytes]
+    blob = pc.encode(held)
+    out = pc.decode(blob, len(held))
+    print(
+        f"  unseen pack: {len(units)} units / {len(codec_mod.Lexicon(units).blob())} B, "
+        f"payload {8 * len(blob) / max(len(held), 1):.3f} bpb, "
+        f"round-trip {'OK' if out == held else 'FAIL'}"
+    )
+    return 0
+
+
+def generate(run: str, nbytes: int, seed: int) -> int:
+    """Sample from the installed model; print the bytes and the used concepts."""
+    import pointer
+
+    out_dir, metrics, frame = _run_frame(run)
+    model = pointer.load_model(out_dir / "model.pt")
+    pc = pointer.PointerCodec(model, frame.lexicon, half=True)
+    raw = pc.sample(nbytes, seed)
+    print(f"== generate {nbytes} B from {run} (seed {seed})")
+    print(raw.decode("utf-8", "replace"))
+    return 0
+
+
+def templates(run: str, top: int = 10) -> int:
+    """r7: lift a line template with a hole by anti-unification."""
+    import re
+    from collections import Counter
+
+    _, metrics, _ = _run_frame(run)
+    data = _reference(metrics)
+    pat = re.compile(rb"[A-Za-z_][A-Za-z0-9_]*|\d+")
+    lines = [line for line in data.splitlines() if 8 <= len(line) <= 200]
+    skeleton = {line: pat.sub(b"\x00", line) for line in lines}
+    groups = Counter(skeleton.values())
+    print(f"== templates from {run}: {len(lines)} lines, {len(groups)} templates")
+    shown = 0
+    for skel, count in groups.most_common():
+        if count < 3:
+            break
+        fills = [line for line in lines if skeleton[line] == skel][:3]
+        print(f"  {count:4d}x `{skel[:72]!r}`")
+        for fill in fills:
+            print(f"        fill `{fill[:72]!r}`")
+        shown += 1
+        if shown >= top:
+            break
     return 0
 
 
@@ -3213,12 +3394,13 @@ def pack_trace(run: str, lo: int, hi: int) -> int:
     print(f"{run}: {len(rows)} elements in bytes [{lo}, {hi}) of {len(data)}")
     print("| start | end | unit | pack offset | bytes |")
     print("|---:|---:|---:|---:|---|")
+    k = len(lex.units) if lex else 0
     for start, end, sym in rows[:200]:
-        if sym >= 0 and lex:
+        if lex and sym < k:
             unit = lex.units[sym]
             row = f"| {start} | {end} | {sym} | {offs[sym]} | `{unit[:32]!r}` |"
         else:
-            row = f"| {start} | {end} | lit | — | `{bytes([-1 - sym])!r}` |"
+            row = f"| {start} | {end} | lit | — | `{bytes([sym - k])!r}` |"
         print(row)
     if len(rows) > 200:
         print(f"... {len(rows) - 200} more")
@@ -3424,9 +3606,32 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--rotate", type=int, default=0)
     co.add_argument("--full-every", type=int, default=2)
     co.add_argument("--seed", type=int, default=0)
+    co.add_argument("--span", choices=("content", "ngram"), default="content")
+    co.add_argument("--head", choices=("gate", "joint"), default="gate")
+    co.add_argument("--parse", choices=("greedy", "priced"), default="greedy")
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
     sub.add_parser("recorded")
+    dm = sub.add_parser("demo")
+    dm.add_argument("run")
+    dm.add_argument("--bytes", type=int, default=20000)
+    ge = sub.add_parser("generate")
+    ge.add_argument("run")
+    ge.add_argument("--bytes", type=int, default=400)
+    ge.add_argument("--seed", type=int, default=0)
+    tp = sub.add_parser("templates")
+    tp.add_argument("run")
+    tp.add_argument("--top", type=int, default=10)
+    ar = sub.add_parser("arena")
+    ar.add_argument("--corpus", default="code")
+    ar.add_argument("--bytes", type=int, default=70000)
+    ar.add_argument("--proof", type=int, default=50000)
+    ar.add_argument("--steps", type=int, default=8000)
+    ar.add_argument("--active", type=int, default=256)
+    ar.add_argument("--designs", default="gc,jc,gn,jn")
+    ar.add_argument("--rotate", type=int, default=8)
+    ar.add_argument("--full-every", type=int, default=8)
+    ar.add_argument("--seed", type=int, default=0)
     pk = sub.add_parser("pack")
     pks = pk.add_subparsers(dest="op", required=True)
     v = pks.add_parser("verify")
@@ -3494,6 +3699,8 @@ def main(argv: list[str] | None = None) -> int:
             a.rotate,
             a.full_every,
             a.seed,
+            a.span,
+            a.head,
         )
     if a.cmd == "coder":
         if not a.test:
@@ -3502,6 +3709,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if a.cmd == "recorded":
         return recorded_report()
+    if a.cmd == "demo":
+        return run_demo(a.run, a.bytes)
+    if a.cmd == "generate":
+        return generate(a.run, a.bytes, a.seed)
+    if a.cmd == "templates":
+        return templates(a.run, a.top)
+    if a.cmd == "arena":
+        return run_arena(
+            a.corpus,
+            a.bytes,
+            a.proof,
+            a.steps,
+            a.active,
+            a.designs,
+            a.rotate,
+            a.full_every,
+            a.seed,
+        )
     if a.cmd == "pack":
         if a.op == "verify":
             return pack_verify(a.run)

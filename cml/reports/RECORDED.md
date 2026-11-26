@@ -12,9 +12,13 @@ installed lexicon, which the frame carries); `self` adds the 4-bit base.
 | byte-model | code | 1ccd9ffc | 70000 | 1.916 | 1.922 | 279.865 | 10000 B | 0 | ✓ | `codec-byte-model-code-70000` |
 | byte-model | code | 1ccd9ffc | 756752 | 1.693 | 1.694 | 27.404 | 50000 B | 0 | ✓ | `codec-byte-model-code-756752` |
 | concept | code | 1ccd9ffc | 30000 | 2.385 | 3.137 | 665.435 | 21723 | 2771 | ✓ | `codec-concept-code-30000` |
-| concept | code | 1ccd9ffc | 70000 | 2.386 | 2.709 | 286.609 | 50000 | 2771 | ✓ | `codec-concept-code-70000` |
+| concept | code | 1ccd9ffc | 70000 | 2.139 | 2.461 | 286.347 | 50000 | 2771 | ✓ | `codec-concept-code-70000` |
+| concept | code | 1ccd9ffc | 70000 | 2.039 | 2.361 | 286.232 | 50000 | 2771 | ✓ | `codec-concept-code-70000-cj` |
+| concept | code | 1ccd9ffc | 70000 | 2.069 | 2.392 | 300.025 | 50000 | 2771 | ✓ | `codec-concept-code-70000-ng` |
+| concept | code | 1ccd9ffc | 70000 | 1.946 | 2.268 | 299.887 | 50000 | 2771 | ✓ | `codec-concept-code-70000-nj` |
 | concept | code | 1ccd9ffc | 756752 | 2.207 | 2.237 | 28.498 | 50000 | 2771 | ✓ | `codec-concept-code-756752` |
 | concept | code | 1ccd9ffc | 756752 | 2.187 | 2.421 | 28.682 | 50000 | 22079 | ✓ | `codec-concept-code-756752-a2048` |
+| concept | code | 1ccd9ffc | 756752 | 1.692 | 1.722 | 29.252 | 50000 | 2771 | ✓ | `codec-concept-code-756752-nj` |
 | hybrid | code | 1ccd9ffc | 5000 | 1.725 | 2.054 | 3893.254 | 1004 B | 156 | ✓ | `codec-hybrid-code-5000` |
 | hybrid | code | 1ccd9ffc | 70000 | 1.930 | 1.954 | 279.897 | 10000 B | 156 | ✓ | `codec-hybrid-code-70000` |
 | lexicon | code | 1ccd9ffc | 200000 | 2.321 | 5.911 | 5.911 | — | 89713 | ✓ | `codec-lexicon-code-200000` |
