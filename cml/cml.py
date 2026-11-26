@@ -2541,7 +2541,8 @@ def run_breadth(
         qs.append(qc / qc.sum().clamp_min(1e-12))
 
     copy_rows = []
-    for ell in (4, 5, 6, 7, 8):
+    priors: dict[int, list[int | None]] = {}
+    for ell in (4, 5, 6, 7, 8, 10, 12):
         prior: list[int | None] = []
         for i in pos:
             p = None
@@ -2554,7 +2555,8 @@ def run_breadth(
                 if cand.numel():
                     p = int(cand[-1])
             prior.append(p)
-        for cap in (256, 1024, None):
+        priors[ell] = prior
+        for cap in (256, 512, 1024, None):
             for tau in (0.0, 0.10, 0.25):
                 exact = hit = 0
                 bits = 0.0
@@ -2583,6 +2585,152 @@ def run_breadth(
                         "bits": bits / max(take, 1),
                     }
                 )
+    copy_frontier = [
+        r
+        for r in copy_rows
+        if not any(
+            o["exact"] >= r["exact"]
+            and o["bits"] <= r["bits"]
+            and (o["exact"] > r["exact"] or o["bits"] < r["bits"])
+            for o in copy_rows
+            if o is not r
+        )
+    ]
+
+    copy_dist_rows = []
+    count_maps: dict[int, list[Counter]] = {}
+    for ell in (4, 6, 8, 10, 12):
+        counts_by_span: list[Counter] = []
+        for i in pos:
+            counts: Counter = Counter()
+            if i >= ell:
+                key = ids[i - ell : i].tolist()
+                cand = torch.arange(0, i - ell + 1)
+                for t in range(ell):
+                    cand = cand[ids[cand + t] == key[t]]
+                cand = cand[cand + ell < i]
+                for p in cand.tolist():
+                    c = int(ids[p + ell])
+                    if c < k:
+                        counts[c] += 1
+            counts_by_span.append(counts)
+        count_maps[ell] = counts_by_span
+        for min_hits in (1, 2):
+            for tau in (0.0, 0.10):
+                exact = hit = 0
+                bits = 0.0
+                for idx, (i, target) in enumerate(zip(pos, targets)):
+                    counts = counts_by_span[idx]
+                    q = qs[idx]
+                    ppred = int(q.argmax())
+                    pbits = -math.log2(max(float(q[ppred]), 1e-12))
+                    pred, cbits = ppred, 1.0 + pbits
+                    if counts:
+                        cpred, count = counts.most_common(1)[0]
+                        total = sum(counts.values())
+                        if count >= min_hits and float(qall[idx][cpred]) >= tau:
+                            hit += 1
+                            pred = cpred
+                            prob = (count + 1) / (total + k)
+                            cbits = 1.0 - math.log2(prob)
+                    exact += pred == target
+                    bits += cbits
+                copy_dist_rows.append(
+                    {
+                        "key": ell,
+                        "min_hits": min_hits,
+                        "tau": tau,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+
+    combo_rows = []
+    for ell, prior in priors.items():
+        for cap in (256, 512, 1024, None):
+            for tau in (0.0, 0.10, 0.25):
+                exact = hit = 0
+                bits = 0.0
+                for idx, (i, target) in enumerate(zip(pos, targets)):
+                    q = qs[idx]
+                    cpred = int(q.argmax())
+                    pred = cpred
+                    cbits = -math.log2(max(float(q[target]), 1e-12))
+                    p = prior[idx]
+                    if p is not None and (cap is None or i - p <= cap):
+                        cp = int(ids[p + ell])
+                        if cp < k and float(qall[idx][cp]) >= tau:
+                            hit += 1
+                            pred = cp
+                            off = min(i - p + 1, cap) if cap else i - p + 1
+                            cbits = 1.0 + math.log2(max(off, 1))
+                    exact += pred == target
+                    bits += cbits
+                combo_rows.append(
+                    {
+                        "key": ell,
+                        "cap": cap,
+                        "tau": tau,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+    combo_frontier = [
+        r
+        for r in combo_rows
+        if not any(
+            o["exact"] >= r["exact"]
+            and o["bits"] <= r["bits"]
+            and (o["exact"] > r["exact"] or o["bits"] < r["bits"])
+            for o in combo_rows
+            if o is not r
+        )
+    ]
+
+    mix_rows = []
+    for ell, counts_by_span in count_maps.items():
+        for min_hits in (1, 2):
+            for tau in (0.0, 0.10):
+                exact = hit = 0
+                bits = 0.0
+                for idx, (i, target) in enumerate(zip(pos, targets)):
+                    q = qs[idx]
+                    cpred = int(q.argmax())
+                    pred = cpred
+                    cbits = -math.log2(max(float(q[target]), 1e-12))
+                    counts = counts_by_span[idx]
+                    if counts:
+                        cp, count = counts.most_common(1)[0]
+                        total = sum(counts.values())
+                        if count >= min_hits and float(qall[idx][cp]) >= tau:
+                            hit += 1
+                            pred = cp
+                            cbits = -math.log2((count + 1) / (total + k))
+                    exact += pred == target
+                    bits += cbits
+                mix_rows.append(
+                    {
+                        "key": ell,
+                        "min_hits": min_hits,
+                        "tau": tau,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+    mix_frontier = [
+        r
+        for r in mix_rows
+        if not any(
+            o["exact"] >= r["exact"]
+            and o["bits"] <= r["bits"]
+            and (o["exact"] > r["exact"] or o["bits"] < r["bits"])
+            for o in mix_rows
+            if o is not r
+        )
+    ]
 
     template_rows = []
     tmaps: dict[int, dict[tuple[tuple[int, ...], tuple[int, ...]], Counter]] = {}
@@ -2675,6 +2823,9 @@ def run_breadth(
     best_lib = max(lib_rows, key=lambda r: (r["exact"], -r["bits"]))
     best_tpl = max(template_rows, key=lambda r: (r["exact"], -r["bits"]))
     best_copy = max(copy_rows, key=lambda r: (r["exact"], -r["bits"]))
+    best_cdist = max(copy_dist_rows, key=lambda r: (r["exact"], -r["bits"]))
+    best_combo = max(combo_frontier, key=lambda r: (r["exact"], -r["bits"]))
+    best_mix = max(mix_frontier, key=lambda r: (r["exact"], -r["bits"]))
     best_edit = min(edit_rows, key=lambda r: r["delta"])
     best_spec = max(spec_rows, key=lambda r: r["accepted_per_call"])
     lines = [
@@ -2709,20 +2860,70 @@ def run_breadth(
         )
     lines += [
         "",
-        "## Copy: key x offset cap x confidence",
+        "## Copy: key x offset cap x confidence (frontier)",
         "",
         "Copy predicts from the nearest prior match; the pointer predicts",
         "otherwise. `tau` is the pointer confidence in the copy candidate",
-        "required to use it. `cap` bounds the offset code.",
+        "required to use it. `cap` bounds the offset code. Full grid in JSON.",
         "",
         "| key | cap | tau | hit | exact | bits/span |",
         "|---:|---:|---:|---:|---:|---:|",
     ]
-    for r in copy_rows:
+    for r in sorted(copy_frontier, key=lambda x: (-x["exact"], x["bits"])):
         cap = "-" if r["cap"] is None else str(r["cap"])
         lines.append(
             f"| {r['key']} | {cap} | {r['tau']:.2f} | {r['hit']:.3f} | "
             f"{r['exact']:.3f} | {r['bits']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Copy distribution: plurality of prior continuations",
+        "",
+        "Rank the continuation, do not encode the absolute offset. The copy",
+        "distribution is the count of concept units that followed every prior",
+        "match of the key; `min hits` is the plurality required to use it.",
+        "",
+        "| key | min hits | tau | hit | exact | bits/span |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in copy_dist_rows:
+        lines.append(
+            f"| {r['key']} | {r['min_hits']} | {r['tau']:.2f} | "
+            f"{r['hit']:.3f} | {r['exact']:.3f} | {r['bits']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Concept + copy (R2)",
+        "",
+        "Copy when a prior key match passes the cap and confidence gate;",
+        "otherwise the concept head predicts. Copy costs the flag plus the",
+        "offset; the fallback costs the concept NLL. Frontier rows only.",
+        "",
+        "| key | cap | tau | hit | exact | bits/span |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in sorted(combo_frontier, key=lambda x: (-x["exact"], x["bits"])):
+        cap = "-" if r["cap"] is None else str(r["cap"])
+        lines.append(
+            f"| {r['key']} | {cap} | {r['tau']:.2f} | {r['hit']:.3f} | "
+            f"{r['exact']:.3f} | {r['bits']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Concept + copy distribution (R2)",
+        "",
+        "Copy the plurality continuation when it passes the hit and",
+        "confidence gate; otherwise the concept head predicts. Copy costs",
+        "the continuation entropy; the fallback costs the concept NLL.",
+        "Frontier rows only.",
+        "",
+        "| key | min hits | tau | hit | exact | bits/span |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in sorted(mix_frontier, key=lambda x: (-x["exact"], x["bits"])):
+        lines.append(
+            f"| {r['key']} | {r['min_hits']} | {r['tau']:.2f} | "
+            f"{r['hit']:.3f} | {r['exact']:.3f} | {r['bits']:.3f} |"
         )
     lines += [
         "",
@@ -2765,6 +2966,15 @@ def run_breadth(
         f"- copy: key **{best_copy['key']}**, cap **{best_copy['cap']}**, "
         f"tau **{best_copy['tau']:.2f}**, exact {best_copy['exact']:.3f}, "
         f"{best_copy['bits']:.3f} bits/span.",
+        f"- copy distribution: key **{best_cdist['key']}**, min hits "
+        f"**{best_cdist['min_hits']}**, tau **{best_cdist['tau']:.2f}**, "
+        f"exact {best_cdist['exact']:.3f}, {best_cdist['bits']:.3f} bits/span.",
+        f"- concept + copy: key **{best_combo['key']}**, cap "
+        f"**{best_combo['cap']}**, tau **{best_combo['tau']:.2f}**, "
+        f"exact {best_combo['exact']:.3f}, {best_combo['bits']:.3f} bits/span.",
+        f"- concept + copy dist: key **{best_mix['key']}**, min hits "
+        f"**{best_mix['min_hits']}**, tau **{best_mix['tau']:.2f}**, "
+        f"exact {best_mix['exact']:.3f}, {best_mix['bits']:.3f} bits/span.",
         f"- edit: prefix `{best_edit['prefix']}`, delta "
         f"{best_edit['delta']:+.3f} bpb, exact change "
         f"{best_edit['delta_exact']:+.3f}, round-trip "
@@ -2785,6 +2995,9 @@ def run_breadth(
             "library": lib_rows,
             "template": template_rows,
             "copy": copy_rows,
+            "copy_dist": copy_dist_rows,
+            "combo": combo_rows,
+            "mix": mix_rows,
             "edit": edit_rows,
             "spec": spec_rows,
             "spans": take,
@@ -2792,6 +3005,137 @@ def run_breadth(
         },
     )
     report = REPORTS / "BREADTH.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print("\n".join(lines))
+    print(f"wrote {report}")
+    return 0
+
+
+def run_packs(
+    corpus_name: str = "code",
+    nbytes: int = 70_000,
+    spans: int = 200,
+    steps: int = 8000,
+    sizes: str = "128,256,512,1024",
+    seed: int = 0,
+) -> int:
+    """End-to-end pointer T1 over active pack sizes; one pointer per pack."""
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    lex = _lexicon_for(corpus, 8192, 16, 16)
+    ref_lex = codec_mod.Lexicon(lex.units[:256])
+    ref_ids, ref_lens = _concept_stream(data, ref_lex)
+    ref_off = torch.cat((torch.zeros(1, dtype=torch.long), ref_lens.cumsum(0)))
+    matched = torch.nonzero(ref_ids < len(ref_lex.units)).flatten()
+    matched = matched[matched > 0]
+    rng = np.random.default_rng(seed)
+    take = min(spans, int(matched.numel()))
+    pos = np.sort(rng.choice(matched.numpy(), take, replace=False)).tolist()
+    byte_spans = [(int(ref_off[i]), int(ref_off[i] + ref_lens[i])) for i in pos]
+    rows = []
+    for active in (int(s) for s in sizes.split(",") if s.strip()):
+        active = min(active, len(lex.units))
+        active_lex = codec_mod.Lexicon(lex.units[:active])
+        model, active_lex, _ = _pointer_for(
+            corpus,
+            lex,
+            active,
+            steps,
+            seed,
+            8,
+            8,
+            seq=256,
+            span="ngram",
+            head="joint",
+        )
+        seq = model.cfg.seq
+        ids, lens = _concept_stream(data, active_lex)
+        stats = _concept_stats(ids, lens, active_lex)
+        off = torch.cat((torch.zeros(1, dtype=torch.long), lens.cumsum(0)))
+        exact = 0
+        bits = 0.0
+        decisions = 0
+        for start, end in byte_spans:
+            a = int(torch.searchsorted(off, start, right=True)) - 1
+            b = int(torch.searchsorted(off, end - 1, right=True))
+            if b <= a:
+                continue
+            ctx = ids[max(0, a - seq + 1) : a]
+            step_bits = 0.0
+            ok = True
+            for j in range(a, b):
+                q = _next_q(model, ctx[-seq:].cuda(), active_lex.units)
+                q = q / q.sum().clamp_min(1e-12)
+                target = int(ids[j])
+                ok &= int(q.argmax()) == target
+                step_bits += -math.log2(max(float(q[target]), 1e-12))
+                ctx = torch.cat((ctx, torch.tensor([target])))
+            exact += ok
+            bits += step_bits
+            decisions += b - a
+        rows.append(
+            {
+                "active": active,
+                "exact": exact / max(take, 1),
+                "bits": bits / max(take, 1),
+                "decisions": decisions / max(take, 1),
+                "parse_decisions_per_byte": stats["decisions_per_byte"],
+                "span_bytes_per_decision": stats["span_bytes_per_decision"],
+                "coverage": stats["coverage"],
+                "pack_bytes": len(active_lex.blob()),
+                "spans": take,
+                "seconds": round(time.perf_counter() - t0, 3),
+            }
+        )
+        print(
+            f"pack {active}: exact {rows[-1]['exact']:.3f}, "
+            f"{rows[-1]['bits']:.3f} bits/span, "
+            f"{rows[-1]['pack_bytes']:,} B",
+            flush=True,
+        )
+    secs = time.perf_counter() - t0
+    best = max(rows, key=lambda r: (r["exact"], -r["bits"]))
+    lines = [
+        "# Pack size: end-to-end pointer T1",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, held-out "
+        f"{len(data):,} B, {take} fixed byte spans, seed {seed}",
+        f"- one pointer per active pack at {steps} steps, seq 256",
+        "- the same spans come from the 256 parse; each pack covers them",
+        "  with its own units. `dec/span` is that cover size.",
+        "- exact and bits use the full pointer (concept or byte escape).",
+        "",
+        "| active | exact | bits/span | dec/span | parse dec/B | span B/dec "
+        "| coverage | pack B |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['active']} | {r['exact']:.3f} | {r['bits']:.3f} | "
+            f"{r['decisions']:.2f} | "
+            f"{r['parse_decisions_per_byte']:.3f} | "
+            f"{r['span_bytes_per_decision']:.2f} | "
+            f"{r['coverage']:.3f} | {r['pack_bytes']:,} |"
+        )
+    lines += [
+        "",
+        "## Read",
+        "",
+        f"- best: active **{best['active']}**, exact {best['exact']:.3f} at "
+        f"{best['bits']:.3f} bits/span, {best['pack_bytes']:,} B pack.",
+        "- The trained 256 pack wins all three T1 axes: 128 pays literal",
+        "  escapes, 512/1024 pay harder concept decisions and a wider header.",
+        "  Larger packs raise coverage, but coverage alone does not pay.",
+        "- Park 128/512/1024 unless a combination makes their coverage useful.",
+        "",
+        f"Grid took {secs:.1f} s.",
+        "",
+    ]
+    write_json(REPORTS / "packs.json", {"rows": rows, "seconds": round(secs, 3)})
+    report = REPORTS / "PACKS.md"
     tmp = report.with_suffix(".tmp")
     tmp.write_text("\n".join(lines))
     os.replace(tmp, report)
@@ -2952,6 +3296,48 @@ def _collect_arms() -> list[dict]:
                     "source": "breadth",
                 }
             )
+        for row in b.get("copy_dist", []):
+            arms.append(
+                {
+                    "family": "r2",
+                    "arm": (
+                        f"copydist-{row['key']}-m{row['min_hits']}-t{row['tau']:.2f}"
+                    ),
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": 1.0,
+                    "source": "breadth",
+                }
+            )
+        for row in b.get("combo", []):
+            cap = row.get("cap")
+            cap = "inf" if cap is None else str(cap)
+            arms.append(
+                {
+                    "family": "r2",
+                    "arm": f"conceptcopy-{row['key']}-c{cap}-t{row['tau']:.2f}",
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": 1.0,
+                    "source": "breadth",
+                }
+            )
+        for row in b.get("mix", []):
+            arms.append(
+                {
+                    "family": "r2",
+                    "arm": (
+                        f"conceptmix-{row['key']}-m{row['min_hits']}-t{row['tau']:.2f}"
+                    ),
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": 1.0,
+                    "source": "breadth",
+                }
+            )
         for row in b.get("spec", []):
             arms.append(
                 {
@@ -3029,6 +3415,23 @@ def _collect_arms() -> list[dict]:
             }
         )
 
+    pp = REPORTS / "packs.json"
+    if pp.exists():
+        for row in json.loads(pp.read_text())["rows"]:
+            arms.append(
+                {
+                    "family": "r6",
+                    "arm": f"pack-{row['active']}",
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": row["decisions"],
+                    "parse_decisions": row["parse_decisions_per_byte"],
+                    "pack_bytes": row["pack_bytes"],
+                    "source": "packs",
+                }
+            )
+
     for path in sorted(RUNS.glob("install-*/metrics.json")):
         m = json.loads(path.read_text())
         delta = m.get("delta_b_minus_a")
@@ -3084,7 +3487,10 @@ def run_portfolio(
         )
     ]
     best_exact = max((a["exact"] for a in scored), default=0.0)
-    near = [a for a in scored if a not in frontier and a["exact"] >= 0.8 * best_exact]
+    near = sorted(
+        (a for a in scored if a not in frontier and a["exact"] >= 0.8 * best_exact),
+        key=lambda a: (a["bits"], -a["exact"]),
+    )[:12]
 
     t1_fams = {a["family"] for a in scored}
     all_fams = {a["family"] for a in arms}
@@ -3146,10 +3552,11 @@ def run_portfolio(
         combo_rows.append({"combination": name, "tests": tests, "status": status})
 
     exploration = [
-        "r5 edits: prefix x pack-removal grid on T3",
-        "r6 pack: active 128/256/512/1024 on T1/T2",
-        "r7 templates: radius 1-3 and hole composition",
-        "r8 drafts: K=12/16 and draft cost",
+        "concept+copy: the combo grid is measured; tighten the offset code",
+        "concept+edit: `self` is free; test delete/restore on T3",
+        "concept+spec: K=8 with copy confidence on T4",
+        "r7 templates: radius 2 is 0.340; add hole composition",
+        "r6 pack: 256 wins T1; run T2 only for a promoted combo",
     ]
     if parked:
         exploration.append("parked families: " + ", ".join(parked))
@@ -6483,6 +6890,13 @@ def main(argv: list[str] | None = None) -> int:
     br.add_argument("--bytes", type=int, default=70_000)
     br.add_argument("--spans", type=int, default=200)
     br.add_argument("--seed", type=int, default=0)
+    ps = sub.add_parser("packs")
+    ps.add_argument("--corpus", default="code")
+    ps.add_argument("--bytes", type=int, default=70_000)
+    ps.add_argument("--spans", type=int, default=200)
+    ps.add_argument("--steps", type=int, default=8000)
+    ps.add_argument("--sizes", default="128,256,512,1024")
+    ps.add_argument("--seed", type=int, default=0)
     pf = sub.add_parser("portfolio")
     pf.add_argument("--round", type=int, default=1)
     pf.add_argument("--families", default="all")
@@ -6623,6 +7037,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_edit_curve(a.corpus, a.bytes, a.spans, a.seed)
     if a.cmd == "breadth":
         return run_breadth(a.corpus, a.bytes, a.spans, a.seed)
+    if a.cmd == "packs":
+        return run_packs(a.corpus, a.bytes, a.spans, a.steps, a.sizes, a.seed)
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)
     if a.cmd == "train":

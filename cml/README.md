@@ -21,7 +21,8 @@ These are measured wins, not plans. Do not regress them silently.
 | Long-key copy | key 6: **0.650** exact, 0.475 hit, 6.193 bits/span; matches concept exact but too expensive to replace it | `reports/BREADTH.md` |
 | Edit locality | `self` **-0.000** bpb, `return` +0.026, indent +0.028, space +0.146, newline +0.228; all round-trip | `reports/BREADTH.md` |
 
-Commands that produce them: `cml train --units codec`, `cml screen`, `cml editcurve`, `cml breadth`.
+Commands that produce them: `cml train --units codec`, `cml screen`,
+`cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`.
 Scope: 5.21M pointer, 70k held-out bytes, 200 spans. Not yet a preference
 win, a wall-clock speedup, or a 20M-scale claim.
 
@@ -156,8 +157,12 @@ The four bets, and where they live:
   **0.650** at 1.72 bits/span and one decision.
 - `cml breadth`: small hyperparameter grids for copy, template/hole, library,
   edit prefixes, and speculative draft length; `reports/BREADTH.md`. Copy
-  key 1 -> 8, cap and confidence move 0.135 -> 0.720 exact; key 7 at cap
-  256 / τ 0.10 is 0.665 exact at 2.146 bits. Template radius 2 is 0.340.
+  keys 1 -> 12; concept+copy is 0.720 exact at 4.782 bits, 0.690 at 2.404.
+  Template radius 2 is 0.340.
+- `cml packs`: one pointer per active pack size (128/256/512/1024),
+  fixed byte spans, end-to-end T1, parse decisions, coverage, and pack
+  bytes; `reports/PACKS.md`. 256 wins all axes (0.415 / 3.133 / 1.00);
+  128, 512, and 1024 are dominated.
 - `cml portfolio --round N --families ... --task ... --budget ...`:
   aggregates every measured arm into a T1 Pareto frontier, family
   best/median/worst, task views, combinations, and a resumable

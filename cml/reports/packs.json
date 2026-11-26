@@ -1,0 +1,53 @@
+{
+ "rows": [
+  {
+   "active": 128,
+   "exact": 0.375,
+   "bits": 3.5779375326993623,
+   "decisions": 1.67,
+   "parse_decisions_per_byte": 0.7956142857142857,
+   "span_bytes_per_decision": 4.020903716216216,
+   "coverage": 0.27204285714285714,
+   "pack_bytes": 1449,
+   "spans": 200,
+   "seconds": 1.381
+  },
+  {
+   "active": 256,
+   "exact": 0.415,
+   "bits": 3.1330625404890236,
+   "decisions": 1.0,
+   "parse_decisions_per_byte": 0.7157571428571429,
+   "span_bytes_per_decision": 3.158494250379692,
+   "coverage": 0.4159285714285714,
+   "pack_bytes": 2771,
+   "spans": 200,
+   "seconds": 2.024
+  },
+  {
+   "active": 512,
+   "exact": 0.395,
+   "bits": 4.269403523176258,
+   "decisions": 1.18,
+   "parse_decisions_per_byte": 0.6098714285714286,
+   "span_bytes_per_decision": 2.9029335934778064,
+   "coverage": 0.5951428571428572,
+   "pack_bytes": 5443,
+   "spans": 200,
+   "seconds": 2.772
+  },
+  {
+   "active": 1024,
+   "exact": 0.3,
+   "bits": 5.3590848055754305,
+   "decisions": 1.31,
+   "parse_decisions_per_byte": 0.5389571428571429,
+   "span_bytes_per_decision": 2.9627196983518824,
+   "coverage": 0.6959428571428572,
+   "pack_bytes": 10942,
+   "spans": 200,
+   "seconds": 3.615
+  }
+ ],
+ "seconds": 3.615
+}
