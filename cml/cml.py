@@ -2908,23 +2908,33 @@ def _pointer_for(
     span: str = "content",
     head: str = "gate",
     seq: int = 256,
+    d: int = 256,
+    layers: int = 6,
 ):
     import pointer
 
     active_lex = codec_mod.Lexicon(lex.units[:active])
     tag = f"r{rotate}f{full_every}-" if rotate else ""
     design = "" if (span, head) == ("content", "gate") else f"{span[0]}{head[0]}-"
+    shape = "" if (d, layers) == (256, 6) else f"d{d}l{layers}-"
     path = CACHE / (
-        f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{tag}"
+        f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{shape}{tag}"
         f"s{steps}-q{seq}-n{seed}.pt"
     )
     if path.exists():
         try:
-            return pointer.load_model(path), active_lex
+            return pointer.load_model(path), active_lex, pointer.load_losses(path)
         except RuntimeError, KeyError, ValueError, AttributeError:
             pass
     cfg = pointer.PointerConfig(
-        active=active, steps=steps, seed=seed, span=span, head=head, seq=seq
+        active=active,
+        steps=steps,
+        seed=seed,
+        span=span,
+        head=head,
+        seq=seq,
+        d=d,
+        layers=layers,
     )
     if rotate:
         streams = pointer.pack_streams(corpus.train, lex.units, active, rotate)
@@ -2935,7 +2945,7 @@ def _pointer_for(
         els = pointer.elements(corpus.train, active_lex)
         model, losses = pointer.train_pointer(els, active_lex.units, cfg)
     pointer.save_model(path, model, cfg, losses)
-    return model, active_lex
+    return model, active_lex, losses
 
 
 def _run_concept(
@@ -2955,27 +2965,27 @@ def _run_concept(
     suffix: str = "",
     span: str = "content",
     head: str = "gate",
-    parse: str = "greedy",
+    parse_mode: str = "greedy",
     seq: int = 256,
 ) -> dict:
     import pointer
 
-    model, active_lex = _pointer_for(
+    model, active_lex, _ = _pointer_for(
         corpus, lex, active, steps, seed, rotate, full_every, span, head, seq
     )
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{suffix}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
     pcodec = pointer.PointerCodec(model, active_lex, half=True)
-    parse, covered = codec_mod.greedy_parse(data, active_lex)
-    stats = codec_mod.parse_stats(parse, active_lex, len(data), covered)
+    ids, covered = codec_mod.greedy_parse(data, active_lex)
+    stats = codec_mod.parse_stats(ids, active_lex, len(data), covered)
     t_enc = time.perf_counter()
-    payload = pcodec.encode(data, parse=parse)
+    payload = pcodec.encode(data, parse=parse_mode)
     encode_s = time.perf_counter() - t_enc
     frame = codec_mod.pack_frame(
         2, len(data), payload, corpus.sha, corpus.train_sha, active_lex
     )
     header_bytes = len(frame) - len(payload)
-    want = min(proof, len(parse))
+    want = min(proof, len(ids))
     out = pcodec.decode(payload, len(data), limit=want)
     if out != data[: len(out)]:
         raise SystemExit("concept: proof round-trip failed")
@@ -3003,13 +3013,13 @@ def _run_concept(
         "proof_units": want,
         "proof_bytes": len(out),
         "coding_dtype": "fp16",
-        "design": f"{span}-{head}-{parse}",
+        "design": f"{span}-{head}-{parse_mode}",
         "span": span,
         "head": head,
-        "parse": parse,
+        "parse": parse_mode,
         "encode_seconds": round(encode_s, 3),
-        "units_per_s": len(parse) / max(encode_s, 1e-9),
-        "steps_per_byte": len(parse) / max(len(data), 1),
+        "units_per_s": len(ids) / max(encode_s, 1e-9),
+        "steps_per_byte": len(ids) / max(len(data), 1),
         "bytes_per_s": len(data) / max(encode_s, 1e-9),
         "corpus_sha": corpus.sha,
         "train_sha": corpus.train_sha,
@@ -3314,6 +3324,322 @@ def generate(run: str, nbytes: int, seed: int) -> int:
     raw = pc.sample(nbytes, seed)
     print(f"== generate {nbytes} B from {run} (seed {seed})")
     print(raw.decode("utf-8", "replace"))
+    return 0
+
+
+def _package_files(
+    corpus: CodeCorpus, package: str
+) -> tuple[bytes, list[tuple[str, int, int]]]:
+    """Held-out files whose path names `package`, concatenated in path order."""
+    hits = [f for f in corpus.files if f[1] >= corpus.split and package in f[0]]
+    if not hits:
+        raise SystemExit(f"install: no held-out files match package {package!r}")
+    data = b"".join(corpus.raw[start:end] for _, start, end in hits)
+    return data, hits
+
+
+def run_lm(
+    corpus_name: str = "shakespeare",
+    tiny: bool = True,
+    steps: int = 2000,
+    prompt: bytes = b"ROMEO:",
+    sample: int = 400,
+    active: int = 256,
+    units: int = 8192,
+    min_count: int = 16,
+    cap: int = 16,
+    proof: int = 4000,
+    seed: int = 0,
+) -> int:
+    """P0a: train a tiny model, install a pack, tag a prompt continuation."""
+    import pointer
+
+    t0 = time.perf_counter()
+    corpus = text_corpus(corpus_name)
+    lex = _lexicon_for(corpus, units, min_count, cap)
+    d, layers = (128, 4) if tiny else (256, 6)
+    model, active_lex, losses = _pointer_for(
+        corpus,
+        lex,
+        active,
+        steps,
+        seed,
+        0,
+        0,
+        span="ngram",
+        head="joint",
+        seq=256,
+        d=d,
+        layers=layers,
+    )
+    params = sum(p.numel() for p in model.parameters())
+    train_bpb = pointer.eval_bpb(model, corpus.train[:131072], active_lex)
+    run_dir = RUNS / f"lm-{corpus_name}-{'tiny' if tiny else 'base'}-s{steps}"
+    pointer.save_model(run_dir / "model.pt", model, model.cfg, losses)
+    pcodec = pointer.PointerCodec(model, active_lex, half=True)
+    ids, covered = codec_mod.greedy_parse(corpus.test, active_lex)
+    stats = codec_mod.parse_stats(ids, active_lex, len(corpus.test), covered)
+    t_enc = time.perf_counter()
+    payload = pcodec.encode(corpus.test)
+    encode_s = time.perf_counter() - t_enc
+    want = min(proof, len(ids))
+    out = pcodec.decode(payload, len(corpus.test), limit=want)
+    if out != corpus.test[: len(out)]:
+        raise SystemExit("lm: proof round-trip failed")
+    raw, tags = pcodec.continuation(prompt, sample, seed)
+    train_loss = sum(losses[-50:]) / max(len(losses[-50:]), 1)
+    n = max(len(corpus.test), 1)
+    payload_bpb = 8 * len(payload) / n
+    write_json(
+        run_dir / "metrics.json",
+        {
+            "id": run_dir.name,
+            "corpus": corpus_name,
+            "corpus_sha": corpus.sha,
+            "train_sha": corpus.train_sha,
+            "params": params,
+            "d": d,
+            "layers": layers,
+            "steps": steps,
+            "seq": model.cfg.seq,
+            "active": len(active_lex.units),
+            "lexicon_bytes": len(active_lex.blob()),
+            "test_bytes": len(corpus.test),
+            "payload_bytes": len(payload),
+            "payload_bpb": payload_bpb,
+            "coverage": stats["coverage"],
+            "train_loss": train_loss,
+            "train_bpb": train_bpb["payload_bpb"],
+            "proof_units": want,
+            "proof_bytes": len(out),
+            "roundtrip": True,
+            "encode_seconds": round(encode_s, 3),
+            "prompt": prompt.decode("utf-8", "replace"),
+            "sample_bytes": len(raw),
+            "sample_copies": sum(1 for *_, t in tags if t.startswith("copy@")),
+            "sample_literals": sum(1 for *_, t in tags if t == "~neural"),
+            "git": git_sha(),
+            "seconds": round(time.perf_counter() - t0, 3),
+        },
+    )
+    (run_dir / "lexicon.bin").write_bytes(active_lex.blob())
+    (run_dir / "sample.bin").write_bytes(raw)
+    lines = [
+        "# LM (P0a): Tiny Shakespeare",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, train "
+        f"{len(corpus.train):,} B, test {len(corpus.test):,} B",
+        f"- model {params:,} params (d={d}, {layers} layers), {steps} steps, "
+        f"ngram-joint, seq {model.cfg.seq}",
+        f"- pack {len(active_lex.units)} units / {len(active_lex.blob()):,} B "
+        "installed from the train split",
+        "",
+        "| metric | value |",
+        "|---|---:|",
+        f"| train loss (nats/elem, last 50) | {train_loss:.3f} |",
+        f"| train bpb (teacher-forced, 128 kB) | {train_bpb['payload_bpb']:.3f} |",
+        f"| test payload bpb | {payload_bpb:.3f} |",
+        f"| test payload bytes | {len(payload):,} |",
+        f"| test coverage | {stats['coverage']:.3f} |",
+        f"| proof | {want:,} units / {len(out):,} B, "
+        f"{'OK' if out == corpus.test[: len(out)] else 'FAIL'} |",
+        f"| encode | {encode_s:.1f} s ({len(corpus.test) / encode_s / 1024:.1f} kB/s) |",
+        "",
+        "`shared` is not reported here.  The pack charge is unscaled at this",
+        f"size: {len(active_lex.blob()):,} B / {len(corpus.test):,} B = "
+        f"{8 * len(active_lex.blob()) / n:.3f} bpb.  The text bpb claim needs "
+        "the 1 MB enwik8 test, not this slice.",
+        "",
+        f"## Sample after `{prompt.decode('utf-8', 'replace')}`",
+        "",
+        "```",
+        (prompt + raw).decode("utf-8", "replace"),
+        "```",
+        "",
+        "## Provenance: every emitted span",
+        "",
+        f"copies {sum(1 for *_, t in tags if t.startswith('copy@'))}, "
+        f"neural {sum(1 for *_, t in tags if t == '~neural')}",
+        "",
+        "| start | end | tag | bytes |",
+        "|---:|---:|---|---|",
+    ]
+    for start, end, tag in tags:
+        cell = repr(raw[start:end][:32]).replace("|", "\\|")
+        lines.append(f"| {start} | {end} | `{tag}` | `{cell}` |")
+    report = REPORTS / "LM.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, report)
+    print(
+        f"{run_dir.name}: {params:,} params, train loss {train_loss:.3f}, "
+        f"test payload {payload_bpb:.3f} bpb, pack "
+        f"{len(active_lex.blob()):,} B, proof {want} units OK"
+    )
+    print(f"== sample after {prompt!r}")
+    for start, end, tag in tags:
+        print(f"  [{start},{end}) {tag} {raw[start:end][:32]!r}")
+    print((prompt + raw).decode("utf-8", "replace"))
+    print(f"wrote {report}")
+    return 0
+
+
+def run_install(
+    corpus_name: str = "code",
+    package: str = "networkx",
+    active: int = 256,
+    steps: int = 3000,
+    units: int = 8192,
+    min_count: int = 16,
+    cap: int = 16,
+    proof: int = 4000,
+    seed: int = 0,
+    rotate: int = 8,
+    full_every: int = 8,
+) -> int:
+    """P0b: the install delta on held-out package files, same model, three packs."""
+    import pointer
+
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    data, files = _package_files(corpus, package)
+    train_lex = _lexicon_for(corpus, units, min_count, cap)
+    model, train_pack, losses = _pointer_for(
+        corpus,
+        train_lex,
+        active,
+        steps,
+        seed,
+        rotate,
+        full_every,
+        span="ngram",
+        head="joint",
+        seq=256,
+    )
+    target_pack = codec_mod.build_lexicon(data, active, min_count, cap)
+    run_dir = RUNS / f"install-{corpus_name}-{package}-a{active}-s{steps}"
+    pointer.save_model(run_dir / "model.pt", model, model.cfg, losses)
+    packs = (
+        ("a", "train", train_pack),
+        ("b", "package", target_pack),
+        ("c", "none", codec_mod.Lexicon(())),
+    )
+    rows = []
+    for tag, name, lex in packs:
+        pc = pointer.PointerCodec(model, lex, half=True)
+        ids, covered = codec_mod.greedy_parse(data, lex)
+        stats = codec_mod.parse_stats(ids, lex, len(data), covered)
+        t_enc = time.perf_counter()
+        payload = pc.encode(data)
+        encode_s = time.perf_counter() - t_enc
+        want = min(proof, len(ids))
+        out = pc.decode(payload, len(data), limit=want)
+        ok = out == data[: len(out)]
+        rows.append(
+            {
+                "pack": tag,
+                "name": name,
+                "units": len(lex.units),
+                "lexicon_bytes": len(lex.blob()),
+                "payload_bytes": len(payload),
+                "payload_bpb": 8 * len(payload) / max(len(data), 1),
+                "coverage": stats["coverage"],
+                "mean_unit": stats["mean_unit"],
+                "literals": stats["literals"],
+                "encode_seconds": round(encode_s, 3),
+                "proof_bytes": len(out),
+                "roundtrip": ok,
+            }
+        )
+        print(
+            f"  ({tag}) {name:8s}: {len(lex.units):3d} units / "
+            f"{len(lex.blob()):5d} B, {len(payload):6d} B payload, "
+            f"{rows[-1]['payload_bpb']:.3f} bpb, "
+            f"coverage {stats['coverage']:.3f}, proof {'OK' if ok else 'FAIL'}",
+            flush=True,
+        )
+    a, b, c = (row["payload_bpb"] for row in rows)
+    d_ba, d_ca = b - a, c - a
+    delta_ok = abs(d_ba) <= 0.15
+    gain_ok = d_ca >= 0.2
+    write_json(
+        run_dir / "metrics.json",
+        {
+            "id": run_dir.name,
+            "corpus": corpus_name,
+            "corpus_sha": corpus.sha,
+            "train_sha": corpus.train_sha,
+            "package": package,
+            "files": len(files),
+            "data_bytes": len(data),
+            "steps": steps,
+            "active": active,
+            "rotate": rotate,
+            "full_every": full_every,
+            "params": sum(p.numel() for p in model.parameters()),
+            "packs": rows,
+            "delta_b_minus_a": d_ba,
+            "delta_c_minus_a": d_ca,
+            "gate_delta": 0.15,
+            "gate_gain": 0.2,
+            "pass_delta": delta_ok,
+            "pass_gain": gain_ok,
+            "roundtrip": all(row["roundtrip"] for row in rows),
+            "git": git_sha(),
+            "seconds": round(time.perf_counter() - t0, 3),
+        },
+    )
+    for row, lex in zip(rows, (train_pack, target_pack, codec_mod.Lexicon(()))):
+        (run_dir / f"pack-{row['pack']}.bin").write_bytes(lex.blob())
+    lines = [
+        "# Install delta (P0b)",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, train "
+        f"{len(corpus.train):,} B, test {len(corpus.test):,} B",
+        f"- package `{package}`: {len(files)} held-out files / {len(data):,} B",
+        f"- {steps} steps, {active} active units, ngram-joint, seq {model.cfg.seq}",
+        "",
+        "| pack | units | pack B | payload B | payload bpb | coverage | proof |",
+        "|---|---:|---:|---:|---:|---:|:---:|",
+    ]
+    for row in rows:
+        lines.append(
+            f"| ({row['pack']}) {row['name']} | {row['units']} | "
+            f"{row['lexicon_bytes']} | {row['payload_bytes']} | "
+            f"{row['payload_bpb']:.3f} | {row['coverage']:.3f} | "
+            f"{'OK' if row['roundtrip'] else 'FAIL'} |"
+        )
+    lines += [
+        "",
+        f"- `(b) - (a)` = **{d_ba:+.3f} bpb** (bar `|d| <= 0.15`): "
+        f"{'PASS' if delta_ok else 'FAIL'}",
+        f"- `(c) - (a)` = **{d_ca:+.3f} bpb** (bar `>= +0.20`): "
+        f"{'PASS' if gain_ok else 'FAIL'}",
+        "",
+        "The install is causal when the same trained model reads a pack induced",
+        "on the target package nearly as well as its train pack, and both beat",
+        "all literals.  `(b)` is an oracle pack (induced on the encoded bytes);",
+        "it measures transfer of the encoder/head, not held-out pack induction.",
+        "",
+        "| gate | result |",
+        "|---|---|",
+    ]
+    lines.append(
+        f"| package pack within 0.15 bpb of train | {'PASS' if delta_ok else 'FAIL'} |"
+    )
+    lines.append(
+        f"| train pack beats no pack by 0.20 bpb | {'PASS' if gain_ok else 'FAIL'} |"
+    )
+    report = REPORTS / "INSTALL.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, report)
+    print(
+        f"{run_dir.name}: (a) {a:.3f}, (b) {b:.3f}, (c) {c:.3f} bpb; "
+        f"(b)-(a) {d_ba:+.3f}, (c)-(a) {d_ca:+.3f}; "
+        f"gate {'PASS' if delta_ok and gain_ok else 'FAIL'}"
+    )
+    print(f"wrote {report}")
     return 0
 
 
@@ -3650,6 +3976,30 @@ def main(argv: list[str] | None = None) -> int:
     ge.add_argument("run")
     ge.add_argument("--bytes", type=int, default=400)
     ge.add_argument("--seed", type=int, default=0)
+    lm = sub.add_parser("lm")
+    lm.add_argument("--corpus", choices=("shakespeare",), default="shakespeare")
+    lm.add_argument("--tiny", action="store_true")
+    lm.add_argument("--steps", type=int, default=2000)
+    lm.add_argument("--prompt", default="ROMEO:")
+    lm.add_argument("--sample", type=int, default=400)
+    lm.add_argument("--active", type=int, default=256)
+    lm.add_argument("--units", type=int, default=8192)
+    lm.add_argument("--min-count", type=int, default=16)
+    lm.add_argument("--cap", type=int, default=16)
+    lm.add_argument("--proof", type=int, default=4000)
+    lm.add_argument("--seed", type=int, default=0)
+    ins = sub.add_parser("install")
+    ins.add_argument("--corpus", default="code")
+    ins.add_argument("--package", default="networkx")
+    ins.add_argument("--active", type=int, default=256)
+    ins.add_argument("--steps", type=int, default=3000)
+    ins.add_argument("--units", type=int, default=8192)
+    ins.add_argument("--min-count", type=int, default=16)
+    ins.add_argument("--cap", type=int, default=16)
+    ins.add_argument("--proof", type=int, default=4000)
+    ins.add_argument("--seed", type=int, default=0)
+    ins.add_argument("--rotate", type=int, default=8)
+    ins.add_argument("--full-every", type=int, default=8)
     tp = sub.add_parser("templates")
     tp.add_argument("run")
     tp.add_argument("--top", type=int, default=10)
@@ -3746,6 +4096,34 @@ def main(argv: list[str] | None = None) -> int:
         return run_demo(a.run, a.bytes)
     if a.cmd == "generate":
         return generate(a.run, a.bytes, a.seed)
+    if a.cmd == "lm":
+        return run_lm(
+            a.corpus,
+            a.tiny,
+            a.steps,
+            a.prompt.encode(),
+            a.sample,
+            a.active,
+            a.units,
+            a.min_count,
+            a.cap,
+            a.proof,
+            a.seed,
+        )
+    if a.cmd == "install":
+        return run_install(
+            a.corpus,
+            a.package,
+            a.active,
+            a.steps,
+            a.units,
+            a.min_count,
+            a.cap,
+            a.proof,
+            a.seed,
+            a.rotate,
+            a.full_every,
+        )
     if a.cmd == "templates":
         return templates(a.run, a.top)
     if a.cmd == "arena":

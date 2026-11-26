@@ -189,6 +189,8 @@ uv run cml curve P1 --steps 6000 --update
 uv run cml gates
 uv run cml base --params 20_000_000 --steps 6000 --seq 256
 uv run cml run experiments/p0-adapter.toml
+uv run cml lm --corpus shakespeare --tiny --steps 2000 --prompt "ROMEO:" --sample 400
+uv run cml install --corpus code --package networkx --active 256 --steps 3000
 ```
 
 `run-id = <manifest>-<sha8(config)>-s<seed>`; runs write to

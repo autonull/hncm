@@ -79,6 +79,12 @@ def test_pointer_roundtrip() -> None:
     pc = pointer.PointerCodec(model, lex)
     blob = pc.encode(data)
     assert pc.decode(blob, len(data)) == data
+    empty = pointer.PointerCodec(model, codec.Lexicon(()))
+    blob = empty.encode(data)
+    assert empty.decode(blob, len(data)) == data
+    raw, tags = pc.continuation(b"def", 8, 0)
+    assert len(raw) == 8 and tags
+    assert all(t[2].startswith("copy@") or t[2] == "~neural" for t in tags)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="byte codec uses cuda")

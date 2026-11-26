@@ -160,9 +160,11 @@ class PointerLM(nn.Module):
 
     def _inputs(self, ids: torch.Tensor, e_u: torch.Tensor) -> torch.Tensor:
         k = e_u.size(0)
+        byte = self.byte((ids - k).clamp(min=0))
+        if not k:
+            return byte
         span = ids < k
         unit = e_u[ids.clamp(max=k - 1)]
-        byte = self.byte((ids - k).clamp(min=0))
         return torch.where(span[..., None], unit, byte)
 
     def forward(self, ids: torch.Tensor, units: tuple[bytes, ...]) -> tuple:
@@ -673,17 +675,30 @@ class PointerCodec:
         return np.asarray(out, dtype=np.int64)
 
     @torch.no_grad()
-    def sample(self, nbytes: int, seed: int = 0) -> bytes:
-        """Generate bytes by sampling the joint head; the pack is the vocabulary."""
+    def continuation(
+        self, prompt: bytes, nbytes: int, seed: int = 0
+    ) -> tuple[bytes, list[tuple[int, int, str]]]:
+        """Feed `prompt`, then sample; tag each span copy@offset or ~neural.
+
+        The cache resets at every `seq` boundary, exactly as the coder does, so
+        the sampled distribution is the one the decoder would see.
+        """
         rng = np.random.default_rng(seed)
-        out = bytearray()
         cache = _cache(self.model, self.device)
         h = None
-        n = 0
+        pos = 0
+        for elem in elements(prompt, self.lex):
+            h = self._feed(cache, int(elem), pos)
+            pos += 1
+            if pos == self.seq:
+                cache = _cache(self.model, self.device)
+                pos, h = 0, None
+        out = bytearray()
+        tags: list[tuple[int, int, str]] = []
+        offs = self.lex.offsets()
         while len(out) < nbytes:
             if h is None:
-                c = self.first
-                bq = self.bytes
+                c, bq = self.first, self.bytes
             else:
                 q, bq = self._probs(h)
                 c = self._cums(q[None])[0]
@@ -691,22 +706,32 @@ class PointerCodec:
                     bq = self._cums(bq[None])[0]
             target = int(rng.integers(0, int(c[-1])))
             sym = int(np.searchsorted(c, target, side="right")) - 1
-            if sym < self.k:
+            start = len(out)
+            if self.k and sym < self.k:
                 out += self.lex.units[sym]
                 elem = sym
+                tags.append((start, len(out), f"copy@{offs[sym]}"))
             else:
                 if self.joint:
-                    byte = sym - self.k
+                    byte = sym - self.k if self.k else sym
                 else:
                     tb = int(rng.integers(0, int(bq[-1])))
                     byte = int(np.searchsorted(bq, tb, side="right")) - 1
                 out.append(byte)
                 elem = self.k + byte
+                tags.append((start, len(out), "~neural"))
             if len(out) >= nbytes:
                 break
-            h = self._feed(cache, elem, n)
-            n = (n + 1) % self.seq
-        return bytes(out[:nbytes])
+            h = self._feed(cache, elem, pos)
+            pos += 1
+            if pos == self.seq:
+                cache = _cache(self.model, self.device)
+                pos, h = 0, None
+        return bytes(out[:nbytes]), tags
+
+    def sample(self, nbytes: int, seed: int = 0) -> bytes:
+        """Generate bytes by sampling the joint head; the pack is the vocabulary."""
+        return self.continuation(b"", nbytes, seed)[0]
 
     def encode(self, data: bytes, parse: str = "greedy") -> bytes:
         els = (
@@ -795,3 +820,8 @@ def load_model(path: Path, device: str = "cuda") -> PointerLM:
     model = PointerLM(cfg).to(device)
     model.load_state_dict(data["state"])
     return model
+
+
+def load_losses(path: Path) -> list[float]:
+    data = torch.load(path, map_location="cpu", weights_only=False)
+    return [float(x) for x in data.get("losses", [])]
