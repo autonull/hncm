@@ -8,6 +8,7 @@ installed lexicon, which the frame carries); `self` adds the 4-bit base.
 | byte | code | 1ccd9ffc | 756752 | 2.522 | 2.523 | 2.523 | — | 0 | ✓ | `codec-byte-code-1000000` |
 | byte | code | 1ccd9ffc | 30000 | 2.780 | 2.793 | 2.793 | — | 0 | ✓ | `codec-byte-code-30000` |
 | byte | code | 1ccd9ffc | 70000 | 2.801 | 2.807 | 2.807 | — | 0 | ✓ | `codec-byte-code-70000` |
+| byte-model | code | 1ccd9ffc | 70000 | 1.916 | 1.922 | 279.865 | 10000 B | 0 | ✓ | `codec-byte-model-code-70000` |
 | concept | code | 1ccd9ffc | 30000 | 2.385 | 3.137 | 665.435 | 21723 | 2771 | ✓ | `codec-concept-code-30000` |
-| concept | code | 1ccd9ffc | 70000 | 2.352 | 2.674 | 286.516 | 50000 | 2771 | ✓ | `codec-concept-code-70000` |
+| concept | code | 1ccd9ffc | 70000 | 2.386 | 2.709 | 286.609 | 50000 | 2771 | ✓ | `codec-concept-code-70000` |
 | lexicon | code | 1ccd9ffc | 200000 | 2.321 | 5.911 | 5.911 | — | 89713 | ✓ | `codec-lexicon-code-200000` |

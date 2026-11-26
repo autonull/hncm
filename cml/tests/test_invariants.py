@@ -81,6 +81,17 @@ def test_pointer_roundtrip() -> None:
     assert pc.decode(blob, len(data)) == data
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="byte codec uses cuda")
+def test_static_byte_roundtrip() -> None:
+    import bytecodec
+
+    model = bytecodec.Trunk(256, 32, 1, 4, 32).cuda()
+    pc = bytecodec.StaticByteCodec(model, half=True)
+    data = b"alpha = beta\n" * 16
+    blob = pc.encode(data)
+    assert pc.decode(blob, len(data)) == data
+
+
 def test_windows_and_split() -> None:
     ids = torch.arange(20)
     win = cml.windows(ids, 4)

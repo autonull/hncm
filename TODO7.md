@@ -19,23 +19,23 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M0 | **done** | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`; `cml coder --test` passes 10k fixed + 10k adaptive symbols and a 200 kB byte round-trip |
 | M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
-| M3 | **partial** | 4.97M pointer (active 256, 3,000 steps): 70k test payload **2.352**, shared **2.674** vs byte **2.807**; proof **50,000 units** exact; a pack the model never trained on decodes exactly, but the pack gap is **0.926 bpb** (Q1 bar 0.15) — rotating-lexicon training and local copy are not built |
-| M4-M7 | **not started** | M4 is blocked by M3's pack-agnostic training; M5-M7 remain as written |
+| M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
+| M4 | **negative probe** | 4.86M trained byte trunk, static coder: 70k **1.916/1.922 bpb**. The pointer loses by **0.787 bpb**; the ≥0.2 bar fails. Caveats: the pointer uses a 2.8 kB active pack, not 90 kB, and n=70k |
+| M5-M7 | **not started** | Ops, text control and the librarian remain |
 
 Concrete remaining work, in order:
 
-1. **Finish M3.** Rotate 2-4 packs per training step and add local copy
-   symbols. Bar: unseen-pack gap ≤0.15 bpb and shared bpb < the byte arm at
-   equal bytes. Then re-run the concept arm at 200 kB-1 MB.
-2. **M4.** Train a 5M byte model on the train split (the recorded byte arm is
-   adaptive, not trained) and print the equal-bytes table at a size where the
-   4-bit base amortizes (≥1 MB), with steps/byte and FLOPs/byte.
-3. **M5-M7.** Ops + Q2/Q3, the P1 text control, then the librarian.
+1. **M4 diagnostics.** The trained byte model wins at 70k. Test the two stated remedies
+   before accepting the negative: a larger active pack (512-8192 units, up to
+   the 90 kB charge) and local copy symbols. Raise n to ≥1 MB, which needs an
+   exact batched encode; otherwise the 4-bit base cannot be compared honestly.
+2. **M5-M7.** Ops + Q2/Q3, the P1 text control, then the librarian.
 
 Two build notes. The causal step is 4.2 ms fp32 / 3.7 ms fp16 per unit, so a
 50k-unit proof is a ~6-minute job; encode-at-scale needs an exact batched CDF
 replay or a fused step. `code_corpus(refreeze=True)` takes a new snapshot;
 normal runs never read the moving working tree.
+
 
 ## 0. What is measured (start from this, do not re-derive)
 
@@ -66,6 +66,11 @@ real customer: a repo assistant.
 
 The first claim to earn: **a 5M unit model + a 90 kB lexicon ≤ a 5.5M byte
 model on held-out Python at equal total bytes**, recorded end-to-end.
+
+The first probe of that claim fails: at 70 kB, a 4.86M trained byte model
+records **1.922 bpb**, while the 4.97M pointer plus a 2.8 kB active pack
+records **2.709**. The pointer also wins against the *adaptive* byte arm
+(2.807), so M3's bar and M4's equal-bytes bar separate cleanly.
 
 ## 1a. The budget that forces the pointer head
 
@@ -147,8 +152,8 @@ train. Record `corpus_sha` in every header and metrics.
 | M0 ✅ | `cml/codec.py`: `ArithEncoder/Decoder`, `Counts`, `quant`, `cml coder --test` | 10k random symbols round-trip; 200 kB byte codec round-trip | 1.5 h |
 | M1 ✅ | byte arm: order-2 counts, escape to order-1; `cml codec --arm byte --corpus code` | exact round-trip; recorded bpb on 1 MB | 1.5 h |
 | M2 ✅ | lexicon + greedy parse: `lexicon(code, 8192, min_count 16)`; OOV → byte escape; header carries the lexicon | re-expand == input; ≥60% bytes covered by units; avg unit ≥3 B | 1.5 h |
-| M3 ◐ | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
-| M4 | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
+| M3 ✅ | the pointer head: 5M trunk (d256, 6 layers, seq 256), content span embeddings + `W_q`, byte head, gate; rotating lexicon; local copy symbols; `--arm concept` | exact round-trip on 50k units; a pack the model never trained on still decodes; recorded bpb < byte arm | 4.5 h |
+| M4 ✗ | the equal-bytes table + the levers: 5M byte vs 5M pointer + 90 kB lexicon; re-parse under the model's prices; market admission; steps/byte and FLOPs/byte | the unit arm wins ≥0.2 bpb at equal total bytes, else record the negative | 4 h |
 | M5 | ops: `pack verify/trace/diff/merge/rm`; Q2/Q3 demos; the adapter arm as a 30-min negative control (flag+index+byte) to confirm −2.2 in a real codec; a rent λ sweep on the pack | provenance 100%; `rm` localizes the delta and still round-trips | 2.5 h |
 | M6 | text control: the P1 trunk concept codec on the 10 MB parse (recorded, vs PPMd 1.992) | recorded bpb within 0.05 of 1.920 + header | 2 h |
 | M7 | library with holes: the librarian lifts a template by anti-unification; slots fill from other units; Q1 | ≥0.1 bpb on slot tokens vs the byte arm | 1-2 d |
@@ -236,14 +241,15 @@ cd cml
 uv sync && uv run pytest -q
 uv run cml coder --test
 uv run cml codec --arm byte --corpus code --bytes 1000000
+uv run cml codec --arm byte-model --corpus code --bytes 70000 --steps 3000
 uv run cml codec --arm lexicon --corpus code --bytes 200000
-uv run cml codec --arm concept --corpus code --bytes 70000 --proof 50000 --steps 3000
+uv run cml codec --arm concept --corpus code --bytes 70000 --proof 50000 --steps 8000 --rotate 8 --full-every 8
 uv run cml recorded
 ```
 
 The concept arm codes in fp16 for speed; training stays fp32. Its model is
-cached by `(train_sha, active, steps, seed)` and copied into the run directory.
-The 50k-unit proof takes ~6 minutes on an RTX 3080.
+cached by `(train_sha, active, rotate, full_every, steps, seed)` and copied
+into the run directory. The 50k-unit proof takes ~6 minutes on an RTX 3080.
 
 References: `cml/PLAN.md` §11; `n10.py:241` (`build_full`); `runs/v9/CODEC.md`
 (the header and charge); `reports/GATES.md` (the record).

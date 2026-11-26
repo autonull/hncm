@@ -49,9 +49,11 @@ class SpanEncoder(nn.Module):
     def __init__(self, d: int = 256, w: int = 64):
         super().__init__()
         self.emb = nn.Embedding(BYTE, w)
+        self.pos = nn.Embedding(16, w)
         self.fc1 = nn.Linear(w, w)
         self.fc2 = nn.Linear(w, d)
         nn.init.normal_(self.emb.weight, std=0.02)
+        nn.init.normal_(self.pos.weight, std=0.02)
 
     def forward(self, spans: list[bytes], device: str) -> torch.Tensor:
         width = max((len(s) for s in spans), default=1)
@@ -61,7 +63,8 @@ class SpanEncoder(nn.Module):
         for i, span in enumerate(spans):
             x[i, : len(span)] = torch.frombuffer(bytearray(span), dtype=torch.uint8)
             mask[i, : len(span)] = 1
-        e = self.emb(x) * mask[..., None]
+        e = self.emb(x) + self.pos.weight[:width]
+        e = e * mask[..., None]
         z = e.sum(1) / mask.sum(1, keepdim=True).clamp_min(1)
         return self.fc2(F.gelu(self.fc1(z)))
 
@@ -103,6 +106,19 @@ def _windows(elements: np.ndarray, seq: int, batch: int, rng: np.random.Generato
     return torch.as_tensor(x), torch.as_tensor(y)
 
 
+def _loss(model: PointerLM, x: torch.Tensor, y: torch.Tensor, units: tuple[bytes, ...]):
+    ptr, gate, byte = model(x, units)
+    k = len(units)
+    span = y < k
+    loss = F.binary_cross_entropy_with_logits(gate, span.float())
+    if bool(span.any()):
+        loss = loss + F.cross_entropy(ptr[span], y[span])
+    lit = ~span
+    if bool(lit.any()):
+        loss = loss + F.cross_entropy(byte[lit], y[lit] - k)
+    return loss
+
+
 def train_pointer(
     elements: np.ndarray,
     units: tuple[bytes, ...],
@@ -114,21 +130,11 @@ def train_pointer(
     model = PointerLM(cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.1)
     rng = np.random.default_rng(cfg.seed)
-    k = len(units)
     losses: list[float] = []
     t0 = time.perf_counter()
     for step in range(cfg.steps):
         x, y = _windows(elements, cfg.seq, cfg.batch, rng)
-        x = x.to(device)
-        y = y.to(device)
-        ptr, gate, byte = model(x, units)
-        span = y < k
-        loss = F.binary_cross_entropy_with_logits(gate, span.float())
-        if bool(span.any()):
-            loss = loss + F.cross_entropy(ptr[span], y[span])
-        lit = ~span
-        if bool(lit.any()):
-            loss = loss + F.cross_entropy(byte[lit], y[lit] - k)
+        loss = _loss(model, x.to(device), y.to(device), units)
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -141,6 +147,121 @@ def train_pointer(
                 flush=True,
             )
     return model, losses
+
+
+def pack_streams(
+    train: bytes,
+    full_units: tuple[bytes, ...],
+    active: int = 256,
+    packs: int = 4,
+    min_count: int = 16,
+    cap: int = 16,
+) -> list[tuple[np.ndarray, tuple[bytes, ...]]]:
+    """The full pack plus `packs` disjoint chunk packs; each is one parse."""
+    full = codec.Lexicon(full_units[:active])
+    streams = [(elements(train, full), full.units)]
+    bounds = np.linspace(0, len(train), packs + 1).astype(int)
+    for i in range(packs):
+        chunk = train[bounds[i] : bounds[i + 1]]
+        lex = codec.build_lexicon(chunk, 8192, min_count, cap)
+        units = lex.units[:active]
+        streams.append((elements(chunk, codec.Lexicon(units)), units))
+    return streams
+
+
+def train_pointer_streams(
+    streams: list[tuple[np.ndarray, tuple[bytes, ...]]],
+    cfg: PointerConfig,
+    device: str = "cuda",
+    full_every: int = 2,
+) -> tuple[PointerLM, list[float]]:
+    """Rotate parses; the full pack keeps half the steps, chunks take the rest."""
+    torch.manual_seed(cfg.seed)
+    random.seed(cfg.seed)
+    model = PointerLM(cfg).to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.1)
+    rng = np.random.default_rng(cfg.seed)
+    losses: list[float] = []
+    t0 = time.perf_counter()
+    n = len(streams)
+    for step in range(cfg.steps):
+        if n > 1 and full_every and step % full_every == 0:
+            idx = 0
+        elif full_every:
+            idx = 1 + (step // full_every) % (n - 1)
+        else:
+            idx = step % n
+        els, units = streams[idx]
+        x, y = _windows(els, cfg.seq, cfg.batch, rng)
+        loss = _loss(model, x.to(device), y.to(device), units)
+        opt.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        losses.append(float(loss.detach()))
+        if step % 50 == 0 or step == cfg.steps - 1:
+            print(
+                f"  pointer step {step:4d} pack {idx} loss "
+                f"{float(loss.detach()):.3f} ({time.perf_counter() - t0:.1f}s)",
+                flush=True,
+            )
+    return model, losses
+
+
+@torch.no_grad()
+def eval_bpb(
+    model: PointerLM, data: bytes, lex: codec.Lexicon, seq: int = 256
+) -> dict[str, float]:
+    """Teacher-forced payload bpb on one pack; header excluded."""
+    els = elements(data, lex)
+    k = len(lex.units)
+    model.eval()
+    total = 0.0
+    nbytes = 0
+    spans = 0
+    n = 0
+    for a in range(0, len(els), seq):
+        chunk = els[a : a + seq]
+        t = len(chunk) - 1
+        if t <= 0:
+            break
+        ids = (
+            torch.as_tensor(chunk[:-1]).view(1, -1).to(next(model.parameters()).device)
+        )
+        y = torch.as_tensor(chunk[1:]).to(ids.device)
+        ptr, gate, byte = model(ids, lex.units)
+        gate = gate.view(-1)
+        ptr = ptr.view(t, -1)
+        byte = byte.view(t, -1)
+        span = y < k
+        g = -torch.log2(torch.sigmoid(gate).clamp_min(1e-9))
+        e = -torch.log2((1 - torch.sigmoid(gate)).clamp_min(1e-9))
+        nll = torch.where(span, g, e)
+        if bool(span.any()):
+            nll[span] += -torch.log2(
+                torch.softmax(ptr[span], -1)
+                .gather(1, y[span, None])
+                .squeeze(1)
+                .clamp_min(1e-12)
+            )
+        if bool((~span).any()):
+            nll[~span] += -torch.log2(
+                torch.softmax(byte[~span], -1)
+                .gather(1, (y[~span] - k)[:, None])
+                .squeeze(1)
+                .clamp_min(1e-12)
+            )
+        total += float(nll.sum())
+        spans += int(span.sum())
+        n += t
+        for elem in y.tolist():
+            nbytes += len(lex.units[elem]) if elem < k else 1
+    return {
+        "payload_bpb": total / max(nbytes, 1),
+        "bits": total,
+        "nbytes": nbytes,
+        "span_frac": spans / max(n, 1),
+    }
 
 
 def elements(data: bytes, lex: codec.Lexicon) -> np.ndarray:

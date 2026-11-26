@@ -2797,21 +2797,116 @@ def _lexicon_for(corpus: CodeCorpus, units: int, min_count: int, cap: int):
     return lex
 
 
+def _byte_model(corpus: CodeCorpus, steps: int, seed: int):
+    import bytecodec
+
+    path = CACHE / f"byte-{corpus.train_sha[:12]}-d256-l6-s{steps}-n{seed}.pt"
+    if path.exists():
+        try:
+            return bytecodec.load_model(path)
+        except RuntimeError, KeyError, ValueError:
+            pass
+    cfg = bytecodec.ByteConfig(steps=steps, seed=seed)
+    model, secs = bytecodec.train_byte_model(corpus.train, cfg)
+    bytecodec.save_model(path, model, cfg, secs)
+    return model
+
+
+def _run_byte_model(
+    corpus: CodeCorpus,
+    data: bytes,
+    arm: str,
+    corpus_name: str,
+    nbytes: int,
+    split: str,
+    steps: int,
+    seed: int,
+    proof: int,
+) -> dict:
+    import bytecodec
+
+    model = _byte_model(corpus, steps, seed)
+    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}"
+    bytecodec.save_model(
+        out_dir / "model.pt", model, bytecodec.ByteConfig(steps=steps, seed=seed), 0.0
+    )
+    coder = bytecodec.StaticByteCodec(model, half=True)
+    payload = coder.encode(data)
+    frame = codec_mod.pack_frame(3, len(data), payload, corpus.sha, corpus.train_sha)
+    header_bytes = len(frame) - len(payload)
+    want = min(proof, len(data))
+    out = coder.decode(payload, len(data), limit=want)
+    if out != data[: len(out)]:
+        raise SystemExit("byte-model: proof round-trip failed")
+    params = sum(p.numel() for p in model.parameters())
+    base_bytes = params / 2
+    n = max(len(data), 1)
+    payload_bpb = 8 * len(payload) / n
+    shared_bpb = 8 * (len(payload) + header_bytes) / n
+    metrics = {
+        "id": f"codec-{arm}-{corpus_name}-{nbytes}",
+        "arm": arm,
+        "corpus": corpus_name,
+        "split": split,
+        "bytes": nbytes,
+        "n": len(data),
+        "payload_bytes": len(payload),
+        "header_bytes": header_bytes,
+        "lexicon_bytes": 0,
+        "payload_bpb": payload_bpb,
+        "shared_bpb": shared_bpb,
+        "self_bpb": shared_bpb + 8 * base_bytes / n,
+        "base_bytes": base_bytes,
+        "params": params,
+        "roundtrip": True,
+        "proof_units": 0,
+        "proof_bytes": len(out),
+        "corpus_sha": corpus.sha,
+        "train_sha": corpus.train_sha,
+        "lexicon_sha": "",
+        "units": 0,
+        "coverage": None,
+        "mean_unit": None,
+        "literals": None,
+        "files": len(corpus.files),
+        "train_bytes": len(corpus.train),
+        "test_bytes": len(corpus.test),
+        "git": git_sha(),
+        "seconds": None,
+    }
+    write_json(out_dir / "metrics.json", metrics)
+    (out_dir / "frame.bin").write_bytes(frame)
+    return metrics
+
+
 def _pointer_for(
-    corpus: CodeCorpus, lex: codec_mod.Lexicon, active: int, steps: int, seed: int
+    corpus: CodeCorpus,
+    lex: codec_mod.Lexicon,
+    active: int,
+    steps: int,
+    seed: int,
+    rotate: int,
+    full_every: int,
 ):
     import pointer
 
     active_lex = codec_mod.Lexicon(lex.units[:active])
-    path = CACHE / f"pointer-{corpus.train_sha[:12]}-a{active}-s{steps}-n{seed}.pt"
+    tag = f"r{rotate}f{full_every}-" if rotate else ""
+    path = CACHE / f"pointer-{corpus.train_sha[:12]}-a{active}-{tag}s{steps}-n{seed}.pt"
     if path.exists():
         try:
             return pointer.load_model(path), active_lex
         except RuntimeError, KeyError, ValueError:
             pass
     cfg = pointer.PointerConfig(active=active, steps=steps, seed=seed)
-    els = pointer.elements(corpus.train, active_lex)
-    model, losses = pointer.train_pointer(els, active_lex.units, cfg)
+    if rotate:
+        streams = pointer.pack_streams(corpus.train, lex.units, active, rotate)
+        model, losses = pointer.train_pointer_streams(
+            streams, cfg, full_every=full_every
+        )
+    else:
+        els = pointer.elements(corpus.train, active_lex)
+        model, losses = pointer.train_pointer(els, active_lex.units, cfg)
     pointer.save_model(path, model, cfg, losses)
     return model, active_lex
 
@@ -2824,6 +2919,8 @@ def _run_concept(
     steps: int,
     seed: int,
     proof: int,
+    rotate: int,
+    full_every: int,
     arm: str,
     corpus_name: str,
     nbytes: int,
@@ -2831,7 +2928,9 @@ def _run_concept(
 ) -> dict:
     import pointer
 
-    model, active_lex = _pointer_for(corpus, lex, active, steps, seed)
+    model, active_lex = _pointer_for(
+        corpus, lex, active, steps, seed, rotate, full_every
+    )
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
     pcodec = pointer.PointerCodec(model, active_lex, half=True)
@@ -2901,6 +3000,8 @@ def run_codec(
     active: int,
     steps: int,
     proof: int,
+    rotate: int,
+    full_every: int,
     seed: int,
 ) -> int:
     """One `cml codec` run: encode a frozen slice, decode it, record the bpb."""
@@ -2910,6 +3011,19 @@ def run_codec(
     corpus = code_corpus()
     pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}[split]
     data = pool[:nbytes]
+    if arm == "byte-model":
+        metrics = _run_byte_model(
+            corpus, data, arm, corpus_name, nbytes, split, steps, seed, proof
+        )
+        metrics["seconds"] = round(time.perf_counter() - t0, 3)
+        write_json(RUNS / metrics["id"] / "metrics.json", metrics)
+        print(
+            f"{metrics['id']}: {len(data)} B -> {metrics['payload_bytes']} B payload, "
+            f"header {metrics['header_bytes']} B, "
+            f"{metrics['payload_bpb']:.3f} / {metrics['shared_bpb']:.3f} bpb, "
+            f"proof {metrics['proof_bytes']} bytes"
+        )
+        return 0
     if arm == "concept":
         lex = _lexicon_for(corpus, units, min_count, cap)
         metrics = _run_concept(
@@ -2920,6 +3034,8 @@ def run_codec(
             steps,
             seed,
             proof,
+            rotate,
+            full_every,
             arm,
             corpus_name,
             nbytes,
@@ -3022,7 +3138,9 @@ def recorded_report() -> int:
     ]
     for m in rows:
         mark = "✓" if m.get("roundtrip") else "✗"
-        proof = m.get("proof_units", "—")
+        proof = m.get("proof_units") or (
+            f"{m['proof_bytes']} B" if m.get("proof_bytes") else "—"
+        )
         lines.append(
             f"| {m['arm']} | {m['corpus']} | {m['corpus_sha'][:8]} | {m['n']} | "
             f"{m['payload_bpb']:.3f} | {m['shared_bpb']:.3f} | "
@@ -3074,7 +3192,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--steps", type=int, default=6000)
     c.add_argument("--update", action="store_true")
     co = sub.add_parser("codec")
-    co.add_argument("--arm", choices=("byte", "lexicon", "concept"), default="byte")
+    co.add_argument(
+        "--arm", choices=("byte", "byte-model", "lexicon", "concept"), default="byte"
+    )
     co.add_argument("--corpus", default="code")
     co.add_argument("--bytes", type=int, default=1_000_000)
     co.add_argument("--split", choices=("train", "test", "all"), default="test")
@@ -3084,6 +3204,8 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--active", type=int, default=256)
     co.add_argument("--steps", type=int, default=1000)
     co.add_argument("--proof", type=int, default=50_000)
+    co.add_argument("--rotate", type=int, default=0)
+    co.add_argument("--full-every", type=int, default=2)
     co.add_argument("--seed", type=int, default=0)
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
@@ -3133,6 +3255,8 @@ def main(argv: list[str] | None = None) -> int:
             a.active,
             a.steps,
             a.proof,
+            a.rotate,
+            a.full_every,
             a.seed,
         )
     if a.cmd == "coder":
