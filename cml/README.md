@@ -127,6 +127,8 @@ The four bets, and where they live:
 - `cml train --units codec --model pointer|trunk`: the 5.21M concept LM on the
   256-unit pack, its 4.93M fixed-vocab control, decision accounting, and
   `reports/CONCEPT.md` (1.600 / 1.516 bpb, exact round-trip).
+- `cml screen`: capability screen on 200 held-out code spans; byte, counts,
+  concept pointer, and fixed-vocab trunk; `reports/SCREEN.md`.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,

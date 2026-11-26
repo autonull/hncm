@@ -1,0 +1,35 @@
+{
+ "rows": [
+  {
+   "mechanism": "trunk",
+   "exact": 0.48,
+   "top1": 0.48,
+   "bits_per_span": 2.5904231310418537,
+   "decisions_per_span": 1.0
+  },
+  {
+   "mechanism": "pointer",
+   "exact": 0.415,
+   "top1": 0.415,
+   "bits_per_span": 3.133062536448256,
+   "decisions_per_span": 1.0
+  },
+  {
+   "mechanism": "byte",
+   "exact": 0.21,
+   "top1": 0.61,
+   "bits_per_span": 12.711350813993354,
+   "decisions_per_span": 3.04
+  },
+  {
+   "mechanism": "counts",
+   "exact": 0.04,
+   "top1": 0.04,
+   "bits_per_span": 2.814919674260652,
+   "decisions_per_span": 1.0
+  }
+ ],
+ "spans": 200,
+ "seconds": 237.107,
+ "seed": 0
+}

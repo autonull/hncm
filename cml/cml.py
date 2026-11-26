@@ -1826,6 +1826,245 @@ def _write_concept_report() -> Path:
     return report
 
 
+def _load_screen_pointer(
+    run: str,
+    corpus: CodeCorpus,
+    lex: codec_mod.Lexicon,
+    active: int,
+    steps: int,
+    seed: int,
+):
+    import pointer
+
+    path = RUNS / run / "model.pt"
+    if path.exists():
+        return pointer.load_model(path)
+    model, _, _ = _pointer_for(
+        corpus,
+        lex,
+        active,
+        steps,
+        seed,
+        8,
+        8,
+        seq=256,
+        span="ngram",
+        head="joint",
+        d=256,
+        layers=6,
+    )
+    return model
+
+
+def _load_screen_trunk(run: str, corpus: CodeCorpus, active_lex, steps: int, seed: int):
+    path = RUNS / run / "model.pt"
+    if path.exists():
+        data = torch.load(path, map_location="cuda", weights_only=False)
+        model = Trunk(data["vocab"], data["d"], data["layers"], data["heads"], data["seq"])
+        model.load_state_dict(data["model"])
+        return model.cuda()
+    torch.manual_seed(seed)
+    d, layers, heads = preset(5_000_000)
+    model = Trunk(len(active_lex.units) + 256, d, layers, heads, 256).cuda()
+    ids, _ = _concept_stream(corpus.train, active_lex)
+    train_loop(model, windows(ids, 256), steps, 32, 3e-4)
+    return model
+
+
+def _next_q(
+    model, ctx: torch.Tensor, units: tuple[bytes, ...]
+) -> torch.Tensor:
+    """The next-symbol distribution from a pointer, joint or gated."""
+    logits, gate, byte = model(ctx.view(1, -1), units)
+    if gate is not None:
+        g = torch.sigmoid(gate)[:, -1]
+        ptr = torch.softmax(logits[:, -1], -1)
+        lit = torch.softmax(byte[:, -1], -1)
+        return torch.cat((ptr * g[:, None], lit * (1 - g)[:, None]), -1)[0]
+    return torch.softmax(logits[:, -1], -1)[0]
+
+
+def run_screen(
+    corpus_name: str = "code",
+    nbytes: int = 70_000,
+    spans: int = 200,
+    steps: int = 500,
+    seed: int = 0,
+) -> int:
+    """Capability screen: exact held-out span reconstruction per mechanism."""
+    import bytecodec
+
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    lex = _lexicon_for(corpus, 8192, 16, 16)
+    active_lex = codec_mod.Lexicon(lex.units[:256])
+    k = len(active_lex.units)
+    ids, lens = _concept_stream(data, active_lex)
+    offsets = torch.cat((torch.zeros(1, dtype=torch.long), lens.cumsum(0)))
+    matched = torch.nonzero(ids < k).flatten()
+    matched = matched[matched > 0]
+    rng = np.random.default_rng(seed)
+    take = min(spans, int(matched.numel()))
+    pos = torch.from_numpy(np.sort(rng.choice(matched.numpy(), take, replace=False)))
+    targets = ids[pos]
+    true_spans = [active_lex.units[int(t)] for t in targets]
+
+    pmodel = _load_screen_pointer(
+        "concept-pointer-code-p5m-s8000", corpus, lex, 256, steps, seed
+    )
+    tmodel = _load_screen_trunk(
+        "concept-trunk-code-p5m-s8000", corpus, active_lex, steps, seed
+    )
+    bpath = RUNS / "codec-byte-model-code-756752" / "model.pt"
+    bmodel = (
+        bytecodec.load_model(bpath)
+        if bpath.exists()
+        else _byte_model(corpus, steps, seed)
+    )
+    bc = bytecodec.StaticByteCodec(bmodel)
+    seq = pmodel.cfg.seq
+
+    from collections import Counter, defaultdict
+
+    train_ids, _ = _concept_stream(corpus.train, active_lex)
+    bigram: dict[int, Counter] = defaultdict(Counter)
+    glob = Counter(train_ids.tolist())
+    for a, b in zip(train_ids[:-1].tolist(), train_ids[1:].tolist()):
+        bigram[a][b] += 1
+
+    names = ("byte", "counts", "pointer", "trunk")
+    score = {n: {"exact": 0, "top1": 0, "bits": 0.0, "decisions": 0} for n in names}
+    for i, target, span in zip(pos.tolist(), targets.tolist(), true_spans):
+        ctx = ids[max(0, i - seq + 1) : i].cuda()
+        if ctx.numel() == 0:
+            continue
+        q = _next_q(pmodel, ctx, active_lex.units)
+        prob = float(q[target])
+        pred = int(q.argmax())
+        score["pointer"]["exact"] += pred == target
+        score["pointer"]["top1"] += pred == target
+        score["pointer"]["bits"] += -math.log2(max(prob, 1e-12))
+        score["pointer"]["decisions"] += 1
+
+        logits = tmodel(ctx.view(1, -1))
+        tq = torch.softmax(logits[:, -1], -1)[0]
+        tprob = float(tq[target])
+        tpred = int(tq.argmax())
+        score["trunk"]["exact"] += tpred == target
+        score["trunk"]["top1"] += tpred == target
+        score["trunk"]["bits"] += -math.log2(max(tprob, 1e-12))
+        score["trunk"]["decisions"] += 1
+
+        row = bigram.get(int(ids[i - 1]))
+        if row:
+            cpred, count = row.most_common(1)[0]
+            total = sum(row.values())
+        else:
+            cpred, count = glob.most_common(1)[0]
+            total = sum(glob.values())
+        cprob = (count + 1) / (total + k + 256)
+        score["counts"]["exact"] += cpred == target
+        score["counts"]["top1"] += cpred == target
+        score["counts"]["bits"] += -math.log2(max(cprob, 1e-12))
+        score["counts"]["decisions"] += 1
+
+        start = int(offsets[i])
+        bctx = data[max(0, start - seq) : start]
+        cache = bc._cache()
+        h = None
+        for sym in bctx:
+            h = bc._feed(cache, sym)
+        if h is None:
+            continue
+        out = bytearray()
+        bbits = 0.0
+        first_ok = False
+        for j, truth in enumerate(span):
+            bq = bc._probs(h)
+            bpred = int(bq.argmax())
+            bprob = float(bq[truth] / bq.sum())
+            if j == 0:
+                first_ok = bpred == truth
+            bbits += -math.log2(max(bprob, 1e-12))
+            out.append(bpred)
+            if j + 1 < len(span):
+                h = bc._feed(cache, bpred)
+        score["byte"]["exact"] += bytes(out) == span
+        score["byte"]["top1"] += first_ok
+        score["byte"]["bits"] += bbits
+        score["byte"]["decisions"] += len(span)
+
+    n = max(take, 1)
+    rows = []
+    for name in names:
+        s = score[name]
+        rows.append(
+            {
+                "mechanism": name,
+                "exact": s["exact"] / n,
+                "top1": s["top1"] / n,
+                "bits_per_span": s["bits"] / n,
+                "decisions_per_span": s["decisions"] / n,
+            }
+        )
+    rows.sort(key=lambda r: (-r["exact"], -r["top1"], r["decisions_per_span"]))
+    secs = time.perf_counter() - t0
+    lines = [
+        "# Capability screen: held-out span reconstruction",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, held-out "
+        f"{len(data):,} B, {take} matched spans",
+        f"- pack {k} units / {len(active_lex.blob()):,} B, "
+        f"{steps} fallback steps, seed {seed}",
+        "- exact = the predicted span equals the removed bytes; top-1 = the "
+        "first symbol is right; decisions count emitted symbols.",
+        "",
+        "| mechanism | family | exact span | top-1 | bits/span | "
+        "decisions/span |",
+        "|---|---|---:|---:|---:|---:|",
+    ]
+    family = {
+        "byte": "r1 baseline",
+        "counts": "r1/r6 copy",
+        "pointer": "r3/r4/r6",
+        "trunk": "r3/r4 control",
+    }
+    for r in rows:
+        lines.append(
+            f"| {r['mechanism']} | {family[r['mechanism']]} | "
+            f"{r['exact']:.3f} | {r['top1']:.3f} | "
+            f"{r['bits_per_span']:.3f} | {r['decisions_per_span']:.2f} |"
+        )
+    best = rows[0]
+    lines += [
+        "",
+        "## Most promising",
+        "",
+        f"`{best['mechanism']}`: exact {best['exact']:.3f}, "
+        f"top-1 {best['top1']:.3f}, {best['bits_per_span']:.2f} bits/span, "
+        f"{best['decisions_per_span']:.2f} decisions/span.",
+        "",
+        "This is a capability comparison, not a gate. It measures next-span",
+        "prediction on held-out code. Edit/install (`r5`) and library (`r7`)",
+        "need their own probes on the same task.",
+        "",
+        f"Screen took {secs:.1f} s.",
+        "",
+    ]
+    write_json(
+        REPORTS / "screen.json",
+        {"rows": rows, "spans": take, "seconds": round(secs, 3), "seed": seed},
+    )
+    report = REPORTS / "SCREEN.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print("\n".join(lines))
+    print(f"wrote {report}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # P0: the adapter on a frozen byte base
 # ---------------------------------------------------------------------------
@@ -4951,6 +5190,12 @@ def main(argv: list[str] | None = None) -> int:
     tr.add_argument("--temperature", type=float, default=0.6)
     tr.add_argument("--top-k", type=int, default=30)
     tr.add_argument("--lexicon", default="../runs/v9/fit-seed-16384-16384-10000000.pkl")
+    sc = sub.add_parser("screen")
+    sc.add_argument("--corpus", default="code")
+    sc.add_argument("--bytes", type=int, default=70_000)
+    sc.add_argument("--spans", type=int, default=200)
+    sc.add_argument("--steps", type=int, default=500)
+    sc.add_argument("--seed", type=int, default=0)
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -5080,6 +5325,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_sample(
             a.run, a.prompt.encode(), a.bytes, a.temperature, a.top_k, a.seed
         )
+    if a.cmd == "screen":
+        return run_screen(a.corpus, a.bytes, a.spans, a.steps, a.seed)
     if a.cmd == "train":
         if a.units == "codec":
             if a.corpus not in ("code", "shakespeare"):

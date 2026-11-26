@@ -52,6 +52,28 @@ Choose before M2:
 Recommendation: use span-policy decisions for the RLFP action claim, keep
 all-symbol decisions as the honest compression cost, and gate H3 on both.
 Do not switch definitions silently.
+### Capability screen (2026-11-26)
+`cml screen` removes 200 matched spans from held-out code and measures exact
+reconstruction, bits/span, and decisions/span on the same task:
+
+| mechanism | family | exact span | top-1 | bits/span | decisions/span |
+|---|---|---:|---:|---:|---:|
+| trunk | r3/r4 control | 0.480 | 0.480 | 2.590 | 1.00 |
+| pointer | r3/r4/r6 | 0.415 | 0.415 | 3.133 | 1.00 |
+| byte | r1 baseline | 0.210 | 0.610 | 12.711 | 3.04 |
+| counts | r1/r6 copy | 0.040 | 0.040 | 2.815 | 1.00 |
+
+- The concept action space reconstructs **2.0x** more exact spans than byte
+  (0.415 vs 0.210) with **3.0x** fewer decisions (1.00 vs 3.04). This is the
+  first direct capability win for the multi-byte action space; it is not a
+  preference win.
+- The trunk still leads (0.480). At 5M the fixed-vocab control is stronger;
+  the pointer's advantage must come from editability or scale, not accuracy.
+- `counts` is weak (0.040): a bigram copy table is not enough. Do not use it
+  as the install baseline.
+- The screen tests only one capability. `r5` edit and `r7` library need their
+  own probes on the same task; `r2` copy bypass needs a charged hybrid. Do not
+  call this full r1-r7 coverage.
 ### 11.2 Remaining work
 - **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
   preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.
