@@ -20,18 +20,21 @@ The corpus is pinned in `~/.cache/hncm/code-current.json`: SHA `1ccd9ffc7f68`,
 | M1 | **done** | byte arm on 756,752 B of test: payload/shared **2.522/2.523 bpb**, exact round-trip |
 | M2 | **done** | 8,192-entry lexicon (89,713 B); 200k test **coverage 0.919**, mean unit **3.23 B**; payload **2.321**, shared **5.911** (the 90 kB header dominates at 200k) |
 | M3 | **done** (local copy pending) | 4.97M pointer, 8 rotating packs, `full_every=8`, 8,000 steps: 70k test payload **2.386**, shared **2.709** vs adaptive byte **2.807**; proof **50,000 units** exact; unseen-pack gap **−0.121 bpb** (Q1 bar 0.15 passes) |
-| M4 | **negative at 1 MB** | 4.86M trained byte trunk, static coder: 70k **1.916/1.922 bpb**. The 4.97M pointer at **756,752 B** records **2.207/2.237**; the byte model at the same n is pending. Caveat: the active pack is still 2.8 kB (256 units) |
+| M4 | **negative at 1 MB** | 756,752 B, matched params: byte-model 4.86M **1.693/1.694/27.404**; pointer 4.97M a256 **2.207/2.237/28.498**; a2048 **2.187/2.421/28.682**. The pointer loses **0.543 shared / 1.094 self**. A 10× pack buys −0.020 payload but costs +0.204 charge, so the pack lever is dead. Local copy symbols are not built |
 | M5 | **ops done; demos pending** | `cml pack verify/trace/diff/merge/rm`. Q2: 756,752 B decode, **511,933 elements**, provenance contiguous 100%, `byte → unit id → pack offset` printed. Q3: `rm self` on a 70k unit-arm slice deletes 27 units, hits 4 spans / 18 B, delta +2 B; `rm s` on a 20k pointer slice hits 222 spans; both round-trip. Adapter control and rent sweep remain |
 | M6-M7 | **not started** | The P1 text control and the librarian remain |
 
 Concrete remaining work, in order:
 
-1. **M4 diagnostics.** The trained byte model wins at 70k and the pointer's 1 MB
-   row is recorded. The exact batched encode is done: windows are coded as
-   per-window segments in groups of 32, so encode and decode share one batched
-   step and a cross-process round-trip holds. Remaining: a larger active pack
-   (`--active 2048/8192`, retrained, in flight) and local copy symbols. If the
-   0.2 bpb bar still fails, accept the negative and write it down.
+1. **M4 is a measured negative at 1 MB.** The exact batched encode is done:
+   windows are coded as per-window segments in groups of 32, so encode and
+   decode share one batched step and a cross-process round-trip holds. The
+   larger-pack remedy fails: coverage 0.453 → 0.817, payload −0.020, charge
+   +0.204. Do not tune pack size further. The one untested remedy is local
+   copy symbols (~1 h); if it also fails, close M4 as negative and keep M5/M6.
+   Note the accounting: at the plan's 5.5M byte allowance, `self` would flip
+   only while n < 4.7 MB, so the test slice cannot settle `self`; payload and
+   shared, which are n-free, say the byte model is the better codec.
 2. **M5.** The ops are built. Run the adapter arm as the 30-min negative control
    and the rent λ sweep; then Q4's class split.
 3. **M6-M7.** The P1 text control, then the librarian.
@@ -133,7 +136,9 @@ re-parse above is the 80%; alignment KL (r5) — a PPL regularizer, no codec rol
   the CLI, the tests and the recorded table are three callers. `cml.py` keeps
   data, model, pack and the CLI.
 - **No new manifest per arm.** `cml codec --arm/--corpus/--bytes` is the single
-  source of truth; every run writes `runs/codec-<arm>-<corpus>-<bytes>/`.
+  source of truth; every run writes `runs/codec-<arm>-<corpus>-<bytes>/`, plus
+  `-a<active>` when the pack size differs from the 256 default. Without that
+  suffix a 2048-unit rerun silently overwrites the 256-unit row.
 - Ruff format; `ruff check --fix` on changed files; tests only for the
   invariants below; atomic writes; the header carries the SHAs.
 
@@ -236,6 +241,9 @@ read `recorded`/`shared`/`self`; the CE metrics stay in the run store as
 - **The timing trap.** P0d repeats 2.2-4.3x (synseg) and 1.05-1.40x (code); use
   ≥3 repeats and the median, or no speed claim.
 - **The CE trap.** `eval_bits` is a scheduler; only `recorded` is a claim.
+- **The small-n self trap.** `self` adds `8·(params/2)/n`; at 756 kB that
+  term is ~26 bpb, so a 0.5M-param discount outweighs a 0.5 bpb rate gap.
+  Compare `payload`/`shared` (n-free) and state n whenever `self` decides.
 - **The identity-cosine trap.** P0's cos AUC 0.427 measured `W_q = I` on a
   frozen base with a *classifier* gate. A trained pointer over installed spans
   is a different object; do not cite the linchpin against it, and do not build
@@ -251,7 +259,7 @@ uv run cml codec --arm byte --corpus code --bytes 1000000
 uv run cml codec --arm byte-model --corpus code --bytes 756752 --steps 3000
 uv run cml codec --arm lexicon --corpus code --bytes 200000
 uv run cml codec --arm concept --corpus code --bytes 756752 --proof 50000 --steps 8000 --rotate 8 --full-every 8
-uv run cml codec --arm concept --corpus code --bytes 756752 --proof 50000 --steps 8000 --rotate 8 --full-every 8 --active 2048
+uv run cml codec --arm concept --corpus code --bytes 756752 --proof 50000 --steps 8000 --rotate 8 --full-every 8 --active 2048  # -> ...-a2048
 uv run cml recorded
 uv run cml pack verify codec-concept-code-756752
 uv run cml pack trace codec-concept-code-756752 --range 0:256

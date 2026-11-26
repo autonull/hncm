@@ -2925,13 +2925,14 @@ def _run_concept(
     corpus_name: str,
     nbytes: int,
     split: str,
+    suffix: str = "",
 ) -> dict:
     import pointer
 
     model, active_lex = _pointer_for(
         corpus, lex, active, steps, seed, rotate, full_every
     )
-    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}"
+    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{suffix}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
     pcodec = pointer.PointerCodec(model, active_lex, half=True)
     parse, covered = codec_mod.greedy_parse(data, active_lex)
@@ -2953,7 +2954,7 @@ def _run_concept(
     payload_bpb = 8 * len(payload) / n
     shared_bpb = 8 * (len(payload) + header_bytes) / n
     metrics = {
-        "id": f"codec-{arm}-{corpus_name}-{nbytes}",
+        "id": f"codec-{arm}-{corpus_name}-{nbytes}{suffix}",
         "arm": arm,
         "corpus": corpus_name,
         "split": split,
@@ -3032,6 +3033,7 @@ def run_codec(
         return 0
     if arm == "concept":
         lex = _lexicon_for(corpus, units, min_count, cap)
+        suffix = f"-a{active}" if active != 256 else ""
         metrics = _run_concept(
             corpus,
             data,
@@ -3046,6 +3048,7 @@ def run_codec(
             corpus_name,
             nbytes,
             split,
+            suffix,
         )
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
