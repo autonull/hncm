@@ -2264,6 +2264,59 @@ def _stage_score(
     }
 
 
+def _spec_score(
+    pmodel,
+    tmodel,
+    ids: torch.Tensor,
+    pos: list[int],
+    active_lex: codec_mod.Lexicon,
+    seq: int,
+    k: int,
+    K: int,
+    seed: int,
+) -> dict[str, float | int]:
+    """Pointer drafts K concepts; one trunk forward verifies the block."""
+    rng = np.random.default_rng(seed)
+    blocks = accepted = all_accept = 0
+    step_accept = 0.0
+    for i in pos:
+        ctx = ids[max(0, i - seq + 1) : i][-(seq - K) :]
+        if ctx.numel() == 0:
+            continue
+        choices: list[int] = []
+        probs: list[float] = []
+        cctx = ctx.clone()
+        for _ in range(K):
+            q = _next_q(pmodel, cctx.cuda(), active_lex.units)[:k]
+            q = q / q.sum().clamp_min(1e-12)
+            c = int(q.argmax())
+            choices.append(c)
+            probs.append(float(q[c]))
+            cctx = torch.cat((cctx, torch.tensor([c])))
+        x = torch.cat((ctx, torch.tensor(choices))).cuda().view(1, -1)
+        logits = tmodel(x).detach()
+        got = 0
+        for t, c in enumerate(choices):
+            p = torch.softmax(logits[0, len(ctx) - 1 + t], -1)[:k]
+            p = p / p.sum().clamp_min(1e-12)
+            a = min(1.0, float(p[c] / max(probs[t], 1e-12)))
+            step_accept += a
+            if rng.random() < a:
+                got += 1
+            else:
+                break
+        blocks += 1
+        accepted += got
+        all_accept += got == K
+    return {
+        "k": K,
+        "blocks": blocks,
+        "accepted_per_call": accepted / max(blocks, 1),
+        "all_accept": all_accept / max(blocks, 1),
+        "accept_step": step_accept / max(blocks * K, 1),
+    }
+
+
 def run_edit_curve(
     corpus_name: str = "code",
     nbytes: int = 70_000,
@@ -2336,48 +2389,7 @@ def run_edit_curve(
         "accept": qacc / max(qn, 1),
         "exact": qexact / max(qn, 1),
     }
-    kd = 4
-    blocks = 0
-    accepted = 0
-    all_accept = 0
-    step_accept = 0.0
-    rng2 = np.random.default_rng(seed + 1)
-    for i in pos:
-        ctx = ids[max(0, i - seq + 1) : i][-(seq - kd) :]
-        if ctx.numel() == 0:
-            continue
-        choices: list[int] = []
-        probs: list[float] = []
-        cctx = ctx.clone()
-        for _ in range(kd):
-            q = _next_q(pmodel, cctx.cuda(), active_lex.units)[:k]
-            q = q / q.sum().clamp_min(1e-12)
-            c = int(q.argmax())
-            choices.append(c)
-            probs.append(float(q[c]))
-            cctx = torch.cat((cctx, torch.tensor([c])))
-        x = torch.cat((ctx, torch.tensor(choices))).cuda().view(1, -1)
-        logits = tmodel(x).detach()
-        got = 0
-        for t, c in enumerate(choices):
-            p = torch.softmax(logits[0, len(ctx) - 1 + t], -1)[:k]
-            p = p / p.sum().clamp_min(1e-12)
-            a = min(1.0, float(p[c] / max(probs[t], 1e-12)))
-            step_accept += a
-            if rng2.random() < a:
-                got += 1
-            else:
-                break
-        blocks += 1
-        accepted += got
-        all_accept += got == kd
-    spec = {
-        "k": kd,
-        "blocks": blocks,
-        "accepted_per_call": accepted / max(blocks, 1),
-        "all_accept": all_accept / max(blocks, 1),
-        "accept_step": step_accept / max(blocks * kd, 1),
-    }
+    spec = _spec_score(pmodel, tmodel, ids, pos, active_lex, seq, k, 4, seed + 1)
     secs = time.perf_counter() - t0
     lines = [
         "# Causal edit curve (r5)",
@@ -2442,6 +2454,249 @@ def run_edit_curve(
         },
     )
     report = REPORTS / "EDIT-CURVE.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, report)
+    print("\n".join(lines))
+    print(f"wrote {report}")
+    return 0
+
+
+def run_breadth(
+    corpus_name: str = "code",
+    nbytes: int = 70_000,
+    spans: int = 200,
+    seed: int = 0,
+) -> int:
+    """Hyperparameter breadth for copy, library, edits, and drafting."""
+    import pointer
+    from collections import Counter, defaultdict
+
+    t0 = time.perf_counter()
+    corpus = code_corpus() if corpus_name == "code" else text_corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    lex = _lexicon_for(corpus, 8192, 16, 16)
+    active_lex = codec_mod.Lexicon(lex.units[:256])
+    k = len(active_lex.units)
+    ids, _ = _concept_stream(data, active_lex)
+    matched = torch.nonzero(ids < k).flatten()
+    matched = matched[matched > 0]
+    rng = np.random.default_rng(seed)
+    take = min(spans, int(matched.numel()))
+    pos = np.sort(rng.choice(matched.numpy(), take, replace=False)).tolist()
+    targets = [int(ids[i]) for i in pos]
+    pmodel = _load_screen_pointer(
+        "concept-pointer-code-p5m-s8000", corpus, lex, 256, 500, seed
+    )
+    tmodel = _load_screen_trunk(
+        "concept-trunk-code-p5m-s8000", corpus, active_lex, 500, seed
+    )
+    seq = pmodel.cfg.seq
+
+    train_ids, _ = _concept_stream(corpus.train[:1_500_000], active_lex)
+    vals = train_ids.tolist()
+    glob = Counter(vals)
+    maps: dict[int, dict[tuple[int, ...], Counter]] = {}
+    for order in (1, 2, 3, 4, 5):
+        m: dict[tuple[int, ...], Counter] = defaultdict(Counter)
+        for j in range(order, len(vals)):
+            m[tuple(vals[j - order : j])][vals[j]] += 1
+        maps[order] = m
+
+    lib_rows = []
+    for order in (1, 2, 3, 4, 5):
+        exact = 0
+        bits = 0.0
+        for i, target in zip(pos, targets):
+            pred = None
+            count = total = 0
+            for o in range(order, 0, -1):
+                if i < o:
+                    continue
+                row = maps[o].get(tuple(ids[i - o : i].tolist()))
+                if row:
+                    pred, count = row.most_common(1)[0]
+                    total = sum(row.values())
+                    break
+            if pred is None:
+                pred, count = glob.most_common(1)[0]
+                total = sum(glob.values())
+            prob = (count + 1) / (total + k + 256)
+            exact += pred == target
+            bits += -math.log2(max(prob, 1e-12))
+        lib_rows.append(
+            {
+                "order": order,
+                "exact": exact / max(take, 1),
+                "bits": bits / max(take, 1),
+            }
+        )
+
+    copy_rows = []
+    for ell in (1, 2, 3, 4, 5, 6):
+        hit = exact = 0
+        bits = 0.0
+        for i, target in zip(pos, targets):
+            ctx = ids[max(0, i - seq + 1) : i]
+            q = _next_q(pmodel, ctx.cuda(), active_lex.units)[:k]
+            q = q / q.sum().clamp_min(1e-12)
+            ppred = int(q.argmax())
+            pbits = -math.log2(max(float(q[ppred]), 1e-12))
+            pred = ppred
+            cbits = 1 + pbits
+            if i >= ell:
+                key = ids[i - ell : i].tolist()
+                cand = torch.arange(0, i - ell + 1)
+                for t in range(ell):
+                    cand = cand[ids[cand + t] == key[t]]
+                cand = cand[cand + ell < i]
+                if cand.numel():
+                    p = int(cand[-1])
+                    if p + ell < i:
+                        hit += 1
+                        pred = int(ids[p + ell])
+                        cbits = 1 + math.log2(i - p + 1)
+            exact += pred == target
+            bits += cbits
+        copy_rows.append(
+            {
+                "key": ell,
+                "hit": hit / max(take, 1),
+                "exact": exact / max(take, 1),
+                "bits": bits / max(take, 1),
+            }
+        )
+
+    parse_full, _ = codec_mod.greedy_parse(data, active_lex)
+    pc_full = pointer.PointerCodec(pmodel, active_lex, half=True)
+    before = pc_full.encode(data)
+    n = max(len(data), 1)
+    edit_rows = []
+    for prefix in (
+        b" ",
+        b"\n",
+        b"def",
+        b"return",
+        b"self",
+        b"(",
+        b"=",
+        b"    ",
+        b"if ",
+    ):
+        keep = codec_mod.Lexicon(
+            tuple(u for u in active_lex.units if not u.startswith(prefix))
+        )
+        if len(keep.units) == len(active_lex.units):
+            continue
+        pc = pointer.PointerCodec(pmodel, keep, half=True)
+        blob = pc.encode(data)
+        out = pc.decode(blob, len(data))
+        ranges = _changed_ranges(parse_full, active_lex, prefix)
+        edit_rows.append(
+            {
+                "prefix": prefix.decode("utf-8", "replace"),
+                "units": len(keep.units),
+                "affected": sum(b - a for a, b in ranges),
+                "delta": 8 * (len(blob) - len(before)) / n,
+                "roundtrip": out == data,
+            }
+        )
+
+    spec_rows = [
+        _spec_score(pmodel, tmodel, ids, pos, active_lex, seq, k, kd, seed + 1)
+        for kd in (2, 4, 8, 16)
+    ]
+    secs = time.perf_counter() - t0
+    best_lib = max(lib_rows, key=lambda r: r["exact"])
+    best_copy = max(copy_rows, key=lambda r: r["exact"])
+    best_edit = min(edit_rows, key=lambda r: r["delta"])
+    best_spec = max(spec_rows, key=lambda r: r["accepted_per_call"])
+    lines = [
+        "# Breadth sweep: hyperparameters, not verdicts",
+        "",
+        f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, held-out "
+        f"{len(data):,} B, {take} spans, seed {seed}",
+        f"- pack {k} units; library and copy train on "
+        f"{len(train_ids):,} elements",
+        "- A single config is not a kill. Each family gets a small grid; the",
+        "  best row is the direction to push next.",
+        "",
+        "## Library order",
+        "",
+        "| order | exact | bits/span |",
+        "|---:|---:|---:|",
+    ]
+    for r in lib_rows:
+        lines.append(f"| {r['order']} | {r['exact']:.3f} | {r['bits']:.3f} |")
+    lines += [
+        "",
+        "## Copy key length",
+        "",
+        "| key | hit | exact | bits/span |",
+        "|---:|---:|---:|---:|",
+    ]
+    for r in copy_rows:
+        lines.append(
+            f"| {r['key']} | {r['hit']:.3f} | {r['exact']:.3f} | "
+            f"{r['bits']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Edit prefix",
+        "",
+        "| prefix | units | affected B | bpb delta | round-trip |",
+        "|---|---:|---:|---:|:---:|",
+    ]
+    for r in edit_rows:
+        lines.append(
+            f"| `{r['prefix']}` | {r['units']} | {r['affected']:,} | "
+            f"{r['delta']:+.3f} | {'OK' if r['roundtrip'] else 'FAIL'} |"
+        )
+    lines += [
+        "",
+        "## Speculative block",
+        "",
+        "| K | accepted/call | all accepted | accept/step |",
+        "|---:|---:|---:|---:|",
+    ]
+    for r in spec_rows:
+        lines.append(
+            f"| {r['k']} | {r['accepted_per_call']:.3f} | "
+            f"{r['all_accept']:.3f} | {r['accept_step']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Best directions",
+        "",
+        f"- library: order **{best_lib['order']}**, exact "
+        f"{best_lib['exact']:.3f}, {best_lib['bits']:.3f} bits/span.",
+        f"- copy: key **{best_copy['key']}**, exact {best_copy['exact']:.3f}, "
+        f"hit {best_copy['hit']:.3f}.",
+        f"- edit: prefix `{best_edit['prefix']}`, delta "
+        f"{best_edit['delta']:+.3f} bpb, round-trip "
+        f"{'OK' if best_edit['roundtrip'] else 'FAIL'}.",
+        f"- spec: K **{best_spec['k']}**, "
+        f"{best_spec['accepted_per_call']:.3f} accepted/call.",
+        "",
+        "The concept-only baseline is 0.650 exact / 1.720 bits/span / one",
+        "decision. A family earns the next experiment only if its best grid",
+        "row approaches that frontier or reveals a new tradeoff.",
+        "",
+        f"Sweep took {secs:.1f} s.",
+        "",
+    ]
+    write_json(
+        REPORTS / "breadth.json",
+        {
+            "library": lib_rows,
+            "copy": copy_rows,
+            "edit": edit_rows,
+            "spec": spec_rows,
+            "spans": take,
+            "seconds": round(secs, 3),
+        },
+    )
+    report = REPORTS / "BREADTH.md"
     tmp = report.with_suffix(".tmp")
     tmp.write_text("\n".join(lines))
     os.replace(tmp, report)
@@ -5586,6 +5841,11 @@ def main(argv: list[str] | None = None) -> int:
     ec.add_argument("--bytes", type=int, default=70_000)
     ec.add_argument("--spans", type=int, default=200)
     ec.add_argument("--seed", type=int, default=0)
+    br = sub.add_parser("breadth")
+    br.add_argument("--corpus", default="code")
+    br.add_argument("--bytes", type=int, default=70_000)
+    br.add_argument("--spans", type=int, default=200)
+    br.add_argument("--seed", type=int, default=0)
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -5719,6 +5979,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_screen(a.corpus, a.bytes, a.spans, a.steps, a.seed)
     if a.cmd == "editcurve":
         return run_edit_curve(a.corpus, a.bytes, a.spans, a.seed)
+    if a.cmd == "breadth":
+        return run_breadth(a.corpus, a.bytes, a.spans, a.seed)
     if a.cmd == "train":
         if a.units == "codec":
             if a.corpus not in ("code", "shakespeare"):

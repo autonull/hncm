@@ -37,4 +37,4 @@ one pointer proposal against one trunk target call. `accepted/call`
 above 1 means a 4-concept draft can cut target calls per emitted
 concept; it is not a wall-clock measurement.
 
-Run took 24.2 s.
+Run took 18.7 s.

@@ -4,6 +4,27 @@ The concept memory LM: the v11 codebase for the plan in `PLAN.md`.
 The active plan is `../TODO8.md` (multi-byte concepts + RLFP); `../TODO7.md`
 is the codec record and the auditable-codec product.
 
+## What works
+
+These are measured wins, not plans. Do not regress them silently.
+
+| win | measurement | evidence |
+|---|---|---|
+| **Concept-only capability** | **0.650** exact held-out spans, **1.720** bits/span, **1.00** decisions/span | `reports/SCREEN.md` |
+| Concept vs trunk | 0.650 vs **0.480** exact; 1.72 vs 2.59 bits/span | `reports/SCREEN.md` |
+| Concept vs byte | **3.1x** exact; **3.0x** fewer decisions; **7.4x** fewer bits/span | `reports/SCREEN.md` |
+| Compression | **1.600** bpb teacher, **1.692** payload, **1.722** shared | `reports/CONCEPT.md` |
+| Exact round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
+| Local deletion | 35 targets removed by construction; 165 survivors ±0.006; **+0.146 bpb** full encode | `reports/EDIT-CURVE.md` |
+| Merge | 256 -> 320 units; **+0.108 bpb**; exact round-trip | `reports/SCREEN.md` |
+| Concept draft | **0.717** one-step acceptance; **1.560** accepted concepts per trunk call at K=8 | `reports/EDIT-CURVE.md`, `reports/BREADTH.md` |
+| Long-key copy | key 6: **0.650** exact, 0.475 hit, 6.193 bits/span; matches concept exact but too expensive to replace it | `reports/BREADTH.md` |
+| Edit locality | `self` **-0.000** bpb, `return` +0.026, indent +0.028, space +0.146, newline +0.228; all round-trip | `reports/BREADTH.md` |
+
+Commands that produce them: `cml train --units codec`, `cml screen`, `cml editcurve`, `cml breadth`.
+Scope: 5.21M pointer, 70k held-out bytes, 200 spans. Not yet a preference
+win, a wall-clock speedup, or a 20M-scale claim.
+
 ## What this covers
 
 The v11 design is four bets from seven sketches (`../hncm.r1-7.md`). `cml`
@@ -133,6 +154,9 @@ The four bets, and where they live:
 - `cml editcurve`: causal pack-edit curve, concept-draft acceptance, and a
   4-concept speculative block; `reports/EDIT-CURVE.md`. Concept-only exact is
   **0.650** at 1.72 bits/span and one decision.
+- `cml breadth`: small hyperparameter grids for copy, library, edit prefixes,
+  and speculative draft length; `reports/BREADTH.md`. Copy key 1 -> 6 moves
+  0.135 -> 0.650 exact; library order 1 -> 5 moves 0.030 -> 0.205.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,

@@ -1,0 +1,143 @@
+{
+ "library": [
+  {
+   "order": 1,
+   "exact": 0.03,
+   "bits": 2.8694727728899414
+  },
+  {
+   "order": 2,
+   "exact": 0.11,
+   "bits": 3.347385018565684
+  },
+  {
+   "order": 3,
+   "exact": 0.195,
+   "bits": 4.697052949106675
+  },
+  {
+   "order": 4,
+   "exact": 0.18,
+   "bits": 5.480754790777089
+  },
+  {
+   "order": 5,
+   "exact": 0.205,
+   "bits": 5.970187541148135
+  }
+ ],
+ "copy": [
+  {
+   "key": 1,
+   "hit": 0.99,
+   "exact": 0.135,
+   "bits": 5.944141353159112
+  },
+  {
+   "key": 2,
+   "hit": 0.91,
+   "exact": 0.39,
+   "bits": 8.520738123030316
+  },
+  {
+   "key": 3,
+   "hit": 0.795,
+   "exact": 0.54,
+   "bits": 8.416563722589599
+  },
+  {
+   "key": 4,
+   "hit": 0.64,
+   "exact": 0.605,
+   "bits": 7.430063616627595
+  },
+  {
+   "key": 5,
+   "hit": 0.555,
+   "exact": 0.64,
+   "bits": 6.75309034152385
+  },
+  {
+   "key": 6,
+   "hit": 0.475,
+   "exact": 0.65,
+   "bits": 6.1931604941701925
+  }
+ ],
+ "edit": [
+  {
+   "prefix": " ",
+   "units": 120,
+   "affected": 4384,
+   "delta": 0.1462857142857143,
+   "roundtrip": true
+  },
+  {
+   "prefix": "\n",
+   "units": 224,
+   "affected": 6904,
+   "delta": 0.22845714285714286,
+   "roundtrip": true
+  },
+  {
+   "prefix": "return",
+   "units": 254,
+   "affected": 379,
+   "delta": 0.0264,
+   "roundtrip": true
+  },
+  {
+   "prefix": "self",
+   "units": 254,
+   "affected": 40,
+   "delta": -0.00011428571428571428,
+   "roundtrip": true
+  },
+  {
+   "prefix": "=",
+   "units": 255,
+   "affected": 194,
+   "delta": 0.0056,
+   "roundtrip": true
+  },
+  {
+   "prefix": "    ",
+   "units": 150,
+   "affected": 465,
+   "delta": 0.027542857142857143,
+   "roundtrip": true
+  }
+ ],
+ "spec": [
+  {
+   "k": 2,
+   "blocks": 200,
+   "accepted_per_call": 1.065,
+   "all_accept": 0.355,
+   "accept_step": 0.5261790389220806
+  },
+  {
+   "k": 4,
+   "blocks": 200,
+   "accepted_per_call": 1.41,
+   "all_accept": 0.105,
+   "accept_step": 0.3437385939311921
+  },
+  {
+   "k": 8,
+   "blocks": 200,
+   "accepted_per_call": 1.56,
+   "all_accept": 0.005,
+   "accept_step": 0.1882558701717429
+  },
+  {
+   "k": 16,
+   "blocks": 200,
+   "accepted_per_call": 1.505,
+   "all_accept": 0.0,
+   "accept_step": 0.09287708140041363
+  }
+ ],
+ "spans": 200,
+ "seconds": 164.916
+}

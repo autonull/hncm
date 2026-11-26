@@ -92,9 +92,17 @@ Full re-encode: `delete` costs **+0.146 bpb**, `merge` 256 -> 320 costs
 - Speculative block: one-step acceptance **0.717**; a 4-concept draft yields
   **1.310 accepted concepts per trunk call** (8.0% all accepted). That is a
   real but modest target-call reduction, not 2x.
-- `r2` copy (0.380), `r7` order-2 (0.150), and `r1` counts (0.040) do not
-  beat the concept action space. Still missing: `r7` template/hole composition
-  and the `r5` held-out win-rate delta.
+- **Do not kill copy or library on one config.** Copy key 1 -> 6 moves exact
+  **0.135 -> 0.650**; key 6 matches the concept baseline, but at **6.193
+  bits/span** and 0.475 hit. It is a fallback for repeated contexts, not a
+  replacement. Library order 1 -> 5 moves **0.030 -> 0.205**; still far.
+- Edit-prefix sweep: `self` **-0.000 bpb**, `return` +0.026, indent +0.028,
+  space +0.146, newline +0.228; all round-trip. Deleting a rare keyword is
+  nearly free; deleting whitespace is not.
+- Speculative K: 2 -> 1.065, 4 -> 1.410, 8 -> **1.560**, 16 -> 1.505
+  accepted/call. K=8 is the best draft length.
+- Still missing: `r7` template/hole composition and the `r5` held-out
+  win-rate delta.
 ### 11.2 Remaining work
 - **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
   preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.
