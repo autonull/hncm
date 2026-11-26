@@ -8,6 +8,12 @@ This file supersedes the analysis phase. Read `cml/PLAN.md` §11 for the
 corrected accounting (the P0 oracle −2.224) and `TODO6.md` for the frozen
 state.
 
+> **Direction (2026-11-26):** the negative no-oracle install delta closes the
+> *compression* install branch, not the concept model. `TODO8.md` is the
+> multi-byte-concept + RLFP plan (RLFP = RL from Preferences): the installed
+> pack is the policy's action space, and the gate is preference reward per
+> compute, not bpb.
+
 ## P0. Top priority: quick end-to-end training/generation, measured
 
 Ahead of every other item. P0 must show two things in one system.
@@ -87,9 +93,10 @@ train pack — outside the 0.15 bar in both directions at 8,000 steps. The train
 pack still beats all literals by 3.6-3.8 bpb; that measures the pack's value,
 not install.
 
-**Decision: stop the LLM-adaptation branch** per the P0b fallback. Ship the
-auditable codec: provenance, `rm`, `merge`, install. That product works and is
-unique without a bpb win.
+**Decision: the compression install branch stops** per the P0b fallback. Ship
+the auditable codec: provenance, `rm`, `merge`, install. That product works
+and is unique without a bpb win. The concept model is not closed: `TODO8.md`
+makes the pack the policy's action space and gates on preference reward.
 
 What changed to get there:
 

@@ -1,6 +1,8 @@
 # cml
 
 The concept memory LM: the v11 codebase for the plan in `PLAN.md`.
+The active plan is `../TODO8.md` (multi-byte concepts + RLFP); `../TODO7.md`
+is the codec record and the auditable-codec product.
 
 ## What this covers
 
