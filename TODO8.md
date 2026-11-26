@@ -13,8 +13,8 @@ is the synergy plan.
 | M | status | evidence |
 |---|---|---|
 | M0 | **done** | §0 pins DPO, span repair, verifiable bytes, and the byte/word/concept controls |
-| M1 | **printed; H1 partial** | 5.21M pointer: **1.600 bpb**, 1.692 payload, 1.722 shared, 50k-unit round-trip; 4.93M trunk control: **1.516 bpb**; `reports/CONCEPT.md` |
-| M2 | **blocked** | H1's decision gate fails under the printed all-symbol definition; resolve §11.1 first |
+| M1 | **printed; H1 pass (span-policy)** | 5.21M pointer: **1.600 bpb**, 1.692 payload, 1.722 shared, 50k-unit round-trip; concept-only exact **0.650**; all-symbol 1.478 B/dec reported; `reports/CONCEPT.md` |
+| M2 | **ready (span-policy)** | concept-only exact **0.650** vs 0.415 unconstrained; all-symbol B/dec stays the compression cost |
 | M3-M5 | not started | |
 ### M1 measurements
 | model | params | steps | epochs | bits/byte | payload | shared | B/dec all | B/dec span |
@@ -49,53 +49,52 @@ Choose before M2:
    charged separately. H1 passes (3.50), H3 has 7.7x fewer decisions. Report
    the 0.809 literal fraction and the escape bytes; do not call this 2x fewer
    all-symbol decisions.
-Recommendation: use span-policy decisions for the RLFP action claim, keep
+Recommendation: adopt span-policy decisions for the RLFP action claim, keep
 all-symbol decisions as the honest compression cost, and gate H3 on both.
-Do not switch definitions silently.
+The concept-only screen is the evidence: 0.650 exact vs 0.415 unconstrained,
+1.72 vs 3.13 bits/span. Do not switch definitions silently.
 ### Capability screen (2026-11-26)
 `cml screen` removes 200 matched spans from held-out code and measures exact
 reconstruction, bits/span, and decisions/span on the same task:
 
 | mechanism | family | exact span | top-1 | bits/span | decisions/span |
 |---|---|---:|---:|---:|---:|
+| **concept** | **r3/r4 concept-only** | **0.650** | 0.650 | **1.720** | 1.00 |
 | trunk | r3/r4 control | 0.480 | 0.480 | 2.590 | 1.00 |
-| pointer | r3/r4/r6 | 0.415 | 0.415 | 3.133 | 1.00 |
+| pointer | r3/r4/r6 unconstrained | 0.415 | 0.415 | 3.133 | 1.00 |
 | copy | r2 copy+pointer | 0.380 | 0.380 | 8.611 | 1.00 |
 | byte | r1 baseline | 0.210 | 0.610 | 12.711 | 3.04 |
 | library | r7 order-2 | 0.150 | 0.150 | 2.465 | 1.00 |
 | counts | r1/r6 order-1 | 0.040 | 0.040 | 2.815 | 1.00 |
 
-Edit capability (`r5`): remove every unit starting with a space, then
-re-encode the same 70,000 B with the surviving pack.
+Edit capability (`r5`): remove every unit starting with a space.
 
-| units before | units after | affected B | payload before | payload after | delta | round-trip |
-|---:|---:|---:|---:|---:|---:|:---:|
-| 256 | 120 | 4,384 | 1.945 | 2.091 | +0.146 | OK |
+| stage | units | n | removed | base | exact | delta | bits/span |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| full | 256 | 200 | 0 | 0.415 | 0.415 | +0.000 | 3.133 |
+| delete | 120 | 165 | 35 | 0.485 | 0.491 | +0.006 | 2.716 |
+| restore64 | 184 | 180 | 20 | 0.461 | 0.456 | -0.006 | 2.796 |
+| restore-all | 256 | 200 | 0 | 0.415 | 0.415 | +0.000 | 3.133 |
 
-Merge capability (`r5`): append 64 ranked units beyond the active pack.
+Full re-encode: `delete` costs **+0.146 bpb**, `merge` 256 -> 320 costs
+**+0.108 bpb**; both round-trip exactly.
 
-| units before | units after | payload before | payload after | delta | round-trip |
-|---:|---:|---:|---:|---:|:---:|
-| 256 | 320 | 1.945 | 2.053 | +0.108 | OK |
-
-- The concept action space reconstructs **2.0x** more exact spans than byte
-  (0.415 vs 0.210) with **3.0x** fewer decisions (1.00 vs 3.04). This is the
-  first direct capability win for the multi-byte action space; it is not a
-  preference win.
-- The trunk still leads (0.480). At 5M the fixed-vocab control is stronger;
-  the pointer's advantage must come from editability or scale, not accuracy.
-- `r7` order-2 context doubles counts (0.040 -> 0.150) but still trails the
-  pointer. A shallow library is not the missing capability; deeper composition
-  or retrieval is.
-- `r2` copy finds a prior context pair 91.0% of the time, but the copied next
-  unit is exact only 38.0% (8.611 bits/span), below the pointer. A two-unit
-  copy table is not enough; long-span copy and its charge remain untested.
-- `r5` deletion is measurable without a gradient: 256 -> 120 units, 4,384 B
-  affected, **+0.146 bpb**, exact round-trip. Merge 256 -> 320 units costs
-  **+0.108 bpb** and also round-trips. Both change the policy and keep the
-  code honest; neither is a win yet.
-- Still missing: `r7` template/hole composition and the `r5` held-out
-  win-rate delta. Do not call this full r1-r7 coverage.
+- **The concept-only action space wins the capability screen.** 0.650 exact
+  spans beat the trunk (0.480) and byte (0.210), at 1.72 bits/span and one
+  decision. The unconstrained pointer (0.415) lets a literal escape win; that
+  is the wrong action for a concept interface. Restricting the choice to the
+  pack is the architecture, not a trick.
+- Concept-only is **3.1x** byte exactness at **3.0x** fewer decisions and
+  **7.4x** fewer bits/span.
+- Deletion is **local**: 35 removed targets lose their exact concept by
+  construction; 165 survivors stay at their full-pack base (+0.006). The cost
+  is the literal escape (+0.146 bpb), not collateral damage.
+- Speculative block: one-step acceptance **0.717**; a 4-concept draft yields
+  **1.310 accepted concepts per trunk call** (8.0% all accepted). That is a
+  real but modest target-call reduction, not 2x.
+- `r2` copy (0.380), `r7` order-2 (0.150), and `r1` counts (0.040) do not
+  beat the concept action space. Still missing: `r7` template/hole composition
+  and the `r5` held-out win-rate delta.
 ### 11.2 Remaining work
 - **M2 pairs.** Build 10k span-repair pairs from the held-out code split;
   preferred = exact bytes, dispreferred = failed mutation. Hold out prompts.

@@ -130,6 +130,9 @@ The four bets, and where they live:
 - `cml screen`: capability screen on 200 held-out code spans; byte, copy,
   order-1 counts, order-2 library, concept pointer, fixed-vocab trunk, plus
   gradient-free pack removal and merge; `reports/SCREEN.md`.
+- `cml editcurve`: causal pack-edit curve, concept-draft acceptance, and a
+  4-concept speculative block; `reports/EDIT-CURVE.md`. Concept-only exact is
+  **0.650** at 1.72 bits/span and one decision.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,

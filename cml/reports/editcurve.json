@@ -1,0 +1,57 @@
+{
+ "rows": [
+  {
+   "units": 256,
+   "n": 200,
+   "removed": 0,
+   "exact": 0.415,
+   "base": 0.415,
+   "delta": 0.0,
+   "bits_per_span": 3.133062536448256,
+   "stage": "full"
+  },
+  {
+   "units": 120,
+   "n": 165,
+   "removed": 35,
+   "exact": 0.4909090909090909,
+   "base": 0.48484848484848486,
+   "delta": 0.006060606060606061,
+   "bits_per_span": 2.7158240786131764,
+   "stage": "delete"
+  },
+  {
+   "units": 184,
+   "n": 180,
+   "removed": 20,
+   "exact": 0.45555555555555555,
+   "base": 0.46111111111111114,
+   "delta": -0.005555555555555556,
+   "bits_per_span": 2.7957840900249566,
+   "stage": "restore64"
+  },
+  {
+   "units": 256,
+   "n": 200,
+   "removed": 0,
+   "exact": 0.415,
+   "base": 0.415,
+   "delta": 0.0,
+   "bits_per_span": 3.133062536448256,
+   "stage": "restore-all"
+  }
+ ],
+ "draft": {
+  "n": 200,
+  "accept": 0.7174554220817072,
+  "exact": 0.65
+ },
+ "spec": {
+  "k": 4,
+  "blocks": 200,
+  "accepted_per_call": 1.31,
+  "all_accept": 0.08,
+  "accept_step": 0.3342191289899389
+ },
+ "prefix": " "
+}

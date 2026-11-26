@@ -6,6 +6,7 @@
 
 | mechanism | family | exact span | top-1 | bits/span | decisions/span | copy hit |
 |---|---|---:|---:|---:|---:|---:|
+| concept | r3/r4 concept-only | 0.650 | 0.650 | 1.720 | 1.00 | 0.000 |
 | trunk | r3/r4 control | 0.480 | 0.480 | 2.590 | 1.00 | 0.000 |
 | pointer | r3/r4/r6 | 0.415 | 0.415 | 3.133 | 1.00 | 0.000 |
 | copy | r2 copy+pointer | 0.380 | 0.380 | 8.611 | 1.00 | 0.910 |
@@ -31,9 +32,9 @@ Append 64 ranked units beyond the active pack; re-encode the same 70,000 B with 
 
 ## Most promising
 
-`trunk`: exact 0.480, top-1 0.480, 2.59 bits/span, 1.00 decisions/span.
+`concept`: exact 0.650, top-1 0.650, 1.72 bits/span, 1.00 decisions/span.
 
 This is a capability comparison, not a gate. It measures next-span
 prediction on held-out code plus one gradient-free pack removal.
 
-Screen took 262.5 s.
+Screen took 311.0 s.

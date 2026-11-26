@@ -1,6 +1,14 @@
 {
  "rows": [
   {
+   "mechanism": "concept",
+   "exact": 0.65,
+   "top1": 0.65,
+   "bits_per_span": 1.7197363641034173,
+   "decisions_per_span": 1.0,
+   "hit_rate": 0.0
+  },
+  {
    "mechanism": "trunk",
    "exact": 0.48,
    "top1": 0.48,
@@ -70,6 +78,6 @@
   "bpb_after": 2.0534857142857144,
   "roundtrip": true
  },
- "seconds": 262.484,
+ "seconds": 311.034,
  "seed": 0
 }
