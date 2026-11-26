@@ -62,23 +62,22 @@ first gate; it runs only when a combination earns it.
 | spec K 4/8/12 | **done** | K=8: 1.560; K=12: 1.505 accepted/call |
 | library template/hole | **done, below target** | radius 2: 0.340 exact / 4.937 bits (target 0.40) |
 | pack size 128-1024 | **done** | 256 wins all axes: 0.415 / 3.133 / 1.00; 128, 512, 1024 dominated |
-| concept+copy on T1 | **done** | 0.720 / 4.782 no cap; 0.690 / 2.404 mix; 0.710 / 2.767 mix |
-| R2 T3/T4 combinations | **next** | edit/spec on the winning copy gate |
+| concept+copy on T1 | **done, target met** | blend key 10 α0.90: 0.705 / 2.362; key 6 α0.50: 0.680 / 1.698; no cap 0.720 / 4.782 |
+| R2 T3/T4 combinations | **next** | edit/spec on the winning blend gate |
 | R3 T2 / scale | **deferred** | after R2 that keeps round-trip |
 | R4 RLFP | **blocked** | needs a T1-T4 survivor |
 
-Round 2 frontier: 11 arms. Copy plus the concept head now covers
-0.660 / 1.881 to 0.720 / 4.782. Pack size is settled at 256; 128 pays
-literal escapes, 512/1024 pay harder unit decisions. The target 0.70 at
-≤2.5 bits is still **not** met: the nearest points are 0.690 / 2.404 and
-0.710 / 2.767. The gap is 0.01 exact at 2.5 bits, not a new family.
+Round 2 frontier: 6 arms, all `r2+r3/r4`. The blend dominates the
+concept-only point (0.650 / 1.720): key 6 α0.50 gives 0.680 at 1.698;
+key 10 α0.90 gives 0.705 at 2.362, so the T1 target **is met**. Pack
+size is settled at 256. The remaining combination work is T3/T4, not T1.
 
 ## 3. Families and first grids
 
 | family | mechanism | current evidence | first grid | task |
 |---|---|---|---|---|
 | **r1** adapter/install | charged copy / equal bytes | oracle +0.758; charged −2.224; P0a fails | dict size, charge, no-pack, transfer | T5 |
-| **r2** copy/hybrid | copy a prior context | key 1→12; no cap 0.720 / 4.782; concept+mix 0.710 / 2.767; key 12 cap 256: 0.660 / 1.881 | key 4-12, confidence, offset cap/rank, concept fallback | T1, T4 |
+| **r2** copy/hybrid | copy a prior context | key 1→12; blend 0.705 / 2.362 (target), 0.680 / 1.698; no cap 0.720 / 4.782 | key 4-12, blend α, margin, stack, concept fallback | T1, T4 |
 | **r3** PhraseLM | lexicon-agnostic heads | concept-only 0.650; unconstrained 0.415 | gate/joint, concept-only, temperature, three heads | T1, T2 |
 | **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
 | **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb / 0.000 exact; newline +0.228 / −0.072 exact; merge +0.108 | prefix choice, merge size, held-out win rate | T3 |
@@ -95,7 +94,7 @@ with a weak first grid gets another config before it is parked.
 
 | result | number | evidence |
 |---|---|---|
-| concept-only T1 | **0.650 exact / 1.720 bits / 1.00 decision** | `reports/SCREEN.md` |
+| concept-only T1 | **0.650 exact / 1.720 bits / 1.00 decision** (dominated by blend) | `reports/SCREEN.md` |
 | trunk T1 | 0.480 exact / 2.590 bits / 1.00 decision | `reports/SCREEN.md` |
 | byte T1 | 0.210 exact / 12.711 bits / 3.04 decisions | `reports/SCREEN.md` |
 | concept vs byte | 3.1x exact, 3.0x fewer decisions, 7.4x fewer bits | `reports/SCREEN.md` |
@@ -108,6 +107,8 @@ with a weak first grid gets another config before it is parked.
 | concept+copy key 6, no cap | 0.720 exact, 4.782 bits | `reports/BREADTH.md` |
 | concept+copy dist key 10, min 1 | 0.710 exact, 2.767 bits | `reports/BREADTH.md` |
 | concept+copy dist key 6, min 2 | 0.690 exact, 2.404 bits | `reports/BREADTH.md` |
+| concept+copy blend key 10, α 0.90 | **0.705 exact, 2.362 bits (target met)** | `reports/BREADTH.md` |
+| concept+copy blend key 6, α 0.50 | 0.680 exact, 1.698 bits (dominates concept) | `reports/BREADTH.md` |
 | pack 256, fixed spans | 0.415 exact, 3.133 bits, 1.00 decision | `reports/PACKS.md` |
 | pack 128/512/1024 | 0.375/0.395/0.300 exact; all dominated by 256 | `reports/PACKS.md` |
 | template radius 2 | 0.340 exact, 4.937 bits (was library 0.205) | `reports/BREADTH.md` |
@@ -115,18 +116,18 @@ with a weak first grid gets another config before it is parked.
 | edit prefixes | `self` −0.000 bpb, 0.000 exact; newline +0.228 bpb, −0.072 exact | `reports/BREADTH.md` |
 | spec K=8 | 1.560 accepted concepts per trunk call | `reports/BREADTH.md` |
 
-The concept-only point (1.720 bits, 0.650 exact) is the low-bit end. The
-concept+copy combination now extends it from 1.881 bits/0.660 exact to
-4.782 bits/0.720 exact. Pack size is settled at 256. The trunk wins
-teacher-forced compression but not the concept action space. Neither
-result settles the portfolio.
+The concept-only point (0.650 / 1.720) is now dominated by the blend
+(0.680 / 1.698). The T1 frontier is six `r2+r3/r4` arms from 0.675 / 1.667
+to 0.720 / 4.782, and the target 0.705 / 2.362 is met. Pack size is
+settled at 256. The concept head lives inside the blend as the fallback.
+The trunk wins teacher-forced compression but not the action space.
 
 ### 4.1 Hypotheses
 
 | id | claim | status |
 |---|---|---|
-| H1 | the 5M concept LM reads the codec pack | **pass on bpb/round-trip**; span-policy 3.498 B/decision; all-symbol 1.478 is the compression cost |
-| H2 | copy, edit, and draft add capability | **pass on T1 exact**; concept+copy 0.720 (4.782 bits), mix 0.690 (2.404), pack 256 0.415/3.133, `self` edit −0.000, K=8 1.560 |
+| H1 | the 5M concept LM reads the codec pack | **pass on bpb/round-trip**; span-policy 3.498 B/decision; the T1 concept point (0.650/1.720) is dominated by the blend |
+| H2 | copy, edit, and draft add capability | **pass, target met**; blend 0.705 at 2.362 bits, 0.680 at 1.698; pack 256 0.415/3.133; `self` edit −0.000; K=8 1.560 |
 | H3 | concept DPO beats byte DPO | **untested**; only after a combination reaches the T1-T4 frontier |
 | H4 | pack edits change behavior without gradients | **local**; removed targets are lost, survivors unchanged |
 | H5 | the combination scales | **deferred**; 20M on 7.2 MB overfits; needs more code |
@@ -226,14 +227,13 @@ exploration reserve, and the next round's allocation.
 |---|---|---|---|---|
 | R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d | **done** |
 | R1 | Round 1: all families | best/median/worst; frontier | 1 d | **done** |
-| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d | **T1 done**; T3/T4 next |
+| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d | **T1 target met**; T3/T4 next |
 | R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d | deferred |
 | R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d | blocked |
 | R5 | decision | scale the Pareto winner or record the negative | 0.5 d | deferred |
 
-M1 is already printed. R0, R1, and the R2 T1 combination are printed;
-the T3/T4 combination arms and the 0.70/2.5 gap are the next build. R4 is
-not the first gate.
+M1 is already printed. R0, R1, and the R2 T1 target are printed; the
+T3/T4 combination arms and T2 are the next build. R4 is not the first gate.
 
 ## 10. Interfaces
 
@@ -271,23 +271,19 @@ that round and keeps the history.
 
 ## 12. Next round (R2 remainder and R3)
 
-Done in R1/R2: all grids, pack size, concept+copy on T1, and the portfolio
-schema. Still open: the 0.70/2.5 gap, T3/T4 combination arms, T2, scale,
-and RLFP.
+Done in R1/R2: all grids, pack size, concept+copy on T1 (target met), and
+the portfolio schema. Still open: T3/T4 combination arms, T2, scale, and
+RLFP.
 
-1. **Close the 0.70/2.5 gap.** Stack the key-10 min-1 and key-6 min-2 copy
-   distributions, then try a learned trust gate and a rank code among
-   matches. Current nearest: 0.690 / 2.404 and 0.710 / 2.767. Keep the
-   concept fallback; do not loosen the gate without the round-trip check.
-2. **R2 concept+edit on T3.** Delete `self`/`return`/indent units; score
+1. **R2 concept+edit on T3.** Delete `self`/`return`/indent units; score
    survivors and bpb. Promote only if exact change ≥ −0.01 at bpb delta
    ≤ +0.05. `self` is already free: 40 B, 0.000 exact change.
-3. **R2 concept+spec on T4.** Combine K=8 with the winning copy gate;
-   target accepted/call ≥1.5 without lowering exact.
-4. **R3 T2.** Only the promoted combination: payload/shared bpb,
+2. **R2 concept+spec on T4.** Draft with the winning blend gate; verify
+   with the trunk. Target accepted/call ≥1.5 without lowering exact.
+3. **R3 T2.** Only the promoted combination: payload/shared bpb,
    round-trip, provenance.
-5. **R3 scale.** 5M/10M only after T2 passes.
-6. **R4 RLFP.** Blocked until a combination survives T1-T4.
+4. **R3 scale.** 5M/10M only after T2 passes.
+5. **R4 RLFP.** Blocked until a combination survives T1-T4.
 
 The exploration reserve reopens parked `r1`, `r1/r6`, `r3/r4/r6`, `r6`, and
 `r7` only with a new grid or a new combination. r6 keeps 256 as the pack;

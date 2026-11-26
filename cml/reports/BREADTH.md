@@ -117,6 +117,21 @@ Frontier rows only.
 | 12 | 2 | 0.00 | 0.065 | 0.670 | 1.956 |
 | 12 | 2 | 0.10 | 0.035 | 0.655 | 1.889 |
 
+## Copy gates (R2)
+
+`blend` mixes the concept and copy distributions by `alpha`;
+`margin` uses copy only when the plurality share passes `g`;
+`stack` tries the high key, then the low key, then the concept head.
+Frontier rows only.
+
+| kind | key | params | hit | exact | bits/span |
+|---|---|---|---:|---:|---:|
+| blend | 6 | m1 a0.90 | 0.365 | 0.715 | 2.740 |
+| blend | 10 | m1 a0.90 | 0.240 | 0.705 | 2.362 |
+| blend | 10 | m1 a0.75 | 0.240 | 0.690 | 1.917 |
+| blend | 6 | m1 a0.50 | 0.365 | 0.680 | 1.698 |
+| blend | 6 | m1 a0.25 | 0.365 | 0.675 | 1.667 |
+
 ## Edit prefix
 
 `base` is the same survivors under the full pack; `delta exact` is
@@ -150,6 +165,7 @@ the behavior change after the deletion.
 - copy distribution: key **10**, min hits **1**, tau **0.00**, exact 0.710, 3.168 bits/span.
 - concept + copy: key **6**, cap **None**, tau **0.00**, exact 0.720, 4.782 bits/span.
 - concept + copy dist: key **10**, min hits **1**, tau **0.00**, exact 0.710, 2.767 bits/span.
+- best gate: **blend**, key **6**, exact 0.715, 2.740 bits/span.
 - edit: prefix `self`, delta -0.000 bpb, exact change +0.000, round-trip OK.
 - spec: K **8**, 1.560 accepted/call.
 
@@ -157,4 +173,4 @@ The concept-only baseline is 0.650 exact / 1.720 bits/span / one
 decision. A family earns the next experiment only if its best grid
 row approaches that frontier or reveals a new tradeoff.
 
-Sweep took 298.3 s.
+Sweep took 240.6 s.

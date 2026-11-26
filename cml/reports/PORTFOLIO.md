@@ -5,23 +5,18 @@ measured arms, keeps the T1 frontier, and allocates the next round.
 A parked family is not killed: it keeps the exploration reserve.
 
 - families `all`, tasks `t1,t3,t4`, budget `6h` (6.00 h)
-- 247 measured arms, 227 on T1, 11 on the frontier, 5 parked families
+- 303 measured arms, 283 on T1, 6 on the frontier, 7 parked families
 
 ## Pareto frontier (T1)
 
 | family | arm | exact | bits/span | decisions/span | source |
 |---|---|---:|---:|---:|---|
-| r2 | `conceptcopy-6-cinf-t0.00` | 0.720 | 4.782 | 1.00 | breadth |
-| r2 | `conceptcopy-7-cinf-t0.00` | 0.715 | 4.391 | 1.00 | breadth |
-| r2 | `conceptmix-10-m1-t0.00` | 0.710 | 2.767 | 1.00 | breadth |
-| r2 | `conceptmix-12-m1-t0.00` | 0.695 | 2.651 | 1.00 | breadth |
-| r2 | `conceptmix-6-m2-t0.00` | 0.690 | 2.404 | 1.00 | breadth |
-| r2 | `conceptmix-10-m2-t0.00` | 0.685 | 2.074 | 1.00 | breadth |
-| r2 | `conceptmix-12-m2-t0.00` | 0.670 | 1.956 | 1.00 | breadth |
-| r2 | `conceptcopy-10-c256-t0.00` | 0.665 | 1.913 | 1.00 | breadth |
-| r2 | `conceptcopy-12-c256-t0.00` | 0.660 | 1.881 | 1.00 | breadth |
-| r2 | `conceptcopy-12-c256-t0.10` | 0.660 | 1.881 | 1.00 | breadth |
-| r3/r4 | `concept` | 0.650 | 1.720 | 1.00 | screen |
+| r2+r3/r4 | `conceptcopy-6-cinf-t0.00` | 0.720 | 4.782 | 1.00 | breadth |
+| r2+r3/r4 | `blend-6-m1-a0.90` | 0.715 | 2.740 | 1.00 | breadth |
+| r2+r3/r4 | `blend-10-m1-a0.90` | 0.705 | 2.362 | 1.00 | breadth |
+| r2+r3/r4 | `blend-10-m1-a0.75` | 0.690 | 1.917 | 1.00 | breadth |
+| r2+r3/r4 | `blend-6-m1-a0.50` | 0.680 | 1.698 | 1.00 | breadth |
+| r2+r3/r4 | `blend-6-m1-a0.25` | 0.675 | 1.667 | 1.00 | breadth |
 
 ## Family grids: best / median / worst
 
@@ -29,7 +24,8 @@ A parked family is not killed: it keeps the exploration reserve.
 |---|---:|---:|---:|---:|---:|---:|---:|
 | r1 | 1 | 0.210 | 0.210 | 0.210 | 12.711 | 12.711 | 12.711 |
 | r1/r6 | 1 | 0.040 | 0.040 | 0.040 | 2.815 | 2.815 | 2.815 |
-| r2 | 209 | 0.720 | 0.665 | 0.380 | 1.809 | 2.553 | 8.611 |
+| r2 | 105 | 0.720 | 0.665 | 0.380 | 1.899 | 2.607 | 8.611 |
+| r2+r3/r4 | 160 | 0.720 | 0.670 | 0.645 | 1.667 | 2.355 | 5.590 |
 | r3/r4 | 2 | 0.650 | 0.565 | 0.480 | 1.720 | 2.155 | 2.590 |
 | r3/r4/r6 | 1 | 0.415 | 0.415 | 0.415 | 3.133 | 3.133 | 3.133 |
 | r6 | 4 | 0.415 | 0.385 | 0.300 | 3.133 | 3.924 | 5.359 |
@@ -41,7 +37,8 @@ A parked family is not killed: it keeps the exploration reserve.
 |---|---|---|---|---|
 | r1 | `byte` | t1 | 0.210 exact | screen |
 | r1/r6 | `counts` | t1 | 0.040 exact | screen |
-| r2 | `conceptcopy-6-cinf-t0.00` | t1 | 0.720 exact | breadth |
+| r2 | `copy-6-cinf-t0.00` | t1 | 0.720 exact | breadth |
+| r2+r3/r4 | `conceptcopy-6-cinf-t0.00` | t1 | 0.720 exact | breadth |
 | r3/r4 | `concept` | t1 | 0.650 exact | screen |
 | r3/r4/r6 | `pointer` | t1 | 0.415 exact | screen |
 | r5 | `edit-self` | t3 | +0.000 bpb edit | breadth |
@@ -53,7 +50,7 @@ A parked family is not killed: it keeps the exploration reserve.
 
 | task | best arm | metric | source |
 |---|---|---|---|
-| t1 | `r2:conceptcopy-6-cinf-t0.00` | 0.720 exact | breadth |
+| t1 | `r2+r3/r4:conceptcopy-6-cinf-t0.00` | 0.720 exact | breadth |
 | t3 | `r5:edit-self` | +0.000 bpb edit | breadth |
 | t4 | `r8:spec-8` | 1.560 accepted/call | breadth |
 
@@ -73,6 +70,8 @@ A parked family is not killed: it keeps the exploration reserve.
 
 - **parked r1**: 1 T1 config, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r1/r6**: 1 T1 config, none on the frontier. Reopen with a new grid or a combination on T1.
+- **parked r2**: 105 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
+- **parked r3/r4**: 2 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r3/r4/r6**: 1 T1 config, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r6**: 4 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r7**: 9 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
@@ -81,7 +80,7 @@ A parked family is not killed: it keeps the exploration reserve.
 
 ## Next allocation
 
-- **70% frontier** (11 arms, 4.20 h): combine the frontier families, do not scale one metric leader.
+- **70% frontier** (6 arms, 4.20 h): combine the frontier families, do not scale one metric leader.
 - **20% near-frontier** (12 arms, 1.20 h): within 80% of the best exactness.
 - **10% exploration** (0.60 h):
   - concept+copy: the combo grid is measured; tighten the offset code
@@ -89,7 +88,7 @@ A parked family is not killed: it keeps the exploration reserve.
   - concept+spec: K=8 with copy confidence on T4
   - r7 templates: radius 2 is 0.340; add hole composition
   - r6 pack: 256 wins T1; run T2 only for a promoted combo
-  - parked families: r1, r1/r6, r3/r4/r6, r6, r7
+  - parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7
   - capability families: r5, r8
 
 Do not compare arms across different tasks; the frontier is T1 only.
@@ -100,4 +99,4 @@ Promote a combination only if it keeps round-trip and provenance.
 | round | budget | arms | frontier | tasks |
 |---:|---|---:|---:|---|
 | 1 | 2h | 80 | 10 | t1 |
-| 2 | 6h | 247 | 11 | t1,t3,t4 |
+| 2 | 6h | 303 | 6 | t1,t3,t4 |

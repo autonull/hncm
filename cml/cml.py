@@ -2732,6 +2732,138 @@ def run_breadth(
         )
     ]
 
+    count_vecs: dict[int, list[torch.Tensor]] = {}
+    for ell, maps in count_maps.items():
+        vecs = []
+        for counts in maps:
+            total = sum(counts.values())
+            vec = torch.full((k,), 1.0 / (total + k))
+            for j, c in counts.items():
+                vec[j] = (c + 1) / (total + k)
+            vecs.append(vec)
+        count_vecs[ell] = vecs
+
+    def _front(rows: list[dict]) -> list[dict]:
+        return [
+            r
+            for r in rows
+            if not any(
+                o["exact"] >= r["exact"]
+                and o["bits"] <= r["bits"]
+                and (o["exact"] > r["exact"] or o["bits"] < r["bits"])
+                for o in rows
+                if o is not r
+            )
+        ]
+
+    blend_rows = []
+    for ell in (6, 8, 10, 12):
+        for min_hits in (1, 2):
+            for alpha in (0.25, 0.5, 0.75, 0.9):
+                exact = hit = 0
+                bits = 0.0
+                for idx, target in enumerate(targets):
+                    q = qs[idx]
+                    pred = int(q.argmax())
+                    cbits = -math.log2(max(float(q[target]), 1e-12))
+                    counts = count_maps[ell][idx]
+                    if counts and counts.most_common(1)[0][1] >= min_hits:
+                        logp = (1 - alpha) * torch.log(q) + alpha * torch.log(
+                            count_vecs[ell][idx].to(q.device)
+                        )
+                        p = torch.softmax(logp, -1)
+                        pred = int(p.argmax())
+                        cbits = -math.log2(max(float(p[target]), 1e-12))
+                        hit += 1
+                    exact += pred == target
+                    bits += cbits
+                blend_rows.append(
+                    {
+                        "kind": "blend",
+                        "key": ell,
+                        "min_hits": min_hits,
+                        "alpha": alpha,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+
+    margin_rows = []
+    for ell in (6, 10, 12):
+        for min_hits in (1, 2):
+            for gate in (0.5, 0.7, 0.9):
+                exact = hit = 0
+                bits = 0.0
+                for idx, target in enumerate(targets):
+                    q = qs[idx]
+                    pred = int(q.argmax())
+                    cbits = -math.log2(max(float(q[target]), 1e-12))
+                    counts = count_maps[ell][idx]
+                    if counts:
+                        cp, count = counts.most_common(1)[0]
+                        total = sum(counts.values())
+                        if count >= min_hits and count / total >= gate:
+                            hit += 1
+                            pred = cp
+                            cbits = -math.log2((count + 1) / (total + k))
+                    exact += pred == target
+                    bits += cbits
+                margin_rows.append(
+                    {
+                        "kind": "margin",
+                        "key": ell,
+                        "min_hits": min_hits,
+                        "margin": gate,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+
+    stack_rows = []
+    for hi, lo in ((10, 6), (12, 6)):
+        for gate in (0.0, 0.5, 0.7):
+            exact = hit = 0
+            bits = 0.0
+            for idx, target in enumerate(targets):
+                q = qs[idx]
+                pred = int(q.argmax())
+                cbits = -math.log2(max(float(q[target]), 1e-12))
+                choice = count_maps[hi][idx]
+                cp = None
+                if choice:
+                    c, count = choice.most_common(1)[0]
+                    total = sum(choice.values())
+                    if gate == 0.0 or count / total >= gate:
+                        cp, prob = c, (count + 1) / (total + k)
+                if cp is None:
+                    choice = count_maps[lo][idx]
+                    if choice:
+                        c, count = choice.most_common(1)[0]
+                        total = sum(choice.values())
+                        if count >= 2 and (gate == 0.0 or count / total >= gate):
+                            cp, prob = c, (count + 1) / (total + k)
+                if cp is not None:
+                    hit += 1
+                    pred = cp
+                    cbits = -math.log2(prob)
+                exact += pred == target
+                bits += cbits
+            stack_rows.append(
+                {
+                    "kind": "stack",
+                    "key": f"{hi}/{lo}",
+                    "margin": gate,
+                    "hit": hit / max(take, 1),
+                    "exact": exact / max(take, 1),
+                    "bits": bits / max(take, 1),
+                }
+            )
+
+    gate_rows = blend_rows + margin_rows + stack_rows
+    gate_frontier = _front(gate_rows)
+
     template_rows = []
     tmaps: dict[int, dict[tuple[tuple[int, ...], tuple[int, ...]], Counter]] = {}
     for order in (1, 2, 3):
@@ -2826,6 +2958,7 @@ def run_breadth(
     best_cdist = max(copy_dist_rows, key=lambda r: (r["exact"], -r["bits"]))
     best_combo = max(combo_frontier, key=lambda r: (r["exact"], -r["bits"]))
     best_mix = max(mix_frontier, key=lambda r: (r["exact"], -r["bits"]))
+    best_gate = max(gate_frontier, key=lambda r: (r["exact"], -r["bits"]))
     best_edit = min(edit_rows, key=lambda r: r["delta"])
     best_spec = max(spec_rows, key=lambda r: r["accepted_per_call"])
     lines = [
@@ -2927,6 +3060,29 @@ def run_breadth(
         )
     lines += [
         "",
+        "## Copy gates (R2)",
+        "",
+        "`blend` mixes the concept and copy distributions by `alpha`;",
+        "`margin` uses copy only when the plurality share passes `g`;",
+        "`stack` tries the high key, then the low key, then the concept head.",
+        "Frontier rows only.",
+        "",
+        "| kind | key | params | hit | exact | bits/span |",
+        "|---|---|---|---:|---:|---:|",
+    ]
+    for r in sorted(gate_frontier, key=lambda x: (-x["exact"], x["bits"])):
+        if r["kind"] == "blend":
+            params = f"m{r['min_hits']} a{r['alpha']:.2f}"
+        elif r["kind"] == "margin":
+            params = f"m{r['min_hits']} g{r['margin']:.1f}"
+        else:
+            params = f"g{r['margin']:.1f}"
+        lines.append(
+            f"| {r['kind']} | {r['key']} | {params} | {r['hit']:.3f} | "
+            f"{r['exact']:.3f} | {r['bits']:.3f} |"
+        )
+    lines += [
+        "",
         "## Edit prefix",
         "",
         "`base` is the same survivors under the full pack; `delta exact` is",
@@ -2975,6 +3131,8 @@ def run_breadth(
         f"- concept + copy dist: key **{best_mix['key']}**, min hits "
         f"**{best_mix['min_hits']}**, tau **{best_mix['tau']:.2f}**, "
         f"exact {best_mix['exact']:.3f}, {best_mix['bits']:.3f} bits/span.",
+        f"- best gate: **{best_gate['kind']}**, key **{best_gate['key']}**, "
+        f"exact {best_gate['exact']:.3f}, {best_gate['bits']:.3f} bits/span.",
         f"- edit: prefix `{best_edit['prefix']}`, delta "
         f"{best_edit['delta']:+.3f} bpb, exact change "
         f"{best_edit['delta_exact']:+.3f}, round-trip "
@@ -2998,6 +3156,7 @@ def run_breadth(
             "copy_dist": copy_dist_rows,
             "combo": combo_rows,
             "mix": mix_rows,
+            "gate": gate_rows,
             "edit": edit_rows,
             "spec": spec_rows,
             "spans": take,
@@ -3315,7 +3474,7 @@ def _collect_arms() -> list[dict]:
             cap = "inf" if cap is None else str(cap)
             arms.append(
                 {
-                    "family": "r2",
+                    "family": "r2+r3/r4",
                     "arm": f"conceptcopy-{row['key']}-c{cap}-t{row['tau']:.2f}",
                     "task": "t1",
                     "exact": row["exact"],
@@ -3327,10 +3486,28 @@ def _collect_arms() -> list[dict]:
         for row in b.get("mix", []):
             arms.append(
                 {
-                    "family": "r2",
+                    "family": "r2+r3/r4",
                     "arm": (
                         f"conceptmix-{row['key']}-m{row['min_hits']}-t{row['tau']:.2f}"
                     ),
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": 1.0,
+                    "source": "breadth",
+                }
+            )
+        for row in b.get("gate", []):
+            if row["kind"] == "blend":
+                arm = f"blend-{row['key']}-m{row['min_hits']}-a{row['alpha']:.2f}"
+            elif row["kind"] == "margin":
+                arm = f"margin-{row['key']}-m{row['min_hits']}-g{row['margin']:.1f}"
+            else:
+                arm = f"stack-{row['key']}-g{row['margin']:.1f}"
+            arms.append(
+                {
+                    "family": "r2+r3/r4",
+                    "arm": arm,
                     "task": "t1",
                     "exact": row["exact"],
                     "bits": row["bits"],

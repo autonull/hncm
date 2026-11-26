@@ -157,8 +157,8 @@ The four bets, and where they live:
   **0.650** at 1.72 bits/span and one decision.
 - `cml breadth`: small hyperparameter grids for copy, template/hole, library,
   edit prefixes, and speculative draft length; `reports/BREADTH.md`. Copy
-  keys 1 -> 12; concept+copy is 0.720 exact at 4.782 bits, 0.690 at 2.404.
-  Template radius 2 is 0.340.
+  keys 1 -> 12; the concept+copy blend is 0.705 at 2.362 bits (target) and
+  0.680 at 1.698 (dominates the concept point). Template radius 2 is 0.340.
 - `cml packs`: one pointer per active pack size (128/256/512/1024),
   fixed byte spans, end-to-end T1, parse decisions, coverage, and pack
   bytes; `reports/PACKS.md`. 256 wins all axes (0.415 / 3.133 / 1.00);

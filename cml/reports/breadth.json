@@ -1718,6 +1718,506 @@
    "bits": 1.888837764412408
   }
  ],
+ "gate": [
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 1,
+   "alpha": 0.25,
+   "hit": 0.365,
+   "exact": 0.675,
+   "bits": 1.6671703486531242
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 1,
+   "alpha": 0.5,
+   "hit": 0.365,
+   "exact": 0.68,
+   "bits": 1.6983656300359897
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 1,
+   "alpha": 0.75,
+   "hit": 0.365,
+   "exact": 0.69,
+   "bits": 2.064161420965042
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 1,
+   "alpha": 0.9,
+   "hit": 0.365,
+   "exact": 0.715,
+   "bits": 2.7403484040289587
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 2,
+   "alpha": 0.25,
+   "hit": 0.185,
+   "exact": 0.67,
+   "bits": 1.678470217215561
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 2,
+   "alpha": 0.5,
+   "hit": 0.185,
+   "exact": 0.665,
+   "bits": 1.672126664520113
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 2,
+   "alpha": 0.75,
+   "hit": 0.185,
+   "exact": 0.68,
+   "bits": 1.8124599012809137
+  },
+  {
+   "kind": "blend",
+   "key": 6,
+   "min_hits": 2,
+   "alpha": 0.9,
+   "hit": 0.185,
+   "exact": 0.69,
+   "bits": 2.116362799812081
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 1,
+   "alpha": 0.25,
+   "hit": 0.315,
+   "exact": 0.675,
+   "bits": 1.6751252932933876
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 1,
+   "alpha": 0.5,
+   "hit": 0.315,
+   "exact": 0.675,
+   "bits": 1.703125225478328
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 1,
+   "alpha": 0.75,
+   "hit": 0.315,
+   "exact": 0.685,
+   "bits": 2.0263910923885917
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 1,
+   "alpha": 0.9,
+   "hit": 0.315,
+   "exact": 0.705,
+   "bits": 2.6241280905299664
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 2,
+   "alpha": 0.25,
+   "hit": 0.155,
+   "exact": 0.67,
+   "bits": 1.6847659857750967
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 2,
+   "alpha": 0.5,
+   "hit": 0.155,
+   "exact": 0.665,
+   "bits": 1.6814620258567143
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 2,
+   "alpha": 0.75,
+   "hit": 0.155,
+   "exact": 0.68,
+   "bits": 1.8069881821279226
+  },
+  {
+   "kind": "blend",
+   "key": 8,
+   "min_hits": 2,
+   "alpha": 0.9,
+   "hit": 0.155,
+   "exact": 0.685,
+   "bits": 2.0710774072291027
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 1,
+   "alpha": 0.25,
+   "hit": 0.24,
+   "exact": 0.665,
+   "bits": 1.670078179344192
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 1,
+   "alpha": 0.5,
+   "hit": 0.24,
+   "exact": 0.675,
+   "bits": 1.679183643747639
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 1,
+   "alpha": 0.75,
+   "hit": 0.24,
+   "exact": 0.69,
+   "bits": 1.916758590488633
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 1,
+   "alpha": 0.9,
+   "hit": 0.24,
+   "exact": 0.705,
+   "bits": 2.361522639380369
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 2,
+   "alpha": 0.25,
+   "hit": 0.11,
+   "exact": 0.665,
+   "bits": 1.6818187415665755
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 2,
+   "alpha": 0.5,
+   "hit": 0.11,
+   "exact": 0.665,
+   "bits": 1.6681970540747262
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 2,
+   "alpha": 0.75,
+   "hit": 0.11,
+   "exact": 0.68,
+   "bits": 1.7445553928653887
+  },
+  {
+   "kind": "blend",
+   "key": 10,
+   "min_hits": 2,
+   "alpha": 0.9,
+   "hit": 0.11,
+   "exact": 0.685,
+   "bits": 1.918479798975578
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 1,
+   "alpha": 0.25,
+   "hit": 0.205,
+   "exact": 0.655,
+   "bits": 1.6764056771323712
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 1,
+   "alpha": 0.5,
+   "hit": 0.205,
+   "exact": 0.66,
+   "bits": 1.6886920155095375
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 1,
+   "alpha": 0.75,
+   "hit": 0.205,
+   "exact": 0.675,
+   "bits": 1.9089608830598903
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 1,
+   "alpha": 0.9,
+   "hit": 0.205,
+   "exact": 0.69,
+   "bits": 2.2942044997554616
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 2,
+   "alpha": 0.25,
+   "hit": 0.065,
+   "exact": 0.655,
+   "bits": 1.7002967261961865
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 2,
+   "alpha": 0.5,
+   "hit": 0.065,
+   "exact": 0.65,
+   "bits": 1.6981199046828948
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 2,
+   "alpha": 0.75,
+   "hit": 0.065,
+   "exact": 0.665,
+   "bits": 1.7528765881925779
+  },
+  {
+   "kind": "blend",
+   "key": 12,
+   "min_hits": 2,
+   "alpha": 0.9,
+   "hit": 0.065,
+   "exact": 0.67,
+   "bits": 1.8557658625242701
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 1,
+   "margin": 0.5,
+   "hit": 0.365,
+   "exact": 0.705,
+   "bits": 3.360210776708602
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 1,
+   "margin": 0.7,
+   "hit": 0.34,
+   "exact": 0.705,
+   "bits": 3.3088270483407416
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 1,
+   "margin": 0.9,
+   "hit": 0.32,
+   "exact": 0.7,
+   "bits": 3.2809377559486905
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 2,
+   "margin": 0.5,
+   "hit": 0.185,
+   "exact": 0.69,
+   "bits": 2.4035947423568644
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 2,
+   "margin": 0.7,
+   "hit": 0.175,
+   "exact": 0.685,
+   "bits": 2.3763650939802656
+  },
+  {
+   "kind": "margin",
+   "key": 6,
+   "min_hits": 2,
+   "margin": 0.9,
+   "hit": 0.155,
+   "exact": 0.68,
+   "bits": 2.3484758015882155
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 1,
+   "margin": 0.5,
+   "hit": 0.24,
+   "exact": 0.71,
+   "bits": 2.7672148469874416
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 1,
+   "margin": 0.7,
+   "hit": 0.24,
+   "exact": 0.71,
+   "bits": 2.7672148469874416
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 1,
+   "margin": 0.9,
+   "hit": 0.235,
+   "exact": 0.71,
+   "bits": 2.7648626350327987
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 2,
+   "margin": 0.5,
+   "hit": 0.11,
+   "exact": 0.685,
+   "bits": 2.074411494519389
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 2,
+   "margin": 0.7,
+   "hit": 0.11,
+   "exact": 0.685,
+   "bits": 2.074411494519389
+  },
+  {
+   "kind": "margin",
+   "key": 10,
+   "min_hits": 2,
+   "margin": 0.9,
+   "hit": 0.105,
+   "exact": 0.685,
+   "bits": 2.072059282564746
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 1,
+   "margin": 0.5,
+   "hit": 0.205,
+   "exact": 0.695,
+   "bits": 2.6506445167314023
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 1,
+   "margin": 0.7,
+   "hit": 0.205,
+   "exact": 0.695,
+   "bits": 2.6506445167314023
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 1,
+   "margin": 0.9,
+   "hit": 0.205,
+   "exact": 0.695,
+   "bits": 2.6506445167314023
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 2,
+   "margin": 0.5,
+   "hit": 0.065,
+   "exact": 0.67,
+   "bits": 1.9561906899370998
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 2,
+   "margin": 0.7,
+   "hit": 0.065,
+   "exact": 0.67,
+   "bits": 1.9561906899370998
+  },
+  {
+   "kind": "margin",
+   "key": 12,
+   "min_hits": 2,
+   "margin": 0.9,
+   "hit": 0.065,
+   "exact": 0.67,
+   "bits": 1.9561906899370998
+  },
+  {
+   "kind": "stack",
+   "key": "10/6",
+   "margin": 0.0,
+   "hit": 0.3,
+   "exact": 0.715,
+   "bits": 3.062270005166087
+  },
+  {
+   "kind": "stack",
+   "key": "10/6",
+   "margin": 0.5,
+   "hit": 0.3,
+   "exact": 0.715,
+   "bits": 3.062270005166087
+  },
+  {
+   "kind": "stack",
+   "key": "10/6",
+   "margin": 0.7,
+   "hit": 0.295,
+   "exact": 0.715,
+   "bits": 3.043739725854044
+  },
+  {
+   "kind": "stack",
+   "key": "12/6",
+   "margin": 0.0,
+   "hit": 0.295,
+   "exact": 0.715,
+   "bits": 3.0268486318654233
+  },
+  {
+   "kind": "stack",
+   "key": "12/6",
+   "margin": 0.5,
+   "hit": 0.295,
+   "exact": 0.715,
+   "bits": 3.0268486318654233
+  },
+  {
+   "kind": "stack",
+   "key": "12/6",
+   "margin": 0.7,
+   "hit": 0.29,
+   "exact": 0.715,
+   "bits": 3.00831835255338
+  }
+ ],
  "edit": [
   {
    "prefix": " ",
@@ -1818,5 +2318,5 @@
   }
  ],
  "spans": 200,
- "seconds": 298.28
+ "seconds": 240.595
 }
