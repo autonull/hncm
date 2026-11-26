@@ -22,6 +22,13 @@
    "decisions_per_span": 3.04
   },
   {
+   "mechanism": "library",
+   "exact": 0.15,
+   "top1": 0.15,
+   "bits_per_span": 2.4648969232618603,
+   "decisions_per_span": 1.0
+  },
+  {
    "mechanism": "counts",
    "exact": 0.04,
    "top1": 0.04,
@@ -30,6 +37,17 @@
   }
  ],
  "spans": 200,
- "seconds": 237.107,
+ "edit": {
+  "prefix": " ",
+  "units_before": 256,
+  "units_after": 120,
+  "affected_bytes": 4384,
+  "payload_before": 17019,
+  "payload_after": 18299,
+  "bpb_before": 1.9450285714285713,
+  "bpb_after": 2.0913142857142857,
+  "roundtrip": true
+ },
+ "seconds": 262.629,
  "seed": 0
 }

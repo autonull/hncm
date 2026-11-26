@@ -1871,6 +1871,7 @@ def _load_screen_trunk(run: str, corpus: CodeCorpus, active_lex, steps: int, see
     return model
 
 
+@torch.no_grad()
 def _next_q(
     model, ctx: torch.Tensor, units: tuple[bytes, ...]
 ) -> torch.Tensor:
@@ -1929,11 +1930,16 @@ def run_screen(
 
     train_ids, _ = _concept_stream(corpus.train, active_lex)
     bigram: dict[int, Counter] = defaultdict(Counter)
+    bigram2: dict[tuple[int, int], Counter] = defaultdict(Counter)
     glob = Counter(train_ids.tolist())
     for a, b in zip(train_ids[:-1].tolist(), train_ids[1:].tolist()):
         bigram[a][b] += 1
+    for a, b, c in zip(
+        train_ids[:-2].tolist(), train_ids[1:-1].tolist(), train_ids[2:].tolist()
+    ):
+        bigram2[(a, b)][c] += 1
 
-    names = ("byte", "counts", "pointer", "trunk")
+    names = ("byte", "counts", "library", "pointer", "trunk")
     score = {n: {"exact": 0, "top1": 0, "bits": 0.0, "decisions": 0} for n in names}
     for i, target, span in zip(pos.tolist(), targets.tolist(), true_spans):
         ctx = ids[max(0, i - seq + 1) : i].cuda()
@@ -1947,7 +1953,7 @@ def run_screen(
         score["pointer"]["bits"] += -math.log2(max(prob, 1e-12))
         score["pointer"]["decisions"] += 1
 
-        logits = tmodel(ctx.view(1, -1))
+        logits = tmodel(ctx.view(1, -1)).detach()
         tq = torch.softmax(logits[:, -1], -1)[0]
         tprob = float(tq[target])
         tpred = int(tq.argmax())
@@ -1968,6 +1974,22 @@ def run_screen(
         score["counts"]["top1"] += cpred == target
         score["counts"]["bits"] += -math.log2(max(cprob, 1e-12))
         score["counts"]["decisions"] += 1
+
+        row2 = bigram2.get((int(ids[i - 2]), int(ids[i - 1]))) if i >= 2 else None
+        if row2:
+            lpred, lcount = row2.most_common(1)[0]
+            ltotal = sum(row2.values())
+        elif row:
+            lpred, lcount = cpred, count
+            ltotal = total
+        else:
+            lpred, lcount = glob.most_common(1)[0]
+            ltotal = sum(glob.values())
+        lprob = (lcount + 1) / (ltotal + k + 256)
+        score["library"]["exact"] += lpred == target
+        score["library"]["top1"] += lpred == target
+        score["library"]["bits"] += -math.log2(max(lprob, 1e-12))
+        score["library"]["decisions"] += 1
 
         start = int(offsets[i])
         bctx = data[max(0, start - seq) : start]
@@ -2009,6 +2031,34 @@ def run_screen(
             }
         )
     rows.sort(key=lambda r: (-r["exact"], -r["top1"], r["decisions_per_span"]))
+
+    prefix = next((u[:1] for u in active_lex.units), b"\n")
+    keep = codec_mod.Lexicon(
+        tuple(u for u in active_lex.units if not u.startswith(prefix))
+    )
+    if len(keep.units) == len(active_lex.units):
+        keep = codec_mod.Lexicon(active_lex.units[1:])
+    import pointer
+
+    pc_full = pointer.PointerCodec(pmodel, active_lex, half=True)
+    before = pc_full.encode(data)
+    pc_keep = pointer.PointerCodec(pmodel, keep, half=True)
+    after = pc_keep.encode(data)
+    edit_out = pc_keep.decode(after, len(data))
+    parse_full, _ = codec_mod.greedy_parse(data, active_lex)
+    ranges = _changed_ranges(parse_full, active_lex, prefix)
+    n = max(len(data), 1)
+    edit = {
+        "prefix": prefix.decode("utf-8", "replace"),
+        "units_before": len(active_lex.units),
+        "units_after": len(keep.units),
+        "affected_bytes": sum(b - a for a, b in ranges),
+        "payload_before": len(before),
+        "payload_after": len(after),
+        "bpb_before": 8 * len(before) / n,
+        "bpb_after": 8 * len(after) / n,
+        "roundtrip": edit_out == data,
+    }
     secs = time.perf_counter() - t0
     lines = [
         "# Capability screen: held-out span reconstruction",
@@ -2026,7 +2076,8 @@ def run_screen(
     ]
     family = {
         "byte": "r1 baseline",
-        "counts": "r1/r6 copy",
+        "counts": "r1/r6 order-1",
+        "library": "r7 order-2",
         "pointer": "r3/r4/r6",
         "trunk": "r3/r4 control",
     }
@@ -2036,6 +2087,22 @@ def run_screen(
             f"{r['exact']:.3f} | {r['top1']:.3f} | "
             f"{r['bits_per_span']:.3f} | {r['decisions_per_span']:.2f} |"
         )
+    lines += [
+        "",
+        "## Edit capability (r5)",
+        "",
+        f"Remove every unit starting with `{edit['prefix']}`; re-encode the same "
+        f"{len(data):,} B with the surviving pack and read it back.",
+        "",
+        "| units before | units after | affected B | payload before | "
+        "payload after | delta | round-trip |",
+        "|---:|---:|---:|---:|---:|---:|:---:|",
+        f"| {edit['units_before']} | {edit['units_after']} | "
+        f"{edit['affected_bytes']} | {edit['bpb_before']:.3f} | "
+        f"{edit['bpb_after']:.3f} | "
+        f"{edit['bpb_after'] - edit['bpb_before']:+.3f} | "
+        f"{'OK' if edit['roundtrip'] else 'FAIL'} |",
+    ]
     best = rows[0]
     lines += [
         "",
@@ -2046,15 +2113,20 @@ def run_screen(
         f"{best['decisions_per_span']:.2f} decisions/span.",
         "",
         "This is a capability comparison, not a gate. It measures next-span",
-        "prediction on held-out code. Edit/install (`r5`) and library (`r7`)",
-        "need their own probes on the same task.",
+        "prediction on held-out code plus one gradient-free pack removal.",
         "",
         f"Screen took {secs:.1f} s.",
         "",
     ]
     write_json(
         REPORTS / "screen.json",
-        {"rows": rows, "spans": take, "seconds": round(secs, 3), "seed": seed},
+        {
+            "rows": rows,
+            "spans": take,
+            "edit": edit,
+            "seconds": round(secs, 3),
+            "seed": seed,
+        },
     )
     report = REPORTS / "SCREEN.md"
     tmp = report.with_suffix(".tmp")
