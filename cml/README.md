@@ -154,11 +154,14 @@ The four bets, and where they live:
 - `cml editcurve`: causal pack-edit curve, concept-draft acceptance, and a
   4-concept speculative block; `reports/EDIT-CURVE.md`. Concept-only exact is
   **0.650** at 1.72 bits/span and one decision.
-- `cml breadth`: small hyperparameter grids for copy, library, edit prefixes,
-  and speculative draft length; `reports/BREADTH.md`. Copy key 1 -> 6 moves
-  0.135 -> 0.650 exact; library order 1 -> 5 moves 0.030 -> 0.205.
-- `cml portfolio`: aggregates every measured arm into a Pareto frontier and a
-  50/30/20 allocation (frontier/near/exploration); `reports/PORTFOLIO.md`.
+- `cml breadth`: small hyperparameter grids for copy, template/hole, library,
+  edit prefixes, and speculative draft length; `reports/BREADTH.md`. Copy
+  key 1 -> 8, cap and confidence move 0.135 -> 0.720 exact; key 7 at cap
+  256 / τ 0.10 is 0.665 exact at 2.146 bits. Template radius 2 is 0.340.
+- `cml portfolio --round N --families ... --task ... --budget ...`:
+  aggregates every measured arm into a T1 Pareto frontier, family
+  best/median/worst, task views, combinations, and a resumable
+  50/30/20 (round 1) or 70/20/10 (later) allocation; `reports/PORTFOLIO.md`.
   It parks families without killing them.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.

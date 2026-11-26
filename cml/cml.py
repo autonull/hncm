@@ -14,6 +14,7 @@ import math
 import os
 import pickle
 import random
+import shutil
 import struct
 import time
 import tomllib
@@ -1795,8 +1796,7 @@ def _write_concept_report() -> Path:
             f"- **round-trip** {best['proof_units']:,} units / "
             f"{best['proof_bytes']:,} B: {'PASS' if rt_pass else 'FAIL'} "
             f"({best['roundtrip_kind']})",
-            f"- **B/decision** {bpd:.3f} ≥ 2.5: "
-            f"{'PASS' if dec_pass else 'FAIL'}",
+            f"- **B/decision** {bpd:.3f} ≥ 2.5: {'PASS' if dec_pass else 'FAIL'}",
             f"- **span-only B/decision** {span_bpd:.3f} ≥ 2.5: "
             f"{'PASS' if span_pass else 'FAIL'}",
             f"- literal fraction {best['literal_fraction']:.3f}; the 256-unit "
@@ -1860,7 +1860,9 @@ def _load_screen_trunk(run: str, corpus: CodeCorpus, active_lex, steps: int, see
     path = RUNS / run / "model.pt"
     if path.exists():
         data = torch.load(path, map_location="cuda", weights_only=False)
-        model = Trunk(data["vocab"], data["d"], data["layers"], data["heads"], data["seq"])
+        model = Trunk(
+            data["vocab"], data["d"], data["layers"], data["heads"], data["seq"]
+        )
         model.load_state_dict(data["model"])
         return model.cuda()
     torch.manual_seed(seed)
@@ -1872,9 +1874,7 @@ def _load_screen_trunk(run: str, corpus: CodeCorpus, active_lex, steps: int, see
 
 
 @torch.no_grad()
-def _next_q(
-    model, ctx: torch.Tensor, units: tuple[bytes, ...]
-) -> torch.Tensor:
+def _next_q(model, ctx: torch.Tensor, units: tuple[bytes, ...]) -> torch.Tensor:
     """The next-symbol distribution from a pointer, joint or gated."""
     logits, gate, byte = model(ctx.view(1, -1), units)
     if gate is not None:
@@ -2532,18 +2532,19 @@ def run_breadth(
             }
         )
 
+    qs = []
+    qall = []
+    for i in pos:
+        q = _next_q(pmodel, ids[max(0, i - seq + 1) : i].cuda(), active_lex.units)
+        qall.append(q / q.sum().clamp_min(1e-12))
+        qc = q[:k]
+        qs.append(qc / qc.sum().clamp_min(1e-12))
+
     copy_rows = []
-    for ell in (1, 2, 3, 4, 5, 6):
-        hit = exact = 0
-        bits = 0.0
-        for i, target in zip(pos, targets):
-            ctx = ids[max(0, i - seq + 1) : i]
-            q = _next_q(pmodel, ctx.cuda(), active_lex.units)[:k]
-            q = q / q.sum().clamp_min(1e-12)
-            ppred = int(q.argmax())
-            pbits = -math.log2(max(float(q[ppred]), 1e-12))
-            pred = ppred
-            cbits = 1 + pbits
+    for ell in (4, 5, 6, 7, 8):
+        prior: list[int | None] = []
+        for i in pos:
+            p = None
             if i >= ell:
                 key = ids[i - ell : i].tolist()
                 cand = torch.arange(0, i - ell + 1)
@@ -2552,16 +2553,73 @@ def run_breadth(
                 cand = cand[cand + ell < i]
                 if cand.numel():
                     p = int(cand[-1])
-                    if p + ell < i:
-                        hit += 1
-                        pred = int(ids[p + ell])
-                        cbits = 1 + math.log2(i - p + 1)
+            prior.append(p)
+        for cap in (256, 1024, None):
+            for tau in (0.0, 0.10, 0.25):
+                exact = hit = 0
+                bits = 0.0
+                for idx, (i, target) in enumerate(zip(pos, targets)):
+                    q = qs[idx]
+                    ppred = int(q.argmax())
+                    pbits = -math.log2(max(float(q[ppred]), 1e-12))
+                    pred, cbits = ppred, 1.0 + pbits
+                    p = prior[idx]
+                    if p is not None and (cap is None or i - p <= cap):
+                        cpred = int(ids[p + ell])
+                        if cpred < k and float(qall[idx][cpred]) >= tau:
+                            hit += 1
+                            pred = cpred
+                            off = min(i - p + 1, cap) if cap else i - p + 1
+                            cbits = 1.0 + math.log2(max(off, 1))
+                    exact += pred == target
+                    bits += cbits
+                copy_rows.append(
+                    {
+                        "key": ell,
+                        "cap": cap,
+                        "tau": tau,
+                        "hit": hit / max(take, 1),
+                        "exact": exact / max(take, 1),
+                        "bits": bits / max(take, 1),
+                    }
+                )
+
+    template_rows = []
+    tmaps: dict[int, dict[tuple[tuple[int, ...], tuple[int, ...]], Counter]] = {}
+    for order in (1, 2, 3):
+        m: dict[tuple[tuple[int, ...], tuple[int, ...]], Counter] = defaultdict(Counter)
+        for j in range(order, len(vals) - order):
+            key = (tuple(vals[j - order : j]), tuple(vals[j + 1 : j + 1 + order]))
+            m[key][vals[j]] += 1
+        tmaps[order] = m
+        found = exact = 0
+        bits = 0.0
+        for i, target in zip(pos, targets):
+            pred = None
+            for o in range(order, 0, -1):
+                if i < o or i + o >= ids.numel():
+                    continue
+                key = (
+                    tuple(ids[i - o : i].tolist()),
+                    tuple(ids[i + 1 : i + 1 + o].tolist()),
+                )
+                row = tmaps[o].get(key)
+                if row:
+                    pred, count = row.most_common(1)[0]
+                    total = sum(row.values())
+                    break
+            if pred is None:
+                pred, count = glob.most_common(1)[0]
+                total = sum(glob.values())
+            else:
+                found += 1
+            prob = (count + 1) / (total + k + 256)
             exact += pred == target
-            bits += cbits
-        copy_rows.append(
+            bits += -math.log2(max(prob, 1e-12))
+        template_rows.append(
             {
-                "key": ell,
-                "hit": hit / max(take, 1),
+                "order": order,
+                "found": found / max(take, 1),
                 "exact": exact / max(take, 1),
                 "bits": bits / max(take, 1),
             }
@@ -2571,6 +2629,7 @@ def run_breadth(
     pc_full = pointer.PointerCodec(pmodel, active_lex, half=True)
     before = pc_full.encode(data)
     n = max(len(data), 1)
+    units = [active_lex.units[t] for t in targets]
     edit_rows = []
     for prefix in (
         b" ",
@@ -2592,23 +2651,30 @@ def run_breadth(
         blob = pc.encode(data)
         out = pc.decode(blob, len(data))
         ranges = _changed_ranges(parse_full, active_lex, prefix)
+        stage = _stage_score(
+            pmodel, data, ids, pos, targets, units, active_lex, keep, seq
+        )
         edit_rows.append(
             {
                 "prefix": prefix.decode("utf-8", "replace"),
                 "units": len(keep.units),
                 "affected": sum(b - a for a, b in ranges),
                 "delta": 8 * (len(blob) - len(before)) / n,
+                "exact": stage["exact"],
+                "base": stage["base"],
+                "delta_exact": stage["delta"],
                 "roundtrip": out == data,
             }
         )
 
     spec_rows = [
         _spec_score(pmodel, tmodel, ids, pos, active_lex, seq, k, kd, seed + 1)
-        for kd in (2, 4, 8, 16)
+        for kd in (2, 4, 8, 12, 16)
     ]
     secs = time.perf_counter() - t0
-    best_lib = max(lib_rows, key=lambda r: r["exact"])
-    best_copy = max(copy_rows, key=lambda r: r["exact"])
+    best_lib = max(lib_rows, key=lambda r: (r["exact"], -r["bits"]))
+    best_tpl = max(template_rows, key=lambda r: (r["exact"], -r["bits"]))
+    best_copy = max(copy_rows, key=lambda r: (r["exact"], -r["bits"]))
     best_edit = min(edit_rows, key=lambda r: r["delta"])
     best_spec = max(spec_rows, key=lambda r: r["accepted_per_call"])
     lines = [
@@ -2616,12 +2682,11 @@ def run_breadth(
         "",
         f"- corpus `{corpus_name}` sha `{corpus.sha[:12]}`, held-out "
         f"{len(data):,} B, {take} spans, seed {seed}",
-        f"- pack {k} units; library and copy train on "
-        f"{len(train_ids):,} elements",
+        f"- pack {k} units; library and copy train on {len(train_ids):,} elements",
         "- A single config is not a kill. Each family gets a small grid; the",
         "  best row is the direction to push next.",
         "",
-        "## Library order",
+        "## Library order (past context only)",
         "",
         "| order | exact | bits/span |",
         "|---:|---:|---:|",
@@ -2630,27 +2695,52 @@ def run_breadth(
         lines.append(f"| {r['order']} | {r['exact']:.3f} | {r['bits']:.3f} |")
     lines += [
         "",
-        "## Copy key length",
+        "## Template/hole (both sides known)",
         "",
-        "| key | hit | exact | bits/span |",
+        "The target span is the hole; the units before and after it are",
+        "known. Back off from radius 3 to 1, then to the global count.",
+        "",
+        "| radius | found | exact | bits/span |",
         "|---:|---:|---:|---:|",
     ]
-    for r in copy_rows:
+    for r in template_rows:
         lines.append(
-            f"| {r['key']} | {r['hit']:.3f} | {r['exact']:.3f} | "
-            f"{r['bits']:.3f} |"
+            f"| {r['order']} | {r['found']:.3f} | {r['exact']:.3f} | {r['bits']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Copy: key x offset cap x confidence",
+        "",
+        "Copy predicts from the nearest prior match; the pointer predicts",
+        "otherwise. `tau` is the pointer confidence in the copy candidate",
+        "required to use it. `cap` bounds the offset code.",
+        "",
+        "| key | cap | tau | hit | exact | bits/span |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in copy_rows:
+        cap = "-" if r["cap"] is None else str(r["cap"])
+        lines.append(
+            f"| {r['key']} | {cap} | {r['tau']:.2f} | {r['hit']:.3f} | "
+            f"{r['exact']:.3f} | {r['bits']:.3f} |"
         )
     lines += [
         "",
         "## Edit prefix",
         "",
-        "| prefix | units | affected B | bpb delta | round-trip |",
-        "|---|---:|---:|---:|:---:|",
+        "`base` is the same survivors under the full pack; `delta exact` is",
+        "the behavior change after the deletion.",
+        "",
+        "| prefix | units | affected B | bpb delta | base | exact | "
+        "delta exact | round-trip |",
+        "|---|---:|---:|---:|---:|---:|---:|:---:|",
     ]
     for r in edit_rows:
         lines.append(
             f"| `{r['prefix']}` | {r['units']} | {r['affected']:,} | "
-            f"{r['delta']:+.3f} | {'OK' if r['roundtrip'] else 'FAIL'} |"
+            f"{r['delta']:+.3f} | {r['base']:.3f} | {r['exact']:.3f} | "
+            f"{r['delta_exact']:+.3f} | "
+            f"{'OK' if r['roundtrip'] else 'FAIL'} |"
         )
     lines += [
         "",
@@ -2670,10 +2760,14 @@ def run_breadth(
         "",
         f"- library: order **{best_lib['order']}**, exact "
         f"{best_lib['exact']:.3f}, {best_lib['bits']:.3f} bits/span.",
-        f"- copy: key **{best_copy['key']}**, exact {best_copy['exact']:.3f}, "
-        f"hit {best_copy['hit']:.3f}.",
+        f"- template: radius **{best_tpl['order']}**, exact "
+        f"{best_tpl['exact']:.3f}, {best_tpl['bits']:.3f} bits/span.",
+        f"- copy: key **{best_copy['key']}**, cap **{best_copy['cap']}**, "
+        f"tau **{best_copy['tau']:.2f}**, exact {best_copy['exact']:.3f}, "
+        f"{best_copy['bits']:.3f} bits/span.",
         f"- edit: prefix `{best_edit['prefix']}`, delta "
-        f"{best_edit['delta']:+.3f} bpb, round-trip "
+        f"{best_edit['delta']:+.3f} bpb, exact change "
+        f"{best_edit['delta_exact']:+.3f}, round-trip "
         f"{'OK' if best_edit['roundtrip'] else 'FAIL'}.",
         f"- spec: K **{best_spec['k']}**, "
         f"{best_spec['accepted_per_call']:.3f} accepted/call.",
@@ -2689,6 +2783,7 @@ def run_breadth(
         REPORTS / "breadth.json",
         {
             "library": lib_rows,
+            "template": template_rows,
             "copy": copy_rows,
             "edit": edit_rows,
             "spec": spec_rows,
@@ -2705,12 +2800,73 @@ def run_breadth(
     return 0
 
 
-def run_portfolio() -> int:
-    """Aggregate every measured arm, keep a Pareto frontier, allocate the next round."""
+def _median(values: list[float]) -> float | None:
+    return float(np.median(values)) if values else None
+
+
+def _metric(arm: dict, task: str) -> float | None:
+    """The one comparable number for a task view."""
+    if task == "t1":
+        return arm.get("exact")
+    if task == "t2":
+        return arm.get("bits")
+    if task == "t3":
+        delta = arm.get("edit_delta")
+        return None if delta is None else abs(delta)
+    if task == "t4":
+        return arm.get("target_calls")
+    if task == "t5":
+        delta = arm.get("install_delta")
+        return None if delta is None else abs(delta)
+    return None
+
+
+def _task_metric(task: str, value: float | None) -> str:
+    if value is None:
+        return "-"
+    if task == "t1":
+        return f"{value:.3f} exact"
+    if task == "t2":
+        return f"{value:.3f} bpb"
+    if task == "t3":
+        return f"{value:+.3f} bpb edit"
+    if task == "t4":
+        return f"{1 / max(value, 1e-12):.3f} accepted/call"
+    return f"{value:+.3f} bpb"
+
+
+def _best_arm(rows: list[dict], task: str) -> dict | None:
+    rows = [r for r in rows if _metric(r, task) is not None]
+    if not rows:
+        return None
+    if task == "t1":
+        return max(rows, key=lambda r: (r["exact"], -(r["bits"] or 0)))
+    if task == "t4":
+        return min(rows, key=lambda r: r["target_calls"])
+    return min(rows, key=lambda r: _metric(r, task))
+
+
+def _hours(budget: str) -> float:
+    text = budget.strip().lower()
+    try:
+        if text.endswith("m"):
+            return float(text[:-1]) / 60
+        return float(text.removesuffix("h"))
+    except ValueError:
+        return 2.0
+
+
+def _slug(text: str) -> str:
+    return "".join(c if c.isalnum() or c in "-_." else "-" for c in text)[:80]
+
+
+def _collect_arms() -> list[dict]:
+    """Every measured arm, labelled by family and task."""
     arms: list[dict] = []
     sp = REPORTS / "screen.json"
     if sp.exists():
-        for row in json.loads(sp.read_text())["rows"]:
+        screen = json.loads(sp.read_text())
+        for row in screen["rows"]:
             arms.append(
                 {
                     "family": {
@@ -2723,12 +2879,38 @@ def run_portfolio() -> int:
                         "counts": "r1/r6",
                     }.get(row["mechanism"], "other"),
                     "arm": row["mechanism"],
+                    "task": "t1",
                     "exact": row["exact"],
                     "bits": row["bits_per_span"],
                     "decisions": row["decisions_per_span"],
                     "source": "screen",
                 }
             )
+        edit = screen.get("edit")
+        merge = screen.get("merge")
+        if merge:
+            arms.append(
+                {
+                    "family": "r5",
+                    "arm": "merge-320",
+                    "task": "t3",
+                    "edit_delta": merge["bpb_after"] - merge["bpb_before"],
+                    "roundtrip": merge["roundtrip"],
+                    "source": "screen",
+                }
+            )
+        if edit:
+            arms.append(
+                {
+                    "family": "r5",
+                    "arm": "pack-remove",
+                    "task": "t3",
+                    "edit_delta": edit["bpb_after"] - edit["bpb_before"],
+                    "roundtrip": edit["roundtrip"],
+                    "source": "screen",
+                }
+            )
+
     bp = REPORTS / "breadth.json"
     if bp.exists():
         b = json.loads(bp.read_text())
@@ -2737,6 +2919,19 @@ def run_portfolio() -> int:
                 {
                     "family": "r7",
                     "arm": f"library-{row['order']}",
+                    "task": "t1",
+                    "exact": row["exact"],
+                    "bits": row["bits"],
+                    "decisions": 1.0,
+                    "source": "breadth",
+                }
+            )
+        for row in b.get("template", []):
+            arms.append(
+                {
+                    "family": "r7",
+                    "arm": f"template-{row['order']}",
+                    "task": "t1",
                     "exact": row["exact"],
                     "bits": row["bits"],
                     "decisions": 1.0,
@@ -2744,10 +2939,13 @@ def run_portfolio() -> int:
                 }
             )
         for row in b.get("copy", []):
+            cap = row.get("cap")
+            cap = "inf" if cap is None else str(cap)
             arms.append(
                 {
                     "family": "r2",
-                    "arm": f"copy-{row['key']}",
+                    "arm": f"copy-{row['key']}-c{cap}-t{row.get('tau', 0.0):.2f}",
+                    "task": "t1",
                     "exact": row["exact"],
                     "bits": row["bits"],
                     "decisions": 1.0,
@@ -2759,9 +2957,7 @@ def run_portfolio() -> int:
                 {
                     "family": "r8",
                     "arm": f"spec-{row['k']}",
-                    "exact": None,
-                    "bits": None,
-                    "decisions": None,
+                    "task": "t4",
                     "target_calls": 1 / max(row["accepted_per_call"], 1e-9),
                     "source": "breadth",
                 }
@@ -2770,31 +2966,111 @@ def run_portfolio() -> int:
             arms.append(
                 {
                     "family": "r5",
-                    "arm": f"edit-{row['prefix']}",
-                    "exact": None,
-                    "bits": None,
-                    "decisions": None,
+                    "arm": f"edit-{row['prefix'].strip() or 'space'}",
+                    "task": "t3",
                     "edit_delta": row["delta"],
+                    "edit_exact": row.get("exact"),
+                    "edit_base": row.get("base"),
+                    "roundtrip": row["roundtrip"],
                     "source": "breadth",
                 }
             )
+
+    ep = REPORTS / "editcurve.json"
+    if ep.exists():
+        e = json.loads(ep.read_text())
+        if e.get("draft"):
+            d = e["draft"]
+            arms.append(
+                {
+                    "family": "r5",
+                    "arm": "draft-trunk",
+                    "task": "t4",
+                    "target_calls": 1 / max(d["accept"], 1e-9),
+                    "source": "editcurve",
+                }
+            )
+        if e.get("spec"):
+            s = e["spec"]
+            arms.append(
+                {
+                    "family": "r8",
+                    "arm": f"editcurve-spec-{s['k']}",
+                    "task": "t4",
+                    "target_calls": 1 / max(s["accepted_per_call"], 1e-9),
+                    "source": "editcurve",
+                }
+            )
+        for row in e.get("rows", []):
+            if row.get("stage") in ("full", "restore-all"):
+                continue
+            arms.append(
+                {
+                    "family": "r5",
+                    "arm": f"edit-{row['stage']}",
+                    "task": "t3",
+                    "edit_delta": row["delta"],
+                    "removed": row.get("removed"),
+                    "source": "editcurve",
+                }
+            )
+
     for path in sorted(RUNS.glob("concept-*/metrics.json")):
         m = json.loads(path.read_text())
         arms.append(
             {
                 "family": "r3/r4",
                 "arm": m["id"],
-                "exact": None,
+                "task": "t2",
                 "bits": m["bits_per_byte"],
-                "decisions": m["decisions_per_byte"],
                 "payload": m["payload_bpb"],
+                "decisions": m["decisions_per_byte"],
                 "source": "concept",
             }
         )
-    scored = [a for a in arms if a.get("exact") is not None]
-    frontier = []
-    for a in scored:
-        dom = any(
+
+    for path in sorted(RUNS.glob("install-*/metrics.json")):
+        m = json.loads(path.read_text())
+        delta = m.get("delta_b_minus_a")
+        if delta is None:
+            continue
+        arms.append(
+            {
+                "family": "r1",
+                "arm": f"install-{m.get('package', path.parent.name)}",
+                "task": "t5",
+                "install_delta": delta,
+                "source": "install",
+            }
+        )
+    return arms
+
+
+def run_portfolio(
+    round_id: int = 1,
+    families: str = "all",
+    task: str = "t1",
+    budget: str = "2h",
+) -> int:
+    """Score every measured arm, keep a T1 frontier, allocate the next round."""
+    t0 = time.perf_counter()
+    tasks = {t.strip().lower() for t in task.split(",") if t.strip()}
+    tasks = tasks or {"t1"}
+    arms = _collect_arms()
+    if families != "all":
+        wanted = {f.strip() for f in families.split(",") if f.strip()}
+        arms = [a for a in arms if a["family"] in wanted]
+    for a in arms:
+        a.setdefault("exact", None)
+        a.setdefault("bits", None)
+        a.setdefault("decisions", None)
+    arms.sort(key=lambda a: (a["task"], a["family"], a["arm"]))
+
+    scored = [a for a in arms if a["task"] == "t1" and a["exact"] is not None]
+    frontier = [
+        a
+        for a in scored
+        if not any(
             b["exact"] >= a["exact"]
             and b["bits"] <= a["bits"]
             and b["decisions"] <= a["decisions"]
@@ -2806,32 +3082,126 @@ def run_portfolio() -> int:
             for b in scored
             if b is not a
         )
-        if not dom:
-            frontier.append(a)
-    best_exact = max((a["exact"] for a in scored), default=0.0)
-    near = [
-        a
-        for a in scored
-        if a not in frontier and a["exact"] >= 0.8 * best_exact
     ]
+    best_exact = max((a["exact"] for a in scored), default=0.0)
+    near = [a for a in scored if a not in frontier and a["exact"] >= 0.8 * best_exact]
+
+    t1_fams = {a["family"] for a in scored}
+    all_fams = {a["family"] for a in arms}
+    moving = {a["family"] for a in frontier} | {a["family"] for a in near}
+    capability = sorted(all_fams - t1_fams)
+    parked = sorted(f for f in t1_fams if f not in moving)
     best_family: dict[str, dict] = {}
-    for a in arms:
-        f = a["family"]
-        if f not in best_family:
-            best_family[f] = a
-        elif a.get("exact") is not None and (
-            best_family[f].get("exact") is None
-            or a["exact"] > best_family[f]["exact"]
-        ):
-            best_family[f] = a
+    for fam in sorted(all_fams):
+        rows = [a for a in arms if a["family"] == fam]
+        best = None
+        for t in [*sorted(tasks), "t1", "t2", "t3", "t4", "t5"]:
+            best = _best_arm(rows, t)
+            if best is not None:
+                break
+        if best is not None:
+            best_family[fam] = best
+
+    grid_rows = []
+    for fam in sorted(t1_fams):
+        rows = [a for a in arms if a["family"] == fam and a["task"] == "t1"]
+        exacts = [a["exact"] for a in rows if a["exact"] is not None]
+        bits = [a["bits"] for a in rows if a["bits"] is not None]
+        grid_rows.append(
+            {
+                "family": fam,
+                "configs": len(rows),
+                "best": max(rows, key=lambda a: (a["exact"], -a["bits"])),
+                "exact": (
+                    max(exacts, default=None),
+                    _median(exacts),
+                    min(exacts) if exacts else None,
+                ),
+                "bits": (
+                    min(bits) if bits else None,
+                    _median(bits),
+                    max(bits) if bits else None,
+                ),
+            }
+        )
+
+    combos = [
+        ("concept+copy", ("r2", "r3/r4"), "t1,t4"),
+        ("concept+pack", ("r3/r4", "r6"), "t1,t2"),
+        ("concept+edit", ("r3/r4", "r5"), "t3"),
+        ("concept+spec", ("r3/r4", "r8"), "t4"),
+        ("pack+install", ("r6", "r1"), "t5"),
+        ("library+concept", ("r7", "r3/r4"), "t1,t6"),
+        ("all+RLFP", ("r2", "r3/r4", "r5", "r8"), "t7"),
+    ]
+    combo_rows = []
+    for name, needs, tests in combos:
+        missing = [f for f in needs if f not in all_fams]
+        if name == "all+RLFP":
+            status = "blocked: needs a T1-T4 survivor"
+        elif missing:
+            status = "needs " + ", ".join(missing)
+        else:
+            status = "inputs measured"
+        combo_rows.append({"combination": name, "tests": tests, "status": status})
+
+    exploration = [
+        "r5 edits: prefix x pack-removal grid on T3",
+        "r6 pack: active 128/256/512/1024 on T1/T2",
+        "r7 templates: radius 1-3 and hole composition",
+        "r8 drafts: K=12/16 and draft cost",
+    ]
+    if parked:
+        exploration.append("parked families: " + ", ".join(parked))
+    if capability:
+        exploration.append("capability families: " + ", ".join(capability))
+    frac = (0.5, 0.3, 0.2) if round_id <= 1 else (0.7, 0.2, 0.1)
+    hours = _hours(budget)
+    allocation = {
+        "frontier": frac[0],
+        "near": frac[1],
+        "explore": frac[2],
+        "frontier_hours": round(hours * frac[0], 2),
+        "near_hours": round(hours * frac[1], 2),
+        "explore_hours": round(hours * frac[2], 2),
+        "frontier_arms": [f"{a['family']}:{a['arm']}" for a in frontier],
+        "near_arms": [f"{a['family']}:{a['arm']}" for a in near],
+        "explore_arms": exploration,
+    }
+
+    report = REPORTS / "PORTFOLIO.md"
+    old: dict = {}
+    if (REPORTS / "portfolio.json").exists():
+        try:
+            old = json.loads((REPORTS / "portfolio.json").read_text())
+        except json.JSONDecodeError:
+            old = {}
+    rounds = {r["round"]: r for r in old.get("rounds", [])}
+    rounds[round_id] = {
+        "round": round_id,
+        "budget": budget,
+        "tasks": sorted(tasks),
+        "families": families,
+        "arms": len(arms),
+        "frontier": len(frontier),
+        "allocation": allocation,
+        "seconds": round(time.perf_counter() - t0, 3),
+        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
     lines = [
-        "# Portfolio: every family, one frontier",
+        f"# Portfolio: round {round_id}",
         "",
-        "This page is generated by `cml portfolio`. It does not run arms; it",
-        "aggregates the measured arms, keeps the frontier, and allocates the next",
-        "round. A parked family is not killed: it keeps the exploration reserve.",
+        "Generated by `cml portfolio`. It does not train; it aggregates the",
+        "measured arms, keeps the T1 frontier, and allocates the next round.",
+        "A parked family is not killed: it keeps the exploration reserve.",
         "",
-        "## Pareto frontier",
+        f"- families `{families}`, tasks `{','.join(sorted(tasks))}`, "
+        f"budget `{budget}` ({hours:.2f} h)",
+        f"- {len(arms)} measured arms, {len(scored)} on T1, "
+        f"{len(frontier)} on the frontier, {len(parked)} parked families",
+        "",
+        "## Pareto frontier (T1)",
         "",
         "| family | arm | exact | bits/span | decisions/span | source |",
         "|---|---|---:|---:|---:|---|",
@@ -2843,61 +3213,131 @@ def run_portfolio() -> int:
         )
     lines += [
         "",
-        "## Best measured per family",
+        "## Family grids: best / median / worst",
         "",
-        "| family | arm | exact | bits/span | source |",
-        "|---|---|---:|---:|---|",
+        "| family | configs | exact best | median | worst | bits best | "
+        "median | worst |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for f, a in sorted(best_family.items()):
-        exact = "-" if a.get("exact") is None else f"{a['exact']:.3f}"
-        bits = "-" if a.get("bits") is None else f"{a['bits']:.3f}"
-        lines.append(f"| {f} | `{a['arm']}` | {exact} | {bits} | {a['source']} |")
+    for r in grid_rows:
+        e, b = r["exact"], r["bits"]
+        lines.append(
+            f"| {r['family']} | {r['configs']} | {e[0]:.3f} | "
+            f"{_fmt(e[1])} | {e[2]:.3f} | {b[0]:.3f} | {_fmt(b[1])} | "
+            f"{b[2]:.3f} |"
+        )
     lines += [
         "",
-        "## Non-frontier signals",
+        "## Best measured per family (all tasks)",
+        "",
+        "| family | arm | task | metric | source |",
+        "|---|---|---|---|---|",
+    ]
+    for fam, a in sorted(best_family.items()):
+        t = a["task"]
+        lines.append(
+            f"| {fam} | `{a['arm']}` | {t} | "
+            f"{_task_metric(t, _metric(a, t))} | {a['source']} |"
+        )
+    lines += [
+        "",
+        "## Task views",
+        "",
+        "| task | best arm | metric | source |",
+        "|---|---|---|---|",
+    ]
+    for t in sorted(tasks):
+        best = _best_arm(arms, t)
+        if best is None:
+            lines.append(f"| {t} | - | - | - |")
+            continue
+        lines.append(
+            f"| {t} | `{best['family']}:{best['arm']}` | "
+            f"{_task_metric(t, _metric(best, t))} | {best['source']} |"
+        )
+    lines += [
+        "",
+        "## Combination matrix",
+        "",
+        "| combination | tests | status |",
+        "|---|---|---|",
+    ]
+    for c in combo_rows:
+        lines.append(f"| {c['combination']} | {c['tests']} | {c['status']} |")
+    lines += [
+        "",
+        "## Parked and exploration reserve",
         "",
     ]
-    for fam in ("r5", "r8"):
+    for fam in parked:
+        rows = [a for a in arms if a["family"] == fam and a["task"] == "t1"]
+        lines.append(
+            f"- **parked {fam}**: {len(rows)} T1 "
+            f"{'config' if len(rows) == 1 else 'configs'}, none on the "
+            "frontier. Reopen with a new grid or a combination on T1."
+        )
+    for fam in capability:
         rows = [a for a in arms if a["family"] == fam]
-        if not rows:
-            continue
-        if fam == "r5":
-            best = min(rows, key=lambda a: a.get("edit_delta", 1e9))
-            lines.append(
-                f"- r5 best edit: `{best['arm']}` delta "
-                f"{best.get('edit_delta', 0):+.3f} bpb."
-            )
-        else:
-            best = min(rows, key=lambda a: a.get("target_calls", 1e9))
-            lines.append(
-                f"- r8 best draft: `{best['arm']}` "
-                f"{1 / best['target_calls']:.3f} accepted/call."
-            )
+        t = rows[0]["task"]
+        best = _best_arm(rows, t)
+        lines.append(
+            f"- **capability {fam}**: {len(rows)} arms on {t}, best "
+            f"`{best['arm']}` ({_task_metric(t, _metric(best, t))})."
+        )
+    if not parked and not capability:
+        lines.append("- Every measured family moves the T1 frontier.")
     lines += [
         "",
         "## Next allocation",
         "",
-        f"- **50% frontier** ({len(frontier)} arms): concept + copy + the best",
-        "  measured point on each axis.",
-        f"- **30% near-frontier** ({len(near)} arms): within 80% of the best",
-        "  exactness; combine before scaling.",
-        "- **20% exploration**: r5 edits, r6 install, r7 templates, r8 K=8,",
-        "  and any parked family with a new grid.",
-        "",
-        "Do not scale one arm because it leads one metric. Promote",
-        "combinations and keep the exploration reserve.",
-        "",
+        f"- **{frac[0]:.0%} frontier** ({len(frontier)} "
+        f"{'arm' if len(frontier) == 1 else 'arms'}, "
+        f"{allocation['frontier_hours']:.2f} h): combine the frontier "
+        "families, do not scale one metric leader.",
+        f"- **{frac[1]:.0%} near-frontier** ({len(near)} "
+        f"{'arm' if len(near) == 1 else 'arms'}, "
+        f"{allocation['near_hours']:.2f} h): within 80% of the best exactness.",
+        f"- **{frac[2]:.0%} exploration** ({allocation['explore_hours']:.2f} h):",
     ]
+    for item in exploration:
+        lines.append(f"  - {item}")
+    lines += [
+        "",
+        "Do not compare arms across different tasks; the frontier is T1 only.",
+        "Promote a combination only if it keeps round-trip and provenance.",
+        "",
+        "## Round history",
+        "",
+        "| round | budget | arms | frontier | tasks |",
+        "|---:|---|---:|---:|---|",
+    ]
+    for rid in sorted(rounds):
+        r = rounds[rid]
+        lines.append(
+            f"| {r['round']} | {r['budget']} | {r['arms']} | "
+            f"{r['frontier']} | {','.join(r['tasks'])} |"
+        )
+    lines.append("")
+
+    round_dir = RUNS / "portfolio" / f"round-{round_id}"
+    if round_dir.exists():
+        shutil.rmtree(round_dir)
+    for i, a in enumerate(arms):
+        name = f"{i:03d}-{_slug(a['family'])}-{_slug(a['arm'])}"
+        write_json(round_dir / name / "metrics.json", a)
+
     write_json(
         REPORTS / "portfolio.json",
         {
+            "round": round_id,
             "arms": arms,
             "frontier": frontier,
             "best_family": best_family,
-            "allocation": {"frontier": 0.5, "near": 0.3, "explore": 0.2},
+            "combinations": combo_rows,
+            "allocation": allocation,
+            "rounds": [rounds[r] for r in sorted(rounds)],
         },
     )
-    report = REPORTS / "PORTFOLIO.md"
     tmp = report.with_suffix(".tmp")
     tmp.write_text("\n".join(lines))
     os.replace(tmp, report)
@@ -2905,10 +3345,6 @@ def run_portfolio() -> int:
     print(f"wrote {report}")
     return 0
 
-
-# ---------------------------------------------------------------------------
-# P0: the adapter on a frozen byte base
-# ---------------------------------------------------------------------------
 
 CACHE = Path(os.environ.get("HNCM_CACHE", str(Path.home() / ".cache/hncm")))
 PACK_MAGIC = b"CMLP"
@@ -6047,7 +6483,11 @@ def main(argv: list[str] | None = None) -> int:
     br.add_argument("--bytes", type=int, default=70_000)
     br.add_argument("--spans", type=int, default=200)
     br.add_argument("--seed", type=int, default=0)
-    sub.add_parser("portfolio")
+    pf = sub.add_parser("portfolio")
+    pf.add_argument("--round", type=int, default=1)
+    pf.add_argument("--families", default="all")
+    pf.add_argument("--task", default="t1")
+    pf.add_argument("--budget", default="2h")
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -6184,7 +6624,7 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "breadth":
         return run_breadth(a.corpus, a.bytes, a.spans, a.seed)
     if a.cmd == "portfolio":
-        return run_portfolio()
+        return run_portfolio(a.round, a.families, a.task, a.budget)
     if a.cmd == "train":
         if a.units == "codec":
             if a.corpus not in ("code", "shakespeare"):

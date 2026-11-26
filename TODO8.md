@@ -52,17 +52,38 @@ T1 is the common screen. T2 is the honest compression check. T3-T6 test the
 properties that make the architecture different from a byte LM. T7 is not the
 first gate; it runs only when a combination earns it.
 
+### 2.1 Round 1 progress (2026-11-26)
+
+| item | state | evidence |
+|---|---|---|
+| shared suite + portfolio schema | **done** | `cml portfolio --round 1 ...` writes `PORTFOLIO.md`, `portfolio.json`, per-arm `runs/portfolio/` |
+| copy key 4-8, confidence/cap/pointer | **done** | no cap: 0.720 exact / 4.871 bits; key 7 cap 256 / τ 0.10: 0.665 / 2.146 |
+| edits, survivor exact | **done** | `self` is free (40 B, 0.000 exact); newline costs 0.072 exact |
+| spec K 4/8/12 | **done** | K=8: 1.560; K=12: 1.505 accepted/call |
+| library template/hole | **done, below target** | radius 2: 0.340 exact / 4.937 bits (target 0.40) |
+| pack size 128-1024 | **next** | needs a pointer per pack; not run |
+| R2 combinations | **next** | concept+copy first |
+| R3 T2 / scale | **deferred** | after R2 that keeps round-trip |
+| R4 RLFP | **blocked** | needs a T1-T4 survivor |
+
+Round 1 frontier: 10 arms. Copy owns every point above the concept
+baseline, from 2.146 bits/0.665 exact to 4.871 bits/0.720 exact. The concept
+point (1.720 bits, 0.650 exact) remains the low-bit end. Four families are
+parked (`r1`, `r1/r6`, `r3/r4/r6`, `r7`); r5 and r8 are capability families
+on T3/T4, not parked. The target 0.70 exact at ≤2.5 bits is **not** met; the
+copy curve is now the thing to combine with the concept head.
+
 ## 3. Families and first grids
 
 | family | mechanism | current evidence | first grid | task |
 |---|---|---|---|---|
 | **r1** adapter/install | charged copy / equal bytes | oracle +0.758; charged −2.224; P0a fails | dict size, charge, no-pack, transfer | T5 |
-| **r2** copy/hybrid | copy a prior context | key 1→6: exact 0.135→0.650; key 6 6.193 bits, 0.475 hit | key 2-8, confidence, offset threshold, pointer fallback | T1, T4 |
+| **r2** copy/hybrid | copy a prior context | key 1→8: exact 0.135→0.720; key 7 cap 256 / τ 0.10: 0.665 exact at 2.146 bits | key 4-12, confidence, offset cap/rank, concept fallback | T1, T4 |
 | **r3** PhraseLM | lexicon-agnostic heads | concept-only 0.650; unconstrained 0.415 | gate/joint, concept-only, temperature, three heads | T1, T2 |
 | **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
-| **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb; space +0.146; newline +0.228; merge +0.108 | prefix choice, merge size, held-out win rate | T3 |
+| **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb / 0.000 exact; newline +0.228 / −0.072 exact; merge +0.108 | prefix choice, merge size, held-out win rate | T3 |
 | **r6** CMT/pack | tied entries, provenance | 2,771 B pack; 100% round-trip | active 128-2048, install/transfer, pack bytes | T2, T5 |
-| **r7** CoLib/library | holes, templates, composition | order 1→5: exact 0.030→0.205 | order 5, template/hole, retrieval, anti-unification | T6 |
+| **r7** CoLib/library | holes, templates, composition | order 1→5: exact 0.030→0.205; template radius 2: 0.340 | order 5, template/hole, retrieval, anti-unification | T6 |
 | **r8** speculative | pointer drafts, trunk verifies | K=8: 1.560 accepted/call; K=4: 1.410 | K 2-16, draft cost, verifier calls | T4 |
 | **r9** RLFP/DPO | preference projection | untested; decision gate is span-policy | pairs 2k-10k, SFT, DPO, KL | T7 |
 | **r10** scale | larger model/data | 20M overfits at 7.2 MB; host restarts | 5M/10M/20M, more unique code | T2 |
@@ -82,21 +103,24 @@ with a weak first grid gets another config before it is parked.
 | round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
 | local deletion | 35 removed; 165 survivors ±0.006; +0.146 bpb | `reports/EDIT-CURVE.md` |
 | merge | 256→320; +0.108 bpb; exact | `reports/SCREEN.md` |
-| copy key 6 | 0.650 exact, 0.475 hit, 6.193 bits | `reports/BREADTH.md` |
+| copy key 6, no cap | **0.720 exact**, 0.340 hit, 4.871 bits | `reports/BREADTH.md` |
+| copy key 7, cap 256, τ 0.10 | 0.665 exact, 2.146 bits (new near-concept point) | `reports/BREADTH.md` |
+| template radius 2 | 0.340 exact, 4.937 bits (was library 0.205) | `reports/BREADTH.md` |
 | library order 5 | 0.205 exact, 5.970 bits | `reports/BREADTH.md` |
-| edit prefixes | `self` −0.000, `return` +0.026, indent +0.028, space +0.146, newline +0.228 | `reports/BREADTH.md` |
+| edit prefixes | `self` −0.000 bpb, 0.000 exact; newline +0.228 bpb, −0.072 exact | `reports/BREADTH.md` |
 | spec K=8 | 1.560 accepted concepts per trunk call | `reports/BREADTH.md` |
 
-The concept-only action space is the current frontier on T1. The trunk wins
-teacher-forced compression but not the concept action space. Neither result
-settles the portfolio.
+The concept-only action space is the low-bit end of the T1 frontier; copy
+extends the frontier upward in exactness, from 2.146 bits/0.665 exact to
+4.871 bits/0.720 exact. The trunk wins teacher-forced compression but not
+the concept action space. Neither result settles the portfolio.
 
 ### 4.1 Hypotheses
 
 | id | claim | status |
 |---|---|---|
 | H1 | the 5M concept LM reads the codec pack | **pass on bpb/round-trip**; span-policy 3.498 B/decision; all-symbol 1.478 is the compression cost |
-| H2 | copy, edit, and draft add capability | **open**; key 6 copy 0.650, `self` edit −0.000, K=8 1.560 accepted/call |
+| H2 | copy, edit, and draft add capability | **pass on T1 exact**; copy 0.720 (4.871 bits), key 7 cap 0.665 (2.146 bits), `self` edit −0.000, K=8 1.560 |
 | H3 | concept DPO beats byte DPO | **untested**; only after a combination reaches the T1-T4 frontier |
 | H4 | pack edits change behavior without gradients | **local**; removed targets are lost, survivors unchanged |
 | H5 | the combination scales | **deferred**; 20M on 7.2 MB overfits; needs more code |
@@ -191,16 +215,17 @@ exploration reserve, and the next round's allocation.
 
 ## 9. Milestones
 
-| M | ships | acceptance | cost |
-|---|---|---|---|
-| R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d |
-| R1 | Round 1: all families | best/median/worst; frontier | 1 d |
-| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d |
-| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d |
-| R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d |
-| R5 | decision | scale the Pareto winner or record the negative | 0.5 d |
+| M | ships | acceptance | cost | status |
+|---|---|---|---|---|
+| R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d | **done** |
+| R1 | Round 1: all families | best/median/worst; frontier | 1 d | **almost**: pack size pending |
+| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d | **next** |
+| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d | deferred |
+| R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d | blocked |
+| R5 | decision | scale the Pareto winner or record the negative | 0.5 d | deferred |
 
-M1 is already printed. R1 is the next build. R4 is not the first gate.
+M1 is already printed. R0 and the R1 grids are printed; pack size and R2
+combinations are the next build. R4 is not the first gate.
 
 ## 10. Interfaces
 
@@ -215,11 +240,13 @@ uv run cml editcurve --spans 200
 New portfolio interface:
 ```bash
 uv run cml portfolio --round 1 --families all --task t1 --budget 2h
-uv run cml portfolio --round 2 --promote frontier --task t1,t3,t4
-uv run cml portfolio --round 3 --combine concept,copy,spec --task t2
+uv run cml portfolio --round 2 --families r2,r3/r4 --task t1,t4 --budget 6h
+uv run cml portfolio --round 3 --families all --task t2 --budget 6h
 ```
-`cml portfolio` runs the grid, scores the vector, writes `PORTFOLIO.md`, and
-returns the next allocation. It must be resumable.
+`cml portfolio` does not train; it aggregates every measured grid, scores the
+T1 frontier, writes `PORTFOLIO.md` and `portfolio.json`, and returns the next
+allocation. Rounds are stored in `portfolio.json`, so a rerun replaces only
+that round and keeps the history.
 
 ## 11. Risks
 
@@ -233,19 +260,35 @@ returns the next allocation. It must be resumable.
 - **Scale illusion.** 20M on 7.2 MB overfits; more unique code first.
 - **Host instability.** Checkpoint every arm; no 20k runs.
 
-## 12. Next 72 hours
+## 12. Next round (R2)
 
-1. **R1 copy/hybrid.** Key 4-8, confidence, offset threshold, pointer fallback.
-   Target: exact ≥0.70 at ≤2.5 bits/span, or a new Pareto point.
-2. **R1 pack size.** Active 128/256/512/1024; concept-only T1; record exact,
-   bits, decisions, pack bytes.
-3. **R1 edits.** Prefixes `self`/`return`/indent/space/newline on T3; test
-   whether the free `self` deletion changes held-out behavior.
-4. **R1 spec.** K=4/8/12; accepted/call and draft cost; target ≥1.5.
-5. **R1 library.** Order 5 and template/hole composition; target exact ≥0.40.
-6. **R2 combinations.** concept+copy, concept+edit, concept+spec; pick the
-   Pareto winners.
-7. **R3/R4.** Only then T2 scale and RLFP.
+Done in R1: copy grid, edits with survivor exact, spec K=12, library
+template/hole, and the portfolio schema. Still open: pack size and the
+combinations.
+
+1. **R1 pack size (next).** Active 128/256/512/1024; concept-only T1; record
+   exact, bits, decisions, pack bytes. This needs a pointer per pack (or a
+   vocab-agnostic prior), so it is the only R1 grid not yet measured.
+2. **R2 concept+copy.** Use the concept head as the fallback; grid keys
+   4/8/12, cap 256/1024/∞, τ 0/0.1/0.25. Score T1 and T4. The gap is
+   explicit: 0.720 exact costs 4.871 bits, 0.665 costs 2.146. Beat 0.70 at
+   ≤2.5 bits by improving the match code, not by loosening the gate: rank
+   the match among recent candidates instead of encoding the absolute
+   offset, or condition the copy on the concept prior. Keep only if
+   round-trip and provenance survive.
+3. **R2 concept+edit.** Delete `self`/`return`/indent units; score survivors
+   and bpb. Promote only if exact change ≥ −0.01 at bpb delta ≤ +0.05.
+   `self` is already free: 40 B, 0.000 exact change.
+4. **R2 concept+spec.** Combine K=8 with copy confidence; target
+   accepted/call ≥1.5 without lowering exact.
+5. **R3 T2.** Only the promoted combination: payload/shared bpb,
+   round-trip, provenance.
+6. **R3 scale.** 5M/10M only after T2 passes.
+7. **R4 RLFP.** Blocked until a combination survives T1-T4.
+
+The exploration reserve reopens parked `r1`, `r1/r6`, `r3/r4/r6`, and `r7`
+only with a new grid or a new combination. r5 and r8 stay active through
+their T3/T4 capability rows.
 
 ## References
 
