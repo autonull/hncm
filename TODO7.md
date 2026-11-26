@@ -8,39 +8,66 @@ This file supersedes the analysis phase. Read `cml/PLAN.md` §11 for the
 corrected accounting (the P0 oracle −2.224) and `TODO6.md` for the frozen
 state.
 
-## P0. Top priority: quick end-to-end training/generation on Tiny Shakespeare
+## P0. Top priority: quick end-to-end training/generation, measured
 
-Ahead of every other item in this file. The deliverable is **one command** that,
-for several r1-r7 configurations in the same system, trains on the Tiny
-Shakespeare train split, installs the pack, encodes the held-out split, decodes a
-proof, and generates a sample. One table, no baseline hunt.
+Ahead of every other item. P0 must show two things in one system.
+
+1. **The LLM works end-to-end:** train on Tiny Shakespeare, continue a prompt,
+   and tag every emitted span `copy@pack_offset` or `~neural`.
+2. **The install is causal:** the same trained model, one test slice, three
+   packs: the train pack, a pack induced on a held-out package, and no pack
+   (literal fallback).
+
+A sample alone can pass while the idea fails. The install delta is the gate.
+
+### P0a — Shakespeare generation (qualitative, ~3 min)
 
 ```
-cml lm --corpus shakespeare --designs gc,jc,jn,jcp \
-       --steps 3000 --bytes 111540 --proof 4000 --sample 400
+cml lm --corpus shakespeare --tiny --steps 2000 --prompt "ROMEO:" --sample 400
 ```
 
-For each design it: induces the 8192-unit lexicon from the train split and
-installs the first 256 units; trains the concept model with rotating packs
-(`full_every=8`); encodes the 111,540-byte test slice; decodes a 4,000-unit
-proof; samples 400 bytes from the installed pack; prints train loss,
-payload/shared bpb, install bytes and the sample; and writes `reports/LM.md`.
+- **Tiny preset:** d=128, 4 layers (~1.3M). The 5.2M model overfits 1.1 MB;
+  report train loss and test bpb together. 2k steps, not 8k.
+- Install 256 units, encode the 111,540 B test slice, decode a 4k-unit proof,
+  sample 400 B after the prompt, print `copy@offset` / `~neural` for each span,
+  write `reports/LM.md`.
+- **Do not read `shared` here.** 2,771 B / 111,540 B = **0.198 bpb**; the pack
+  charge is unscaled. Report payload and install bytes. Use a 1 MB text test
+  (enwik8 is cached) before making a text bpb claim.
 
-- **Acceptance:** >=3 configs in the same run, every round-trip exact, every
-  sample printed, the whole set inside **15 minutes** on the RTX 3080.
-- **Configs:** `gc` (content-gate, the M3 baseline), `jc` (content-joint),
-  `jn` (n-gram joint), `jcp` (content-joint, priced parse).
-- **Not in P0:** the trained byte model (the slow recorded comparison). The
-  adaptive byte arm is the interim reference; `--corpus code` stays the codec
-  claim.
-- **State:** the corpus is wired (`--corpus shakespeare`, 1,115,394 B, split
-  90/10 at a line boundary, SHA pinned). Smoke:
-  `codec-concept-shakespeare-5000-nj` trains in 3.5 s and records
-  3.930/6.264 at 5 kB / 100 steps (not a result; the pack dominates).
-  Missing: the `cml lm` wrapper and `reports/LM.md`.
-- **Compute:** ~3 min per config at 3k steps; encode ~2 s per 100 kB; the set
-  fits in one session. Risk: 5.2M params overfit 1 MB of text; report the
-  train/test gap and use 2-4k steps, not 8k.
+### P0b — the install delta (the claim, ~10 min)
+
+```
+cml install --corpus code --package networkx --active 256 --steps 3000
+```
+
+- Train on the code train split, then encode `networkx`'s held-out files with:
+  (a) the train pack, (b) a pack induced on `networkx`'s own held-out files,
+  (c) no pack (all literals).
+- Report payload for all three plus `(b) - (a)` and `(c) - (a)`.
+- **Gate:** `(b)` within **0.15 bpb** of `(a)`, and `(a)` beats `(c)` by at
+  least **0.2 bpb**. If `(b)` misses, stop the LLM-adaptation branch and ship
+  the auditable codec: provenance, `rm`, `merge`, install. That product already
+  works and is unique without a bpb win.
+
+### Compute rules
+
+- **Batch the static byte coder** with the same window-segment path (the byte
+  model is causal per window). 3,092 s -> ~2-3 min for 756 kB. This is the
+  highest-ROI implementation task: it makes every equal-bytes row cheap.
+- **Share the pointer trunk** across the gate/joint head variants; only the
+  encoder axis needs a retrain. Cuts the arena ~2x and removes init variance.
+- Cache by `(train_sha, pack, span, head, steps, seq, seed)`. The P0 set is
+  <= 15 minutes on the 3080.
+- **Stop tuning pack size.** 256 units is optimal on code; 2048 records
+  1.798/2.032 vs 1.692/1.722. The remaining levers are local copy (r2) and
+  market admission (r5), nothing else.
+
+### Configs
+
+Start with `jn` (n-gram joint), the 1 MB winner. Add `gc` and `jc` only if the
+install deltas separate them. `jcp` (priced) is a parse probe, not a P0 config:
+at 70k it chose the same parse as greedy.
 
 ## 0a. Progress after the first build (M0-M3)
 
@@ -101,29 +128,27 @@ with holes; `cml generate` samples from the installed pack.
 
 ### Next queue (fresh session)
 
-1. **Rerun the priced parse.** `--parse` is now passed to the runner; the
-   earlier attempt silently reran greedy and overwrote the 70k `-nj` row
-   (proof 30000). Command:
-   `cml codec --bytes 70000 --span ngram --head joint --parse priced`.
-2. **Seq 512.** `--seq 512` at 756 kB halves the per-window framing
-   (0.028 -> 0.014 bpb) and doubles the unit context. The model cache now
-   keys on `q<seq>`. Command:
-   `cml codec --bytes 756752 --span ngram --head joint --seq 512`.
-3. **Pack sweep** 64 / 128 / 512 units at 756 kB. 2048 units is measured and
-   worse (1.798 / 2.032), so the optimum is at or below 256; the question is
-   where the marginal payload gain equals the pack charge.
-4. **Local copy (r2)** as the next matrix axis: a window-local copy symbol for
-   spans the installed pack cannot cover.
-5. **Q4** class split and the rent λ sweep on the matrix rows.
+1. **P0a:** `cml lm --corpus shakespeare --tiny --steps 2000 --prompt "ROMEO:"`
+   with provenance-tagged generation.
+2. **P0b:** `cml install --corpus code --package networkx`; print
+   train/package/none pack delta and apply the 0.15 gate.
+3. **Batch the byte coder** (window segments) and **share the trunk** across
+   head variants. Then re-run the code matrix at 756 kB.
+4. **Local copy (r2)** and **market admission (r5)**; seq 512 is a cheap
+   framing/context probe after that.
+5. **Q4** class split and the rent λ sweep.
 
 Concrete remaining work, in order:
 
-1. **P0 first:** the Tiny Shakespeare quick end-to-end demo above (`cml lm`,
-   several configs, generation). Nothing else starts until this prints.
-2. **Close the 0.028 pack charge on code.** The 1 MB matrix has a payload tie;
-   the priced parse and a 64/128-unit sweep decide `shared`.
-3. **M5 remaining:** the rent λ sweep and Q4's class split.
-4. **M6-M7:** the P1 text control, then templates with holes.
+1. **P0a/P0b first.** Wire `cml lm --tiny --prompt` and `cml install`.
+   Print the three-pack install delta and a provenance-tagged sample. Nothing
+   else starts until both print.
+2. **Batch the byte coder, share the trunk.** These two cut the matrix compute
+   by ~10x and make the equal-bytes rows affordable on every corpus.
+3. **Local copy (r2) and market admission (r5)** are the only remaining bpb
+   levers. Price them. Do not sweep pack size (256 is optimal).
+4. **M5 remaining:** the rent λ sweep and Q4's class split.
+5. **M6-M7:** the P1 text control, then templates with holes.
 
 Two build notes. The pointer encodes 228k units in 63 s at 756 kB (12 kB/s,
 batch 32); the a2048 pack does 18 kB/s because each window covers more bytes.
