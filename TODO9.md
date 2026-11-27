@@ -5,6 +5,31 @@ the objective from bits per byte to **exact edit capability**. It keeps
 the original copy-edit LM and adds a cheaper edit-compiler track. Both are
 funded; the benchmark decides which one wins.
 
+## Status 2026-11-27: first session complete; G0 passed
+
+| §8 step | state | artifact |
+|---:|---|---|
+| 1 editdata | **done** | `cml/editdata.py`: git mining, filters, repo split, manifest, blob cache |
+| 2 editlm core | **done** | `cml/editlm.py`: copy actions, spans, exact assemblers, metrics |
+| 3 CLI | **done** | `cml editdata`, `cml editlm` |
+| 4 retrieval G0 | **done** | `cml/reports/EDIT-LM.md`, `cml/reports/editlm.json` |
+| 5-11 models | **not started** | next session, in §8 order |
+
+**G0 recorded: pass.** Retrieval on 1,648 held-out `tiangolo/fastapi`
+commits: exact `0.000`, valid decode `0.027`, output `0.991x`, line edit
+distance `0.020`. Train `5,672` commits (`httpx`, `flask`, `requests`);
+val `5,491` (`pytest`). The cross-repo transplant rarely aligns context,
+so the baseline is weak by construction; it cannot see the query
+repository's history. That is the point of G0: it is not a fake win.
+
+Artifacts are local: manifest `cml/runs/edit-manifest.json` (ignored),
+blob cache `~/.cache/hncm/edit` (308 MB). Reports are tracked. Reuse
+them; do not re-mine unless the config changes.
+
+**Next, in order:** E1 locator (synthetic spans, then real commits; gate
+GE1), C1 copy-SFT (teacher-forced actions; gate GC1), then E2 writer or
+DPO. Do not train D before C1 has a baseline. Do not tune on test.
+
 ## 0. One claim, two formulations
 
 **Track E (edit compiler).** A small model that predicts *where* a file
@@ -57,17 +82,17 @@ Pinned source set (permissive, test-rich):
 Filters:
 
 - non-merge commit, one text file changed;
-- file ≤ 64 KB, diff ≤ 20% of the file;
+- file ≤ 64 KB, diff ≤ 20% of the file (changed lines / new lines);
 - non-empty message, no generated/vendor files;
 - parent blob and commit blob both available.
 
 Split by **repository**, not commit:
 
-| split | repos | commits |
+| split | repos | commits (mined) |
 |---|---|---:|
-| train | 3 | ~5,000 |
-| val | 1 | ~500 |
-| test | 1 | ~500 |
+| train | 3 | 5,672 |
+| val | 1 | 5,491 |
+| test | 1 | 1,648 |
 
 Store blobs by SHA. Deduplicate near-identical edits by content hash.
 Record repo SHAs and mining config; a run without provenance is not
@@ -166,6 +191,11 @@ Gates:
 | **G5** | verifier rerank | +2 points at ≤4x test-time compute |
 | **G6** | head-to-head E2 vs C1 | pick the winner; record the loser |
 
+G0 recorded 2026-11-27: exact `0.000` on 1,648 test commits, pass. Next is
+GE1. Test-pass labels are not mined yet; exact match is the only label in
+the manifest. Add test execution only when a gate needs it, and keep the
+same split.
+
 If G0 shows retrieval solving the task, harden before training. If GE2 and
 GC1 both fail, stop and ship the delta product. A gate that is not met
 names the next lever; it does not end the program.
@@ -190,25 +220,25 @@ Add two modules and one CLI command. Keep `TODO8` codec code untouched.
 11. `cml editlm --arm compiler --rerank`: V; sample K and verify.
 12. Reports and tests: `reports/EDIT-LM.md`, `tests/test_editlm.py`.
 
-Commands, after the build:
+Commands, after the build. Run from `cml/`; `runs/` is ignored.
 
 ```bash
 uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
-  --cache ~/.cache/hncm/edit --out cml/runs/edit-manifest.json
-uv run cml editlm --arm retrieval --manifest cml/runs/edit-manifest.json
-uv run cml editlm --arm locator --manifest cml/runs/edit-manifest.json \
+  --cache ~/.cache/hncm/edit --out runs/edit-manifest.json
+uv run cml editlm --arm retrieval --manifest runs/edit-manifest.json
+uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
   --pretrain synthetic --steps 1000
-uv run cml editlm --arm compiler --manifest cml/runs/edit-manifest.json \
+uv run cml editlm --arm compiler --manifest runs/edit-manifest.json \
   --from edit-locator --steps 2000
-uv run cml editlm --arm copy --sft --manifest cml/runs/edit-manifest.json \
-  --run codec-byte-model-code-756752-d448-l8 --steps 2000
-uv run cml editlm --arm copy --dpo --manifest cml/runs/edit-manifest.json \
+uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
+  --from codec-byte-model-code-756752-d448-l8 --steps 2000
+uv run cml editlm --arm copy --dpo --manifest runs/edit-manifest.json \
   --from edit-copy-sft --pairs 2000
-uv run cml editlm --arm holes --sft --manifest cml/runs/edit-manifest.json \
+uv run cml editlm --arm holes --sft --manifest runs/edit-manifest.json \
   --from edit-copy-sft
-uv run cml editlm --arm compiler --rerank --manifest cml/runs/edit-manifest.json \
+uv run cml editlm --arm compiler --rerank --manifest runs/edit-manifest.json \
   --from edit-compiler --samples 8
-uv run pytest cml/tests
+uv run pytest tests
 ```
 
 ## 9. Budget
@@ -263,18 +293,23 @@ benchmark is the foundation for both tracks.
   mask; invalid parses score zero.
 - **Compute creep.** One job at a time; small trunk; budgets, not timers.
 
-## 12. Fresh-session start
+## 12. Next-session start
 
-Read this file first, then `TODO8.md` §1.10 and `cml/reports/DELTA.md`.
+Read this file first, then `cml/reports/EDIT-LM.md`. G0 is recorded (pass),
+so the first-session gate is closed. Reuse the manifest and blob cache;
+do not re-mine unless the config changes.
 
-First session deliverable, no GPU:
+Remaining work, in order:
 
-1. `cml/editdata.py` + deterministic repo split + manifest.
-2. `cml editlm --arm retrieval` + G0 on 500 held-out commits.
-3. `cml/reports/EDIT-LM.md` with G0 and the task difficulty.
+1. E1 locator: build `spans_from` targets, pretrain on synthetic span edits,
+   then real commits; gate GE1 against a message-only baseline.
+2. C1 copy-SFT: teacher-forced `dump_actions(copy_actions(new, old))`
+   targets; gate GC1 against the full-file baseline.
+3. Only then E2 writer (`--arm compiler`), D (DPO), H (holes), V (rerank).
 
-Do not start A2-A6. Do not train a model before G0. The first session is
-done when G0 is recorded, not when a model is trained.
+Do not train D before C1 has a recorded baseline. Do not tune on test.
+Do not raise `max_diff` to make exact match easier; a gate that fails names
+the next lever, not a new goal.
 
 ## References
 

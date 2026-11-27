@@ -30,6 +30,8 @@ import torch.nn.functional as F
 
 import codec as codec_mod
 import concepts
+import editdata
+import editlm
 import stage0
 
 ROOT = Path(__file__).resolve().parent
@@ -8275,6 +8277,36 @@ def main(argv: list[str] | None = None) -> int:
     du.add_argument("path", type=Path)
     du.add_argument("--ref", type=Path, required=True)
     du.add_argument("-o", "--out", type=Path)
+    ed = sub.add_parser("editdata")
+    ed.add_argument("--repos", default=",".join(editdata.DEFAULT_REPOS))
+    ed.add_argument("--cache", type=Path, default=editdata.cache_root())
+    ed.add_argument("--out", type=Path, default=RUNS / "edit-manifest.json")
+    ed.add_argument("--max-file", type=int, default=64 * 1024)
+    ed.add_argument("--max-diff", type=float, default=0.2)
+    ed.add_argument("--limit", type=int, default=0)
+    ed.add_argument("--refresh", action="store_true")
+    el = sub.add_parser("editlm")
+    el.add_argument(
+        "--arm",
+        choices=("retrieval", "locator", "compiler", "copy", "holes"),
+        required=True,
+    )
+    el.add_argument("--manifest", type=Path, default=RUNS / "edit-manifest.json")
+    el.add_argument("--cache", type=Path, default=editdata.cache_root())
+    el.add_argument("--split", default="test")
+    el.add_argument("--limit", type=int, default=0)
+    el.add_argument("--seed", type=int, default=0)
+    el.add_argument("--steps", type=int, default=0)
+    el.add_argument("--from", dest="base", default="")
+    el.add_argument("--pretrain", default="")
+    el.add_argument("--pairs", type=int, default=0)
+    el.add_argument("--samples", type=int, default=0)
+    el.add_argument("--sft", action="store_true")
+    el.add_argument("--dpo", action="store_true")
+    el.add_argument("--rlfp", action="store_true")
+    el.add_argument("--rerank", action="store_true")
+    el.add_argument("--report", type=Path, default=REPORTS / "EDIT-LM.md")
+    el.add_argument("--json", type=Path, default=REPORTS / "editlm.json")
     pf = sub.add_parser("perfile-model")
     pf.add_argument("--run", required=True)
     pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -8507,6 +8539,28 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "undelta":
         return run_undelta(a.path, a.ref, a.out)
+    if a.cmd == "editdata":
+        return editdata.run(
+            a.repos, a.cache, a.out, a.max_file, a.max_diff, a.limit, a.refresh
+        )
+    if a.cmd == "editlm":
+        mode = next((m for m in ("sft", "dpo", "rlfp", "rerank") if getattr(a, m)), "")
+        return editlm.run(
+            a.arm,
+            a.manifest,
+            a.cache,
+            a.split,
+            a.limit,
+            a.report,
+            a.json,
+            a.seed,
+            a.steps,
+            a.base,
+            a.pretrain,
+            a.pairs,
+            a.samples,
+            mode,
+        )
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":
