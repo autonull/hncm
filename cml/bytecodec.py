@@ -314,3 +314,64 @@ class FastByteCodec:
                 lo = int(row[sym - 1]) if sym else 0
                 enc.encode(lo, int(row[sym]), int(row[-1]))
         return enc.finish()
+
+
+class FastCopyCodec:
+    """The copy arm priced fast: one forward per output chunk, no decode.
+
+    The parse and the output bytes are both known at encode time, so the
+    literal counts come from `FastByteCodec` chunk by chunk.  It is a size
+    instrument; `CopyCodec` is the exact codec that proves round-trip.
+    """
+
+    def __init__(
+        self,
+        literals: FastByteCodec,
+        window: int = 65536,
+        min_match: int = 8,
+        cap: int = 256,
+    ) -> None:
+        self.literals = literals
+        self.seq = literals.seq
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        slots = max((window - 1).bit_length(), 1)
+        self.tok = codec.Counts(2, init=np.ones(2, dtype=np.int64))
+        self.slot = codec.Counts(slots + 1, init=np.ones(slots + 1, dtype=np.int64))
+        self.length = codec.Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+
+    def encode(self, data: bytes, tokens: list[tuple[int, int]] | None = None) -> bytes:
+        if tokens is None:
+            tokens = codec.lz_parse(data, self.window, self.min_match, self.cap)
+        enc = codec.ArithEncoder()
+        i = 0
+        base = -1
+        cums = None
+        for length, value in tokens:
+            if length == 0:
+                j = i % self.seq
+                if i - j != base:
+                    base = i - j
+                    cums = self.literals._cums(data[base : base + self.seq])
+                sym = value
+                if j == 0:
+                    enc.encode(sym, sym + 1, BYTE)
+                else:
+                    row = cums[j - 1]
+                    lo = int(row[sym - 1]) if sym else 0
+                    enc.encode(lo, int(row[sym]), int(row[-1]))
+                i += 1
+                continue
+            codec.emit([self.tok], 1, 2, enc)
+            v = value - 1
+            slot = v.bit_length()
+            codec.emit([self.slot], slot, self.slot.n, enc)
+            for shift in range(slot - 2, -1, -1):
+                bit = (v >> shift) & 1
+                enc.encode(bit, bit + 1, 2)
+            codec.emit([self.length], length - self.min_match, self.length.n, enc)
+            i += length
+        return enc.finish()

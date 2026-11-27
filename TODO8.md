@@ -262,11 +262,32 @@ copy arm on the 20M byte model, which needs the fast literal coder. The
 concept track's remaining claim is capability (editable library, reasoning),
 not bpb.
 
+## 1.9 Copy on the 20M control: instrument, 2026-11-27
+
+`FastCopyCodec` prices the copy arm in seconds (a size instrument, not a
+codec: the padded decoder diverges, so only `CopyCodec` proves round-trip).
+LZ window 65,536 B, min match 8, cap 256, on the same 756,752 B test.
+
+| arm | copy payload | vs own byte control | time |
+|---|---:|---:|---:|
+| 4.86M byte | 1.245 | -26.4% | 11.9 s |
+| 20M byte control | **1.157** | -8.6% | 12.9 s |
+| exact copy, 4.86M (`CopyCodec`) | 1.393 | -17.7% | 2,431 s |
+
+**Read.** The instrument puts the copy arm on the 20M control at `1.157`, an
+`8.6%` gain, short of the 20% target (`1.012`). The exact codec is slower
+and 11% worse than the instrument on the same bytes (1.393 vs 1.245), so the
+instrument is an upper bound on the lever and the exact copy is the lower
+one; the truth is between, and the exact 20M number is not measured. The
+20M-exact run would cost about two hours, so it waits for either a
+deterministic fast decoder or a cheaper per-byte step. G5 still fails with
+the 20M model charged per file.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 20M byte 1.266; concept 1.518 loses; copy 1.393 on 4.86M | copy on the 20M byte control | 20/30/50% |
+| **Compression** | 20M byte 1.266; copy instrument 1.157 (-8.6%), exact 4.86M 1.393 | exact fast copy decoder | 20/30/50% |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
