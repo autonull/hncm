@@ -1,5 +1,8 @@
 # Copy arm in front of the trained trunk
 
+> Superseded by `COPY-PRICED-REPS.md`. This non-repeat run predates the
+> same-prefix instrument and compared 32 KB to the full `0.852`.
+
 - run `codec-byte-model-code-756752-d448-l8` on `code` sha `1ccd9ffc7f68`, held-out 32,768 B
 - LZ window 65,536 B, min match 8, cap 256
 - parse: priced DP against literal bits

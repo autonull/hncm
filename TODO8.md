@@ -7,8 +7,9 @@ order with budgets, not a question. Track B is shipped: `cml delta`
 codes a new file against the old file, round-trips exactly, and measures
 `0.141` bpb (**56.6x**) on 2% edits in 20 hunks and `0.287` bpb
 (**27.8x**) on scattered 2% edits. Track A's exact priced codec is
-measured on a 32 KB prefix at `1.076` bpb, so the `0.852` instrument
-is not promoted yet; the gap is the exact token and literal charge.
+measured on a 32 KB prefix at `1.074` bpb against its own `1.022`
+instrument (**+0.052 bpb**, 5.1%); a full-length exact run is pending, so
+the `0.852` instrument is not promoted yet.
 Stage 0 is measured: copy saves
 `15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
 the static pack loses per-file. The concept pilot is measured: typed
@@ -36,9 +37,10 @@ Transformer, resume that plan; its Stage 0 step is already answered by
 
 **We will ship** a lossless codec that is **10x+ on real code**: the
 single-file codec is measured to **0.852 (9.4x)** on the instrument, its
-exact 32 KB prefix is `1.076`, and the shipped delta arm reaches
-**27.8-56.6x** on edits. The single-file 50% rung (0.633) is the research
-north star, costed below, not a gate on the product.
+exact 32 KB prefix is `1.074` against a same-prefix `1.022` instrument,
+and the shipped delta arm reaches **27.8-56.6x** on edits. The single-file
+50% rung (0.633) is the research north star, costed below, not a gate on
+the product.
 
 ## 0.1 The solve: three tracks, one critical path
 
@@ -77,12 +79,13 @@ delta arm's cross-file sharing. **The honest floor for the single-file
 codec is ~0.68-0.70, and the 10x product target is reached with the delta
 arm.** Both are worth building; the delta arm is the efficient route.
 
-**Exact-codec gate (2026-11-27).** `cml copycodec --priced --proof 32768`
-round-trips a 32 KB prefix at `1.076` bpb against a `1.436` stream-only
-arm. The `0.852` instrument is **not promoted**: the exact decoder pays
-about `0.22` bpb more at this size. Before A2, close that gap or label the
-instrument honestly. The gap is in exact literal context and token charge,
-not the parse.
+**Exact-codec gate (2026-11-27).** `cml copycodec --priced --reps
+--proof 4096` round-trips a 32 KB prefix at `1.074` bpb against a
+**same-prefix** `1.022` instrument (+0.052 bpb, 5.1%). The old comparison
+to the full-length `0.852` was wrong: the copy arm is weak on 32 KB
+(instrument `1.022`) and rises with prefix size (`0.923` at 256 KB,
+`0.852` at 756 KB). The exact overhead is 5%, not 0.22 bpb. The `0.852`
+rung still needs a full-length exact run before promotion.
 
 **Track C (capability, parallel): RLFP.** 2k pairs, CPU, 2 minutes; it
 tests the span policy and does not block A or B.
@@ -94,15 +97,15 @@ and are promoted only when a decoder proves them.
 ## 0.2 The scoreboard
 
 **Target.** 50% fewer bits per byte than a 20M byte LM on the pinned
-756,752 B code test; the instrument is at 0.852, the exact 32 KB prefix
-at 1.076, and the delta arm at 0.141-0.287:
+756,752 B code test; the instrument is at 0.852 and the delta arm at
+0.141-0.287. The exact 32 KB prefix (`1.074`) is compared only to its
+same-prefix instrument (`1.022`), not to the full 0.852:
 
 | milestone | shared bpb | vs 1.265 byte | compression | state |
 |---|---:|---:|---:|---|
 | 20M byte control, 48 MB | **1.266** | 0% | 6.3x | **measured** |
 | 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured; bytes win, so capability is its claim |
 | copy + 4.86M byte | 1.393 | +10.0% | 5.8x | exact codec |
-| priced parse, exact 32 KB | 1.076 | -15.0% | 7.4x | exact prefix; 0.852 not promoted |
 | 20% | 1.012 | -20% | 7.9x | **met (instrument)** |
 | 30% | 0.886 | -30% | 9.0x | **met (instrument)** |
 | 40% | 0.759 | -40% | 10.5x | next rung |
@@ -378,27 +381,31 @@ CLI ships the exact codec until then.
 
 ## 1.11 Exact priced codec and delta: measured 2026-11-27
 
-`cml copycodec --priced` calls `literal_bits` + `priced_parse`, then
-`CopyCodec` exactly; `cml delta` calls `delta_parse` + `DeltaArm`.
+`cml copycodec --priced --reps` calls `literal_bits` + `priced_parse`,
+then `RepCopyCodec` exactly; `cml delta` calls `delta_parse` + `DeltaArm`.
 
 | arm | bytes | payload | bpb | exact |
 |---|---:|---:|---:|---|
-| priced copy, 32 KB prefix, d448 | 32,768 | 4,409 | 1.076 | yes |
+| exact priced + reps, 32 KB | 32,768 | 4,401 | 1.074 | yes, 4 KB proof |
+| same-prefix size instrument | 32,768 | 4,188 | 1.022 | instrument |
 | stream only, same 32 KB | 32,768 | 5,880 | 1.436 | yes |
 | delta, 2% in 20 hunks | 756,752 | 13,380 | 0.141 | yes |
 | delta, scattered 2% | 756,752 | 27,176 | 0.287 | yes |
 
 **Read.** The delta product is proven: `56.6x` for hunk edits and `27.8x`
 for scattered edits, both exact on the pinned test and CPU-only. The exact
-priced codec round-trips but pays `1.076` on 32 KB, so the `0.852`
-instrument is not reproduced; do not quote it as a codec. The exact decode
-costs 489 s for 32 KB, so a full 756 KB run is a batch job, not a screen.
+priced codec pays `1.074` on 32 KB while its **same-prefix** instrument
+pays `1.022`: the exact overhead is `+0.052` bpb (5.1%), not 0.22. The
+copy arm itself is weak on 32 KB (`1.022`) and reaches `0.923` at 256 KB
+and `0.852` at 756 KB, so a 32 KB exact number cannot validate or reject
+the full instrument. The exact encode is about 55 min for 756 KB; run it as
+a batch job before promoting `0.852`.
 
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 1.266 exact; 0.852 instrument; 1.076 exact 32 KB; delta 0.141-0.287 | close exact gap; A2-A3 (0.75) | product 10x |
+| **Compression** | 1.266 exact; 0.852 instrument; exact 32 KB 1.074 vs same-prefix 1.022; delta 0.141-0.287 | full exact run; A2-A3 (0.75) | product 10x |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012; delta 27.8-56.6x exact | hold, document | survivors |
@@ -651,12 +658,13 @@ the CLI is `cml.py`. Next changes, in this order:
     `CORTEX-DEPTH.md` (done), `DELTA.md` (done), `T2.md`, `RLFP.md`.
 13. **done** `cml delta OLD NEW` / `cml undelta --ref OLD`:
     `DeltaArm` and `delta_parse`; exact, CPU-only; product v1.
-14. **done (partial)** `cml copycodec --priced --proof N`: exact priced
-    codec. It round-trips a 32 KB prefix at `1.076`, not the `0.852`
-    instrument; close the exact token/literal gap before A2.
-15. Next: A2 (2-4 KB horizon, 2 MB window, cap 512) on the instrument,
-    then reproduce it with the exact decoder. Do not run A3 before the
-    exact `0.852` gap is named and reduced.
+14. **done (partial)** `cml copycodec --priced --reps --proof N`: exact
+    priced codec. It round-trips a 32 KB prefix at `1.074` against a
+    same-prefix `1.022` instrument (+0.052 bpb). The full `0.852` still
+    needs a full-length exact run.
+15. Next: a full-length exact run in the background (about 55 min), then
+    A2 (2-4 KB horizon, 2 MB window, cap 512) on the instrument. Do not
+    compare a short exact prefix to the full `0.852`.
 
 Commands after the build:
 
@@ -670,7 +678,7 @@ uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
 uv run cml cortex --depths 6,7 --seq 256 --tag seq256
 uv run cml copycodec --run codec-byte-model-code-756752 --bytes 756752
 uv run cml copycodec --run codec-byte-model-code-756752-d448-l8 \
-  --bytes 32768 --priced --proof 32768
+  --bytes 32768 --window 65536 --priced --reps --proof 4096
 uv run cml delta --bench --bytes 756752 --depth 128 --hunks 20
 uv run cml delta OLD NEW && uv run cml undelta NEW.cmld --ref OLD
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
@@ -717,8 +725,8 @@ Value per hour, dependencies, budgets. One job at a time; total budget
 |---|---|---|---|---|---|---|
 | 1 | B | **done** delta arm: LZ against the old file + literals | 27.8-56.6x, exact | 1 h | old/new pairs | adaptive per-repo pack |
 | 2 | B | **done** ship `cml delta` and document `products/codec` | product v1 | 1 h | step 1 | fall back to v0 |
-| 3 | A | **partial** priced parse, exact codec (32 KB, then full) | 1.076 at 32 KB; 0.852 not promoted | 20 min | step 1 of §0.1 | fixed shapes + coarse totals |
-| 4 | A | close the exact gap, then A2: horizon 2-4 KB, 2 MB window, cap 512 | exact 0.86, then 0.80 | 1 h | exact `0.852` gap named | A3 |
+| 3 | A | **partial** priced parse, exact codec (32 KB, then full) | exact 1.074 vs same-prefix 1.022; full pending | 20 min + 1 h | step 1 of §0.1 | fixed shapes + coarse totals |
+| 4 | A | full exact run, then A2: 2-4 KB horizon, 2 MB window, cap 512 | exact 0.90, then 0.80 | 1 h + 30 min | exact overhead measured | A3 |
 | 5 | A | A3: two-pass literals | 0.75 | 1 h | A2 | A5 |
 | 6 | A | A5: code-aware context | 0.71 | 1 h | A3 | A4 |
 | 7 | A | A4: 30M trunk | 0.68 | 2 h | A5 | A6 |
@@ -738,11 +746,12 @@ dependence; a win there earns a scale-up. It blocks nothing above.
 a time, promote what round-trips, and never end a session without naming
 the next lever.
 
-**Next lever.** The exact 32 KB codec pays `1.076` against the `0.852`
-instrument. Name the charge: separate token bits from literal bits on the
-same 32 KB prefix, then price the exact token model. If that does not close
-the gap, use fixed shapes plus coarse totals before A2. Track B needs no
-further work to ship; its measured range is `27.8-56.6x`.
+**Next lever.** The exact 32 KB codec pays `1.074` against a same-prefix
+`1.022` instrument: the exact overhead is `+0.052` bpb (5.1%), and the
+copy arm itself is weak at 32 KB (`0.923` at 256 KB, `0.852` at 756 KB).
+Run the exact codec on the full 756 KB test as a background batch job
+(about 55 min encode plus proof) before promoting `0.852`. Then A2. Do not
+compare a short exact prefix to the full instrument.
 
 ## References
 

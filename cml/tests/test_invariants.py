@@ -146,6 +146,22 @@ def test_static_byte_roundtrip() -> None:
     assert pc.decode(blob, len(data)) == data
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="byte codec uses cuda")
+def test_rep_copy_roundtrip() -> None:
+    import bytecodec
+
+    model = bytecodec.Trunk(256, 32, 1, 4, 32).cuda()
+    data = (b"alpha = beta + gamma\n" * 8) + bytes(range(40))
+    codec = bytecodec.RepCopyCodec(
+        bytecodec.StreamCoder(model), window=64, min_match=4, cap=16
+    )
+    blob = codec.encode(data)
+    fresh = bytecodec.RepCopyCodec(
+        bytecodec.StreamCoder(model), window=64, min_match=4, cap=16
+    )
+    assert fresh.decode(blob, len(data)) == data
+
+
 def test_windows_and_split() -> None:
     ids = torch.arange(20)
     win = cml.windows(ids, 4)

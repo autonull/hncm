@@ -16,7 +16,7 @@ ratio. That would be remarkable, and it is the right ambition.
 |---|---:|---:|---:|---|
 | 20M, 48 MB, pack 256 | 1.518 | +19.9% | 5.3x | **measured**; bytes win |
 | exact single file | 1.266 | 0% | 6.3x | **shipped** |
-| exact priced 32 KB | 1.076 | -15.0% | 7.4x | exact prefix; gap open |
+| exact priced 32 KB | 1.074 | — | 7.4x | exact; same-prefix instrument 1.022 |
 | 20% | 1.013 | -20% | 7.9x | instrument |
 | 30% | 0.886 | -30% | 9.0x | instrument |
 | 40% | 0.760 | -40% | 10.5x | next rung |
@@ -24,8 +24,10 @@ ratio. That would be remarkable, and it is the right ambition.
 | delta, 2% in 20 hunks | 0.141 | -88.8% | 56.6x | **shipped, exact** |
 
 The denominator is the 20M byte control (`1.265 / 1.266`). The
-`0.852` priced parse is a size instrument, not a codec; the exact 32 KB
-prefix is `1.076`. The delta product reaches the 10x claim today.
+`0.852` priced parse is a size instrument, not a codec. The exact 32 KB
+prefix is `1.074` against its own `1.022` instrument (+0.052 bpb); the
+copy arm rises with prefix size, so a full exact run is the next gate.
+The delta product reaches the 10x claim today.
 
 ## Why 50% is plausible
 

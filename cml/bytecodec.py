@@ -278,6 +278,103 @@ class CopyCodec:
         return bytes(out[:target])
 
 
+class RepCopyCodec:
+    """`CopyCodec` with four repeat distances, exact round-trip.
+
+    A new distance pays a token bit, a `0` bit, a distance slot and its raw
+    bits; a repeat pays a `1` bit and a 2-bit index.  Literals use the
+    trained trunk exactly as `CopyCodec` does.
+    """
+
+    def __init__(
+        self,
+        literals: StreamCoder,
+        window: int = 65536,
+        min_match: int = 8,
+        cap: int = 256,
+    ) -> None:
+        self.literals = literals
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        slots = max((window - 1).bit_length(), 1)
+        self.tok = codec.Counts(2, init=np.ones(2, dtype=np.int64))
+        self.rep = codec.Counts(2, init=np.ones(2, dtype=np.int64))
+        self.index = codec.Counts(4, init=np.ones(4, dtype=np.int64))
+        self.slot = codec.Counts(slots + 1, init=np.ones(slots + 1, dtype=np.int64))
+        self.length = codec.Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+
+    def encode(self, data: bytes, tokens: list[tuple[int, int]] | None = None) -> bytes:
+        if tokens is None:
+            tokens = codec.lazy_parse(data, self.window, self.min_match, self.cap)
+        enc = codec.ArithEncoder()
+        lit = StreamCoder(self.literals.model)
+        reps: list[int] = []
+        i = 0
+        for length, value in tokens:
+            if length == 0:
+                codec.emit([self.tok], 0, 2, enc)
+                lit.encode_one(data[i], enc)
+                i += 1
+                continue
+            codec.emit([self.tok], 1, 2, enc)
+            if value in reps:
+                codec.emit([self.rep], 1, 2, enc)
+                k = reps.index(value)
+                codec.emit([self.index], k, self.index.n, enc)
+                reps.insert(0, reps.pop(k))
+            else:
+                codec.emit([self.rep], 0, 2, enc)
+                v = value - 1
+                slot = v.bit_length()
+                codec.emit([self.slot], slot, self.slot.n, enc)
+                for shift in range(slot - 2, -1, -1):
+                    bit = (v >> shift) & 1
+                    enc.encode(bit, bit + 1, 2)
+                reps.insert(0, value)
+                del reps[4:]
+            codec.emit([self.length], length - self.min_match, self.length.n, enc)
+            for sym in data[i : i + length]:
+                lit.advance(sym)
+            i += length
+        return enc.finish()
+
+    def decode(self, blob: bytes, n: int, limit: int | None = None) -> bytes:
+        dec = codec.ArithDecoder(blob)
+        lit = StreamCoder(self.literals.model)
+        reps: list[int] = []
+        out = bytearray()
+        target = n if limit is None else min(n, limit)
+        while len(out) < target:
+            if codec.take([self.tok], 2, dec) == 0:
+                out.append(lit.decode_one(dec))
+                continue
+            if codec.take([self.rep], 2, dec):
+                k = codec.take([self.index], self.index.n, dec)
+                offset = reps.pop(k)
+                reps.insert(0, offset)
+            else:
+                slot = codec.take([self.slot], self.slot.n, dec)
+                v = 1 if slot else 0
+                for _ in range(slot - 1):
+                    bit = dec.target(2)
+                    dec.update(bit, bit + 1, 2)
+                    v = (v << 1) | bit
+                offset = v + 1
+                reps.insert(0, offset)
+                del reps[4:]
+            length = codec.take([self.length], self.length.n, dec) + self.min_match
+            for _ in range(length):
+                sym = out[-offset]
+                out.append(sym)
+                lit.advance(sym)
+            if len(out) > n:
+                raise ValueError("rep copy codec overshot the frame")
+        return bytes(out[:target])
+
+
 class FastByteCodec:
     """A size instrument: one forward per 256-byte chunk.
 

@@ -6779,6 +6779,7 @@ def run_copycodec(
     cap: int,
     priced: bool,
     proof: int,
+    reps: bool,
 ) -> int:
     """Stage 3 copy proxy: LZ tokens plus the trained trunk for literals."""
     import bytecodec
@@ -6789,25 +6790,26 @@ def run_copycodec(
     model = bytecodec.load_model(RUNS / run / "model.pt")
 
     def fresh() -> "bytecodec.CopyCodec":
-        return bytecodec.CopyCodec(bytecodec.StreamCoder(model), window, min_match, cap)
+        kind = bytecodec.RepCopyCodec if reps else bytecodec.CopyCodec
+        return kind(bytecodec.StreamCoder(model), window, min_match, cap)
 
     tokens = None
+    fast = bytecodec.FastByteCodec(model)
+    bits = bytecodec.literal_bits(fast, data)
     if priced:
-        import bytecodec as bc
-
-        tokens = bc.priced_parse(
-            data,
-            bc.literal_bits(bc.FastByteCodec(model), data),
-            window,
-            min_match,
-            cap,
-        )
+        tokens = bytecodec.priced_parse(data, bits, window, min_match, cap)
+    instrument_tokens = tokens or bytecodec.priced_parse(
+        data, bits, window, min_match, cap
+    )
     blob = fresh().encode(data, tokens)
     want = min(proof, len(data)) if proof else len(data)
     if fresh().decode(blob, want, limit=want) != data[:want]:
         raise SystemExit("copycodec: round-trip failed")
     n = max(len(data), 1)
     base = bytecodec.StreamCoder(model).encode(data)
+    instrument = bytecodec.RepFastCodec(fast, window, min_match, cap).encode(
+        data, instrument_tokens
+    )
     recorded = json.loads((RUNS / run / "metrics.json").read_text())
     report = {
         "id": f"copycodec-{corpus_name}-{nbytes}",
@@ -6819,8 +6821,12 @@ def run_copycodec(
         "min_match": min_match,
         "cap": cap,
         "priced": priced,
+        "reps": reps,
         "proof": want,
         "matches": sum(1 for ell, _ in tokens if ell) if tokens else None,
+        "instrument_bytes": len(instrument),
+        "instrument_bpb": 8 * len(instrument) / n,
+        "instrument_matches": sum(1 for ell, _ in instrument_tokens if ell),
         "payload_bytes": len(blob),
         "payload_bpb": 8 * len(blob) / n,
         "stream_bytes": len(base),
@@ -6840,23 +6846,37 @@ def run_copycodec(
         f"held-out {len(data):,} B",
         f"- LZ window {window:,} B, min match {min_match}, cap {cap}",
         f"- parse: {'priced DP against literal bits' if priced else 'greedy LZ'}",
-        "- matches cost a token bit, a distance slot, raw slot bits and a",
-        "  length symbol; literals and copied bytes advance the same trunk",
-        "  cache, so the decoder rebuilds the literal context",
+        f"- distance code: {'four repeat distances' if reps else 'one distance per match'}",
+        (
+            "- a repeat distance pays a 2-bit index; a new distance pays a"
+            " token bit, a slot and the slot's raw bits; a length symbol follows"
+            if reps
+            else "- matches cost a token bit, a distance slot, the slot's raw"
+            " bits and a length symbol"
+        ),
+        "  literals and copied bytes advance the same trunk cache, so the",
+        "  decoder rebuilds the literal context",
         "",
         "| arm | payload B | bpb |",
         "|---|---:|---:|",
         f"| stream only | {len(base):,} | {8 * len(base) / n:.3f} |",
+        f"| priced parse, size instrument | {len(instrument):,} | "
+        f"{8 * len(instrument) / n:.3f} |",
         f"| LZ copy + stream | {len(blob):,} | {8 * len(blob) / n:.3f} |",
         f"| recorded run | {recorded.get('payload_bytes', 0):,} | "
         f"{recorded.get('payload_bpb', 0):.3f} |",
         "",
-        f"- exact round-trip; copy changes the payload by {report['saving']:+.1%}",
-        "  against the stream arm on the same bytes.",
+        f"- exact round-trip on {want:,} of {n:,} B; "
+        f"copy changes the payload by {report['saving']:+.1%} "
+        "against the stream arm on the same bytes.",
+        f"- exact vs its own size instrument: "
+        f"{8 * len(blob) / n - 8 * len(instrument) / n:+.3f} bpb.",
         "",
         f"Took {report['seconds']:.0f} s on one GPU.",
     ]
     stem = "COPY-PRICED" if priced else "COPY-MODEL"
+    if reps:
+        stem += "-REPS"
     write_json(REPORTS / f"{stem.lower()}.json", report)
     write_text(REPORTS / f"{stem}.md", "\n".join(text) + "\n")
     print("\n".join(text))
@@ -8269,6 +8289,7 @@ def main(argv: list[str] | None = None) -> int:
     cc.add_argument("--min-match", type=int, default=8)
     cc.add_argument("--cap", type=int, default=256)
     cc.add_argument("--priced", action="store_true")
+    cc.add_argument("--reps", action="store_true")
     cc.add_argument("--proof", type=int, default=0)
     cx = sub.add_parser("cortex")
     cx.add_argument("--pairs", type=int, default=30_000)
@@ -8498,6 +8519,7 @@ def main(argv: list[str] | None = None) -> int:
             a.cap,
             a.priced,
             a.proof,
+            a.reps,
         )
     if a.cmd == "cortex":
         return run_cortex(
