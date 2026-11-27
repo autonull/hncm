@@ -5,7 +5,7 @@ measured arms, keeps the T1 frontier, and allocates the next round.
 A parked family is not killed: it keeps the exploration reserve.
 
 - families `all`, tasks `t1,t3,t4`, budget `6h` (6.00 h)
-- 303 measured arms, 283 on T1, 6 on the frontier, 7 parked families
+- 310 measured arms, 283 on T1, 6 on the frontier, 7 parked families
 
 ## Pareto frontier (T1)
 
@@ -76,18 +76,19 @@ A parked family is not killed: it keeps the exploration reserve.
 - **parked r6**: 4 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r7**: 9 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **capability r5**: 11 arms on t3, best `edit-self` (+0.000 bpb edit).
-- **capability r8**: 6 arms on t4, best `spec-8` (1.560 accepted/call).
+- **capability r8**: 11 arms on t4, best `spec-8` (1.560 accepted/call).
 
 ## Next allocation
 
 - **70% frontier** (6 arms, 4.20 h): combine the frontier families, do not scale one metric leader.
 - **20% near-frontier** (12 arms, 1.20 h): within 80% of the best exactness.
 - **10% exploration** (0.60 h):
-  - concept+copy: the combo grid is measured; tighten the offset code
-  - concept+edit: `self` is free; test delete/restore on T3
-  - concept+spec: K=8 with copy confidence on T4
+  - R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only
+  - R3 scale: 5M/10M only after T2 passes
+  - concept+copy: T1 target met; tune the blend on held-out seeds
+  - concept+edit: local (-0.012); test `self` end-to-end
+  - concept+spec: neutral; the trunk is the bottleneck
   - r7 templates: radius 2 is 0.340; add hole composition
-  - r6 pack: 256 wins T1; run T2 only for a promoted combo
   - parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7
   - capability families: r5, r8
 
@@ -99,4 +100,4 @@ Promote a combination only if it keeps round-trip and provenance.
 | round | budget | arms | frontier | tasks |
 |---:|---|---:|---:|---|
 | 1 | 2h | 80 | 10 | t1 |
-| 2 | 6h | 303 | 6 | t1,t3,t4 |
+| 2 | 6h | 310 | 6 | t1,t3,t4 |

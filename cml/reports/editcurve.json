@@ -41,6 +41,44 @@
    "stage": "restore-all"
   }
  ],
+ "blend_edit": [
+  {
+   "units": 256,
+   "n": 200,
+   "exact": 0.665,
+   "base": 0.665,
+   "delta": 0.0,
+   "bits_per_span": 1.8079600070795712,
+   "stage": "full"
+  },
+  {
+   "units": 120,
+   "n": 165,
+   "exact": 0.7333333333333333,
+   "base": 0.7454545454545455,
+   "delta": -0.012121212121212121,
+   "bits_per_span": 1.433698229031026,
+   "stage": "delete"
+  },
+  {
+   "units": 184,
+   "n": 180,
+   "exact": 0.7055555555555556,
+   "base": 0.7111111111111111,
+   "delta": -0.005555555555555556,
+   "bits_per_span": 1.5928249126049718,
+   "stage": "restore64"
+  },
+  {
+   "units": 256,
+   "n": 200,
+   "exact": 0.665,
+   "base": 0.665,
+   "delta": 0.0,
+   "bits_per_span": 1.8079600070795712,
+   "stage": "restore-all"
+  }
+ ],
  "draft": {
   "n": 200,
   "accept": 0.7174554220817072,
@@ -48,10 +86,59 @@
  },
  "spec": {
   "k": 4,
+  "key": 0,
+  "alpha": 0.0,
   "blocks": 200,
   "accepted_per_call": 1.31,
   "all_accept": 0.08,
   "accept_step": 0.3342191289899389
  },
+ "spec_gates": [
+  {
+   "k": 8,
+   "key": 0,
+   "alpha": 0.0,
+   "blocks": 200,
+   "accepted_per_call": 1.48,
+   "all_accept": 0.0,
+   "accept_step": 0.1820645878391892
+  },
+  {
+   "k": 8,
+   "key": 10,
+   "alpha": 0.5,
+   "blocks": 200,
+   "accepted_per_call": 1.48,
+   "all_accept": 0.0,
+   "accept_step": 0.18223830718286643
+  },
+  {
+   "k": 8,
+   "key": 10,
+   "alpha": 0.9,
+   "blocks": 200,
+   "accepted_per_call": 1.48,
+   "all_accept": 0.0,
+   "accept_step": 0.18231261184702469
+  },
+  {
+   "k": 8,
+   "key": 6,
+   "alpha": 0.9,
+   "blocks": 200,
+   "accepted_per_call": 1.415,
+   "all_accept": 0.0,
+   "accept_step": 0.1758215871449749
+  },
+  {
+   "k": 4,
+   "key": 10,
+   "alpha": 0.9,
+   "blocks": 200,
+   "accepted_per_call": 1.41,
+   "all_accept": 0.105,
+   "accept_step": 0.3433898398020744
+  }
+ ],
  "prefix": " "
 }

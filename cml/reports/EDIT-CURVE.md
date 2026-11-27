@@ -11,6 +11,18 @@
 | restore64 | 184 | 180 | 20 | 0.461 | 0.456 | -0.006 | 2.796 |
 | restore-all | 256 | 200 | 0 | 0.415 | 0.415 | +0.000 | 3.133 |
 
+## Concept + blend edit (T3)
+
+Survivors under the blend (key 10, alpha 0.90); `base` is the same
+survivors under the full pack.
+
+| stage | units | n | base | exact | delta | bits/span |
+|---|---:|---:|---:|---:|---:|---:|
+| full | 256 | 200 | 0.665 | 0.665 | +0.000 | 1.808 |
+| delete | 120 | 165 | 0.745 | 0.733 | -0.012 | 1.434 |
+| restore64 | 184 | 180 | 0.711 | 0.706 | -0.006 | 1.593 |
+| restore-all | 256 | 200 | 0.665 | 0.665 | +0.000 | 1.808 |
+
 ## Concept draft acceptance
 
 Pointer proposes a concept; the trunk is the target distribution; accept = min(1, p_target(c) / q_draft(c)).
@@ -27,6 +39,19 @@ Draft 4 concepts with the pointer, verify them with one trunk forward; accept un
 |---:|---:|---:|---:|
 | 200 | 1.310 | 0.080 | 0.334 |
 
+## Concept + copy draft (T4)
+
+The draft is the concept+copy blend; the trunk verifies each block.
+`key 0` is the pointer-only control.
+
+| key | alpha | K | accepted/call | all accepted | accept/step |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0.00 | 8 | 1.480 | 0.000 | 0.182 |
+| 10 | 0.50 | 8 | 1.480 | 0.000 | 0.182 |
+| 10 | 0.90 | 8 | 1.480 | 0.000 | 0.182 |
+| 6 | 0.90 | 8 | 1.415 | 0.000 | 0.176 |
+| 10 | 0.90 | 4 | 1.410 | 0.105 | 0.343 |
+
 ## Read
 
 Deletion is local: removed targets lose their exact concept by
@@ -37,4 +62,4 @@ one pointer proposal against one trunk target call. `accepted/call`
 above 1 means a 4-concept draft can cut target calls per emitted
 concept; it is not a wall-clock measurement.
 
-Run took 18.7 s.
+Run took 140.0 s.

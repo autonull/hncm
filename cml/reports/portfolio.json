@@ -2577,6 +2577,28 @@
    "exact": null
   },
   {
+   "family": "r2+r3/r4",
+   "arm": "blendedit-delete",
+   "task": "t3",
+   "edit_delta": -0.012121212121212121,
+   "edit_exact": 0.7333333333333333,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r2+r3/r4",
+   "arm": "blendedit-restore64",
+   "task": "t3",
+   "edit_delta": -0.005555555555555556,
+   "edit_exact": 0.7055555555555556,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
    "family": "r5",
    "arm": "edit-=",
    "task": "t3",
@@ -2764,6 +2786,56 @@
    "task": "t4",
    "target_calls": 0.641025641025641,
    "source": "breadth",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-0-a0.00-k8",
+   "task": "t4",
+   "target_calls": 0.6756756756756757,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-10-a0.50-k8",
+   "task": "t4",
+   "target_calls": 0.6756756756756757,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-10-a0.90-k4",
+   "task": "t4",
+   "target_calls": 0.7092198581560284,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-10-a0.90-k8",
+   "task": "t4",
+   "target_calls": 0.6756756756756757,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-6-a0.90-k8",
+   "task": "t4",
+   "target_calls": 0.7067137809187279,
+   "source": "editcurve",
    "exact": null,
    "bits": null,
    "decisions": null
@@ -3001,11 +3073,12 @@
    "r2+r3/r4:blend-12-m2-a0.50"
   ],
   "explore_arms": [
-   "concept+copy: the combo grid is measured; tighten the offset code",
-   "concept+edit: `self` is free; test delete/restore on T3",
-   "concept+spec: K=8 with copy confidence on T4",
+   "R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only",
+   "R3 scale: 5M/10M only after T2 passes",
+   "concept+copy: T1 target met; tune the blend on held-out seeds",
+   "concept+edit: local (-0.012); test `self` end-to-end",
+   "concept+spec: neutral; the trunk is the bottleneck",
    "r7 templates: radius 2 is 0.340; add hole composition",
-   "r6 pack: 256 wins T1; run T2 only for a promoted combo",
    "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
    "capability families: r5, r8"
   ]
@@ -3098,7 +3171,7 @@
     "t4"
    ],
    "families": "all",
-   "arms": 303,
+   "arms": 310,
    "frontier": 6,
    "allocation": {
     "frontier": 0.7,
@@ -3130,17 +3203,18 @@
      "r2+r3/r4:blend-12-m2-a0.50"
     ],
     "explore_arms": [
-     "concept+copy: the combo grid is measured; tighten the offset code",
-     "concept+edit: `self` is free; test delete/restore on T3",
-     "concept+spec: K=8 with copy confidence on T4",
+     "R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only",
+     "R3 scale: 5M/10M only after T2 passes",
+     "concept+copy: T1 target met; tune the blend on held-out seeds",
+     "concept+edit: local (-0.012); test `self` end-to-end",
+     "concept+spec: neutral; the trunk is the bottleneck",
      "r7 templates: radius 2 is 0.340; add hole composition",
-     "r6 pack: 256 wins T1; run T2 only for a promoted combo",
      "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
      "capability families: r5, r8"
     ]
    },
-   "seconds": 0.015,
-   "at": "2026-11-26T18:17:20"
+   "seconds": 0.026,
+   "at": "2026-11-26T18:59:13"
   }
  ]
 }

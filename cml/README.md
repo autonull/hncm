@@ -152,9 +152,11 @@ The four bets, and where they live:
 - `cml screen`: capability screen on 200 held-out code spans; byte, copy,
   order-1 counts, order-2 library, concept pointer, fixed-vocab trunk, plus
   gradient-free pack removal and merge; `reports/SCREEN.md`.
-- `cml editcurve`: causal pack-edit curve, concept-draft acceptance, and a
-  4-concept speculative block; `reports/EDIT-CURVE.md`. Concept-only exact is
-  **0.650** at 1.72 bits/span and one decision.
+- `cml editcurve`: causal pack-edit curve, concept-draft acceptance, a
+  4-concept speculative block, and the concept+blend T3/T4 arms;
+  `reports/EDIT-CURVE.md`. Concept-only exact is 0.650 at 1.72 bits/span.
+  The blend edit is local (−0.012 on survivors); the blend draft is
+  neutral (1.480 accepted/call, same as pointer).
 - `cml breadth`: small hyperparameter grids for copy, template/hole, library,
   edit prefixes, and speculative draft length; `reports/BREADTH.md`. Copy
   keys 1 -> 12; the concept+copy blend is 0.705 at 2.362 bits (target) and

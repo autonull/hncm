@@ -2264,6 +2264,31 @@ def _stage_score(
     }
 
 
+def _copy_vec(ctx: torch.Tensor, key: int, k: int) -> torch.Tensor | None:
+    """Prior continuation counts for the last `key` units of the context."""
+    from collections import Counter
+
+    if key <= 0 or ctx.numel() <= key:
+        return None
+    key_ids = ctx[-key:].tolist()
+    cand = torch.arange(0, ctx.numel() - key)
+    for t in range(key):
+        cand = cand[ctx[cand + t] == key_ids[t]]
+    cand = cand[cand + key < ctx.numel()]
+    counts: Counter = Counter()
+    for p in cand.tolist():
+        c = int(ctx[p + key])
+        if c < k:
+            counts[c] += 1
+    if not counts:
+        return None
+    total = sum(counts.values())
+    vec = torch.full((k,), 1.0 / (total + k))
+    for j, c in counts.items():
+        vec[j] = (c + 1) / (total + k)
+    return vec
+
+
 def _spec_score(
     pmodel,
     tmodel,
@@ -2274,8 +2299,10 @@ def _spec_score(
     k: int,
     K: int,
     seed: int,
+    key: int = 0,
+    alpha: float = 0.0,
 ) -> dict[str, float | int]:
-    """Pointer drafts K concepts; one trunk forward verifies the block."""
+    """Draft K concepts with the blend; one trunk forward verifies the block."""
     rng = np.random.default_rng(seed)
     blocks = accepted = all_accept = 0
     step_accept = 0.0
@@ -2289,9 +2316,17 @@ def _spec_score(
         for _ in range(K):
             q = _next_q(pmodel, cctx.cuda(), active_lex.units)[:k]
             q = q / q.sum().clamp_min(1e-12)
-            c = int(q.argmax())
+            vec = _copy_vec(cctx, key, k) if key else None
+            if vec is not None:
+                logp = (1 - alpha) * torch.log(q) + alpha * torch.log(vec.to(q.device))
+                p = torch.softmax(logp, -1)
+                c = int(p.argmax())
+                prob = float(p[c])
+            else:
+                c = int(q.argmax())
+                prob = float(q[c])
             choices.append(c)
-            probs.append(float(q[c]))
+            probs.append(prob)
             cctx = torch.cat((cctx, torch.tensor([c])))
         x = torch.cat((ctx, torch.tensor(choices))).cuda().view(1, -1)
         logits = tmodel(x).detach()
@@ -2310,10 +2345,70 @@ def _spec_score(
         all_accept += got == K
     return {
         "k": K,
+        "key": key,
+        "alpha": alpha,
         "blocks": blocks,
         "accepted_per_call": accepted / max(blocks, 1),
         "all_accept": all_accept / max(blocks, 1),
         "accept_step": step_accept / max(blocks * K, 1),
+    }
+
+
+def _blend_predict(
+    pmodel, ctx: torch.Tensor, units: tuple[bytes, ...], k: int, key: int, alpha: float
+) -> torch.Tensor:
+    """Concept distribution blended with prior continuation counts."""
+    q = _next_q(pmodel, ctx[-256:].cuda(), units)[:k]
+    q = q / q.sum().clamp_min(1e-12)
+    vec = _copy_vec(ctx, key, k) if key else None
+    if vec is None:
+        return q
+    logp = (1 - alpha) * torch.log(q) + alpha * torch.log(vec.to(q.device))
+    return torch.softmax(logp, -1)
+
+
+def _stage_blend(
+    pmodel,
+    ids: torch.Tensor,
+    positions: list[int],
+    targets: list[int],
+    units: list[bytes],
+    full_lex: codec_mod.Lexicon,
+    stage_lex: codec_mod.Lexicon,
+    seq: int,
+    key: int = 10,
+    alpha: float = 0.9,
+) -> dict[str, float | int]:
+    """Survivor exact for the concept+copy blend after a pack edit."""
+    index = {u: i for i, u in enumerate(stage_lex.units)}
+    full_index = {u: i for i, u in enumerate(full_lex.units)}
+    exact = base = 0
+    bits = 0.0
+    n = 0
+    k = len(stage_lex.units)
+    for i, _, unit in zip(positions, targets, units):
+        j = index.get(unit)
+        if j is None:
+            continue
+        ctx = _remap_concepts(ids[max(0, i - seq + 1) : i], full_lex, stage_lex)
+        if ctx.numel() == 0:
+            continue
+        p = _blend_predict(pmodel, ctx, stage_lex.units, k, key, alpha)
+        exact += int(p.argmax()) == j
+        bits += -math.log2(max(float(p[j]), 1e-12))
+        n += 1
+        bctx = ids[max(0, i - seq + 1) : i]
+        bp = _blend_predict(
+            pmodel, bctx, full_lex.units, len(full_lex.units), key, alpha
+        )
+        base += int(bp.argmax()) == full_index[unit]
+    return {
+        "units": len(stage_lex.units),
+        "n": n,
+        "exact": exact / max(n, 1),
+        "base": base / max(n, 1),
+        "delta": (exact - base) / max(n, 1),
+        "bits_per_span": bits / max(n, 1),
     }
 
 
@@ -2368,6 +2463,12 @@ def run_edit_curve(
         row["stage"] = name
         rows.append(row)
 
+    blend_edit = []
+    for name, stage in stages:
+        row = _stage_blend(pmodel, ids, pos, targets, units, active_lex, stage, seq)
+        row["stage"] = name
+        blend_edit.append(row)
+
     qacc = 0.0
     qexact = 0
     qn = 0
@@ -2390,6 +2491,18 @@ def run_edit_curve(
         "exact": qexact / max(qn, 1),
     }
     spec = _spec_score(pmodel, tmodel, ids, pos, active_lex, seq, k, 4, seed + 1)
+    spec_gates = [
+        _spec_score(
+            pmodel, tmodel, ids, pos, active_lex, seq, k, kg, seed + 1, key, alpha
+        )
+        for key, alpha, kg in (
+            (0, 0.0, 8),
+            (10, 0.5, 8),
+            (10, 0.9, 8),
+            (6, 0.9, 8),
+            (10, 0.9, 4),
+        )
+    ]
     secs = time.perf_counter() - t0
     lines = [
         "# Causal edit curve (r5)",
@@ -2408,6 +2521,22 @@ def run_edit_curve(
         lines.append(
             f"| {row['stage']} | {row['units']} | {row['n']} | "
             f"{row['removed']} | {row['base']:.3f} | {row['exact']:.3f} | "
+            f"{row['delta']:+.3f} | {row['bits_per_span']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Concept + blend edit (T3)",
+        "",
+        "Survivors under the blend (key 10, alpha 0.90); `base` is the same",
+        "survivors under the full pack.",
+        "",
+        "| stage | units | n | base | exact | delta | bits/span |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in blend_edit:
+        lines.append(
+            f"| {row['stage']} | {row['units']} | {row['n']} | "
+            f"{row['base']:.3f} | {row['exact']:.3f} | "
             f"{row['delta']:+.3f} | {row['bits_per_span']:.3f} |"
         )
     lines += [
@@ -2431,6 +2560,22 @@ def run_edit_curve(
         f"| {spec['blocks']} | {spec['accepted_per_call']:.3f} | "
         f"{spec['all_accept']:.3f} | {spec['accept_step']:.3f} |",
         "",
+        "## Concept + copy draft (T4)",
+        "",
+        "The draft is the concept+copy blend; the trunk verifies each block.",
+        "`key 0` is the pointer-only control.",
+        "",
+        "| key | alpha | K | accepted/call | all accepted | accept/step |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in spec_gates:
+        lines.append(
+            f"| {r['key']} | {r['alpha']:.2f} | {r['k']} | "
+            f"{r['accepted_per_call']:.3f} | {r['all_accept']:.3f} | "
+            f"{r['accept_step']:.3f} |"
+        )
+    lines += [
+        "",
         "## Read",
         "",
         "Deletion is local: removed targets lose their exact concept by",
@@ -2448,8 +2593,10 @@ def run_edit_curve(
         REPORTS / "editcurve.json",
         {
             "rows": rows,
+            "blend_edit": blend_edit,
             "draft": draft,
             "spec": spec,
+            "spec_gates": spec_gates,
             "prefix": prefix.decode("utf-8", "replace"),
         },
     )
@@ -3564,6 +3711,29 @@ def _collect_arms() -> list[dict]:
                     "source": "editcurve",
                 }
             )
+        for row in e.get("spec_gates", []):
+            arms.append(
+                {
+                    "family": "r8",
+                    "arm": (f"specgate-{row['key']}-a{row['alpha']:.2f}-k{row['k']}"),
+                    "task": "t4",
+                    "target_calls": 1 / max(row["accepted_per_call"], 1e-9),
+                    "source": "editcurve",
+                }
+            )
+        for row in e.get("blend_edit", []):
+            if row["stage"] in ("full", "restore-all"):
+                continue
+            arms.append(
+                {
+                    "family": "r2+r3/r4",
+                    "arm": f"blendedit-{row['stage']}",
+                    "task": "t3",
+                    "edit_delta": row["delta"],
+                    "edit_exact": row["exact"],
+                    "source": "editcurve",
+                }
+            )
         for row in e.get("rows", []):
             if row.get("stage") in ("full", "restore-all"):
                 continue
@@ -3729,11 +3899,12 @@ def run_portfolio(
         combo_rows.append({"combination": name, "tests": tests, "status": status})
 
     exploration = [
-        "concept+copy: the combo grid is measured; tighten the offset code",
-        "concept+edit: `self` is free; test delete/restore on T3",
-        "concept+spec: K=8 with copy confidence on T4",
+        "R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only",
+        "R3 scale: 5M/10M only after T2 passes",
+        "concept+copy: T1 target met; tune the blend on held-out seeds",
+        "concept+edit: local (-0.012); test `self` end-to-end",
+        "concept+spec: neutral; the trunk is the bottleneck",
         "r7 templates: radius 2 is 0.340; add hole composition",
-        "r6 pack: 256 wins T1; run T2 only for a promoted combo",
     ]
     if parked:
         exploration.append("parked families: " + ", ".join(parked))
