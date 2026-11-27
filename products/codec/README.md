@@ -46,6 +46,15 @@ uv run cml decompress NOTES.md.cmlc      # -> NOTES.md, digest checked
 
 `decompress` checks the SHA-256 against the header and refuses a mismatch.
 
+## Roadmap to 10x
+
+The priced parse is measured at `0.852 (9.4x)` on the size instrument. The
+rungs from there are costed in the plan (`TODO8.md` §0.1): longer horizon
+and a 2 MB window (`~0.80`), two-pass literals (`~0.74`), a 30M trunk on
+64 MB (`~0.68`), code-aware literal context (`0.633 = 12.6x`). Each rung
+ships only when its decoder reproduces it; the product above stays exact
+throughout.
+
 ## Known limits
 
 - **Header ~180 B**: files below ~1 KB do not pay. Use it for files of

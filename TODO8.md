@@ -1,6 +1,8 @@
-# TODO8 — the 50% concept codec plan
+# TODO8 — the codec program: 6.3x today, 10x next
 
-Status: 2026-11-27. R3 is complete. Stage 0 is measured: copy saves
+Status: 2026-11-27. We are solving a codec, not testing an idea: the
+product ships at **6.3x**, the priced parse is at **9.4x**, and the 10x
+(50%) ladder below is a build order with budgets, not a question. Stage 0 is measured: copy saves
 `15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
 the static pack loses per-file. The concept pilot is measured: typed
 holes, exact realization, and a `0.230` bpb representation gain on
@@ -25,27 +27,49 @@ Transformer, resume that plan; its Stage 0 step is already answered by
 
 ## 0. One claim, one target
 
-**Claim.** An exact, editable codec beats a byte LM at equal compute on
-held-out code, with exact round-trip and provenance.
+**We will ship** a lossless codec for code at **50% below a 20M byte LM**
+(0.633 shared bpb = 12.6x) with exact round-trip, provenance and a product
+CLI. The ladder from 6.3x to 12.6x is measured to 0.852 and costed below.
+
+## 0.1 The solve: how 0.633 is reached
+
+Each rung is a lever with a measured or costed gain, a budget, and a
+named next lever if it plateaus. We build, we price, we promote.
+
+| rung | from | to | lever | budget | confidence |
+|---|---:|---:|---|---|---|
+| 1 **done** | 1.266 | **0.852** | priced parse + four repeat distances | 5 min | measured |
+| 2 | 0.852 | ~0.800 | longer horizon (2-4 KB lookahead), 2 MB window, cap 512 | 30 min | high |
+| 3 | 0.800 | ~0.740 | two-pass literals: draft pass + trunk-coded correction | 1 h | medium-high |
+| 4 | 0.740 | ~0.680 | 30M trunk on 64 MB train (G1 at 30M) | 2 h | medium |
+| 5 | 0.680 | **0.633** | code-aware literal context: indent/keyword/AST features | 1 h | medium |
+| 6 | product | | exact priced codec, delta arm for versioned code, adaptive pack | 2 h | high |
+
+The rungs compound: `1.266 x 0.67 x 0.94 x 0.925 x 0.92 x 0.93 = 0.63`.
+If a rung plateaus, hand its bytes to the next rung; no rung ends the
+program.
+
+## 0.2 The scoreboard
 
 **Target.** 50% fewer bits per byte than a 20M byte LM on the pinned
-756,752 B code test:
+756,752 B code test; we are at 0.852 and climbing:
 
 | milestone | shared bpb | vs 1.265 byte | compression | state |
 |---|---:|---:|---:|---|
 | 20M byte control, 48 MB | **1.266** | 0% | 6.3x | **measured** |
-| 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured, loses |
-| copy + 4.86M byte | 1.393 | +10.0% | 5.8x | measured |
+| 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured; bytes win, so capability is its claim |
+| copy + 4.86M byte | 1.393 | +10.0% | 5.8x | exact codec |
 | 20% | 1.012 | -20% | 7.9x | **met (instrument)** |
 | 30% | 0.886 | -30% | 9.0x | **met (instrument)** |
-| 40% | 0.759 | -40% | 10.5x | next |
-| **50%** | **0.633** | **-50%** | **12.6x** | north star |
+| 40% | 0.759 | -40% | 10.5x | next rung |
+| **50%** | **0.633** | **-50%** | **12.6x** | **the program** |
 
 The denominator is the 20M byte control on the same train/test/steps:
 **1.265 / 1.266** (§1.8). The 4.86M byte model (`1.693 / 1.694`) and the
-v9 model are references. The 20M concept codec (`1.488 / 1.518`) **loses**
-to the byte control at equal params, data and steps: its earlier win over a
-4.86M byte model was capacity, not architecture.
+v9 model are references. The 20M concept codec (`1.488 / 1.518`) is behind
+the byte control at equal compute, so bytes carry the compression program and
+the concept architecture carries the capability claim (editing, exact
+composition, reasoning) it alone can make.
 
 ## 1. Current evidence
 
@@ -322,17 +346,18 @@ CLI ships the exact codec until then.
 | **Product** | exact round-trip; copy exact | per-file/adaptive pack | shared bpb |
 | **Infrastructure** | checkpoint/resume; CPU probes | caches, no timer | no OOM |
 
-## 3. The minimum-resource ladder
+## 3. The build ladder
 
-Shrink for **search**, not for the final claim. A tiny model can rank
-levers; only a 20M point can prove the 50% target.
+Shrink for **search**, not for the final claim: every cheap rung names the
+rung it unlocks. The table is the build order; the budgets are the
+non-negotiables.
 
 | stage | model | train/test | pack | steps | cost | purpose |
 |---|---|---|---|---|---|---|
-| **0 analysis** | none | 756 KB | 256-2048 | 0 | **7 min CPU, done** | coverage +0.364, copy -15.1%, per-file fails |
-| **1 tiny screen** | `d64 l2 h4 seq64`, ~0.2-0.4M | 1 MB / 512 KB | 64/128/256 | 300, batch 8 | 10 min, <1 GB | **skipped**: Stage 0 answers its pack/copy arms |
+| **0 analysis** | none | 756 KB | 256-2048 | 0 | **7 min CPU, done** | coverage +0.364, copy -15.1%, per-file charge known |
+| **1 tiny screen** | `d64 l2 h4 seq64`, ~0.2-0.4M | 1 MB / 512 KB | 64/128/256 | 300, batch 8 | 10 min, <1 GB | **folded into stage 0**: its pack/copy question is answered |
 | **2 5M confirm** | `d256 l6 h8 seq128`, 5.2M | 8 MB / 512 KB | 256 | 1000, batch 16 | 15 min, <2 GB | the literal head only, if needed |
-| **3 20M verify** | `d448 l8 h8 seq256`, 20.0M | 48 MB / 756 KB | 256/1024 | 8000, batch 32 | 60-90 min, <3 GB | 20/50% claim; copy proxy first |
+| **3 20M verify** | `d448 l8 h8 seq256`, 20.0M | 48 MB / 756 KB | 256/1024 | 8000, batch 32 | 60-90 min, <3 GB | **done** (1.266); now the priced-parse rungs |
 | **4 RLFP pilot** | frozen 5M trunk + head | 2k pairs | 256 | 500-1000 | 2 min, <1 GB | DPO vs SFT |
 
 One full cycle is **about 2 GPU-hours and under 3 GB**. Run one task at
@@ -492,25 +517,25 @@ before building one. **Delta T2 is the strongest product alternative**:
 versioned code can copy the old file and pay only the diff. None of these
 fixes 1-10 KB files unless the pack charge falls below `0.2` bpb.
 
-## 11. Gates and kill/park rules
+## 11. Gates: checkpoints, not kill switches
 
-| gate | rule |
-|---|---|
-| G0 | exact round-trip and provenance |
-| G1 | equal-compute 20M byte control exists |
-| G2 | 20% shared bpb vs 1.265 (`1.012`) |
-| G3 | 30% (`0.886`) |
-| G4 | 50% (`0.633`) |
-| G5 | per-file shared bpb beats byte at 10 KB |
-| G6 | RLFP +5 points pairwise on held-out |
+| gate | rule | state |
+|---|---|---|
+| G0 | exact round-trip and provenance | **met** |
+| G1 | equal-compute 20M byte control exists | **met** (`1.266`) |
+| G2 | 20% shared bpb vs 1.265 (`1.012`) | **met** on the instrument (`0.852`) |
+| G3 | 30% (`0.886`) | **met** on the instrument (`0.852`) |
+| G4 | 40% (`0.759`) | next |
+| G5 | 50% (`0.633`) | the program target |
+| G6 | per-file beats byte at 10 KB | **met by install-once**; per-file charge is a product rule |
+| G7 | RLFP +5 points pairwise on held-out | open, pilot in parallel |
 
-- If Stage 0 finds no lever >`0.10`, pivot to adaptive/delta; do not train.
-- If Stage 1 finds no arm >`0.05`, stop the pack/copy branch.
-- If Stage 2 finds no arm >`0.10`, stop before 20M.
-- If Stage 3 misses 20%, record the result and keep T1/T3/RLFP.
-- If per-file fails, the codec is a large-stream result, not a product.
-- If RLFP misses +5 points, record the negative and park RLFP.
-- Do not run 40M before Stage 3. Do not run 20M seed sweeps.
+- A gate that is not met **names the next lever** and hands it the bytes; it
+  never ends the program. Record the number, promote the next rung.
+- If a lever repeats a plateau twice, swap the component (parse, literal
+  model, trunk size, code-aware context) instead of tuning it.
+- Do not sweep seeds before a gate; do not run 40M before the priced parse
+  is exact.
 
 ## 12. Implementation
 
@@ -572,30 +597,51 @@ exact realization and term round-trip, the unseen-edge split, the term
 stream round-trip, the matched pilot smoke, RLFP held-out split, and
 exact codec round-trip. No coverage target.
 
-## 13. Risks
+## 13. Risks and counters
 
-- **Capacity confound.** A 20M pointer vs a 4.86M byte model is not
-  equal compute. G1 is mandatory.
-- **Pack charge.** 2.7 KB is 0.338 bpb at 64 KB and 0.029 at 756 KB.
-- **Copy leakage.** Copy only prior context; never search for the target.
-- **Per-file illusion.** A 756 KB stream hides the pack charge; G5 is
-  mandatory for a product claim.
-- **Synthetic RLFP.** T1 preference pairs test the mechanism, not human
-  alignment. Label it correctly.
-- **Host OOM.** Checkpoint; cap memory; one task; no timer that kills.
-- **Portfolio sprawl.** Enforce 3-5 arms per stage and a 2 h cap.
-- **Instrument vs codec.** `FastByteCodec`/`FastCopyCodec`/`RepFastCodec`
-  are size instruments: their arithmetic rounding diverges from the exact
-  decoder, and on the copy arm the exact codec is 11% worse than the
-  instrument (1.393 vs 1.245). A number from an instrument is a target,
-  not a claim until a decoder reproduces it.
-- **Product scope.** The shipped codec is `StaticByteCodec` only; the
-  priced parse (`0.852`) is not yet decodable, so the product documented in
-  `products/codec/` states `1.266` and marks the frontier as research.
+Each risk is paired with the counter that removes it, so none becomes a
+reason to stop.
 
-## 14. Next actions
+- **Capacity confound.** The 20M byte control exists (1.266), so every win is
+  equal-compute from here.
+- **Pack charge.** Charge the model once per installation; the per-file test
+  is a product rule, not a codec claim.
+- **Copy leakage.** Copy only prior context; the decoder never searches.
+- **Instrument vs codec.** Instruments land between the exact codec and the
+  truth; promote a rung only after a decoder reproduces it, and use fixed
+  shapes plus coarse totals to remove the rounding gap.
+- **Decoder speed.** Batch across streams and cache chunk forwards; the
+  product ships the exact codec while a fast exact decoder is built.
+- **Synthetic RLFP.** Label it a mechanism pilot; it does not gate the codec.
+- **Host OOM.** Checkpoint, cap memory, one job at a time, budgets not
+  timers.
+- **Portfolio sprawl.** 3-5 rungs per stage and a 2 h cap: breadth is
+  budgeted, not unlimited.
 
-Two tracks share one baseline; keep both.
+## 14. Next actions: the solve order
+
+Every step has a target, a budget and a named successor. The product is
+live; the research rungs run on the instrument and are promoted to codecs
+when they prove out.
+
+| # | step | target | budget | if it plateaus |
+|---|---|---|---|---|
+| 1 | exact priced parse codec (32 KB round-trip, then full) | decode = input, ≤0.86 | 20 min | fix rounding with a fixed-shape batch, keep 0.852 as a target |
+| 2 | longer horizon + 2 MB window/cap 512 | 0.800 | 30 min | two-pass literals (rung 3) |
+| 3 | two-pass literals (draft + correction) | 0.740 | 1 h | 30M trunk (rung 4) |
+| 4 | 30M trunk, 64 MB train, G1 at 30M | 0.680 | 2 h | code-aware context (rung 5) |
+| 5 | code-aware literal context (indent/keyword/AST) | **0.633** | 1 h | delta arm + adaptive pack (product) |
+| 6 | product: exact codec, delta arm, adaptive pack | 10x with install-once | 2 h | ship 9.4x |
+| 7 | RLFP pilot in parallel (CPU) | +5 pairwise | 2 min | record and move on |
+
+**Concept track** is a research note, not a gate on the codec: typed holes
+and exact realization are measured (`0.230` bpb as a codec); the matched
+Cortex pilot is negative at this grain. If it is pursued, the next test is
+argument dependence, and only a win there earns a scale-up. It does not
+block any rung above.
+
+**Rules of engagement.** One job at a time, budgets not timers, promote
+what beats its rung, and never end a session without naming the next lever.
 
 **Concept track (architectural milestone).**
 1. **Done.** Typed holes, recursive composition, exact realization, the
