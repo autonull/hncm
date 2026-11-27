@@ -76,6 +76,25 @@ def test_lz_parse_and_copy_roundtrip() -> None:
     assert sum(ell for ell, _ in tokens) > 0
 
 
+def test_delta_parse_and_roundtrip() -> None:
+    prior = (b"def parse(data):\n    return data\n" * 40) + bytes(range(128))
+    data = prior[:400] + b"# edit\n" + prior[400:800] + bytes(range(200))
+    tokens = codec.delta_parse(data, prior, window=512, min_match=4, cap=16)
+    assert tokens == codec.delta_parse(data, prior, window=512, min_match=4, cap=16)
+    arm = codec.DeltaArm(
+        window=512, min_match=4, cap=16, max_distance=max(len(prior), len(data))
+    )
+    blob = arm.encode(data, prior, tokens)
+    assert (
+        codec.DeltaArm(
+            window=512, min_match=4, cap=16, max_distance=max(len(prior), len(data))
+        ).decode(blob, len(data), prior)
+        == data
+    )
+    assert any(ell for ell, _ in tokens)
+    assert any(not ell for ell, _ in tokens)
+
+
 def test_stage0_coverage_and_charge() -> None:
     import stage0
 

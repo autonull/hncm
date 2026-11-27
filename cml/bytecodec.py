@@ -252,11 +252,12 @@ class CopyCodec:
             i += length
         return enc.finish()
 
-    def decode(self, blob: bytes, n: int) -> bytes:
+    def decode(self, blob: bytes, n: int, limit: int | None = None) -> bytes:
         dec = codec.ArithDecoder(blob)
         lit = StreamCoder(self.literals.model)
         out = bytearray()
-        while len(out) < n:
+        target = n if limit is None else min(n, limit)
+        while len(out) < target:
             if codec.take([self.tok], 2, dec) == 0:
                 out.append(lit.decode_one(dec))
                 continue
@@ -274,7 +275,7 @@ class CopyCodec:
                 lit.advance(sym)
             if len(out) > n:
                 raise ValueError("copy codec overshot the frame")
-        return bytes(out)
+        return bytes(out[:target])
 
 
 class FastByteCodec:

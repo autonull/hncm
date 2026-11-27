@@ -560,6 +560,155 @@ def lz_parse(
     return tokens
 
 
+def delta_parse(
+    data: bytes,
+    prior: bytes,
+    window: int = 1 << 20,
+    min_match: int = 8,
+    cap: int = 256,
+    depth: int = 16,
+) -> list[tuple[int, int]]:
+    """LZ77 over `prior + data`, returning offsets into the virtual buffer.
+
+    Only `data` is coded; `prior` is the external dictionary the decoder also
+    holds.  A match may cross the boundary: its source bytes are prior bytes
+    followed by output bytes the decoder has already rebuilt.
+    """
+    start = len(prior)
+    buf = prior + data
+    n = len(buf)
+    head: dict[int, list[int]] = {}
+    for p in range(max(0, start - window), start):
+        if p + 4 <= n:
+            head.setdefault(int.from_bytes(buf[p : p + 4], "big"), []).append(p)
+    tokens: list[tuple[int, int]] = []
+    i = start
+    while i < n:
+        best = 0
+        best_off = 0
+        if i + 4 <= n:
+            cand = head.get(int.from_bytes(buf[i : i + 4], "big"))
+            if cand:
+                lo = i - window
+                seen = 0
+                for p in reversed(cand):
+                    if p < lo or seen >= depth:
+                        break
+                    seen += 1
+                    lim = min(cap, n - i)
+                    a = int.from_bytes(buf[i : i + lim], "big")
+                    b = int.from_bytes(buf[p : p + lim], "big")
+                    d = a ^ b
+                    ell = lim if d == 0 else lim - (d.bit_length() + 7) // 8
+                    if ell > best:
+                        best = ell
+                        best_off = i - p
+                        if ell >= cap:
+                            break
+        if best >= min_match:
+            tokens.append((best, best_off))
+            for q in range(i, i + best):
+                if q + 4 <= n:
+                    head.setdefault(int.from_bytes(buf[q : q + 4], "big"), []).append(q)
+            i += best
+        else:
+            tokens.append((0, buf[i]))
+            if i + 4 <= n:
+                head.setdefault(int.from_bytes(buf[i : i + 4], "big"), []).append(i)
+            i += 1
+    return tokens
+
+
+class DeltaArm:
+    """LZ77 against an external old file plus adaptive literals.
+
+    The virtual buffer is `prior + data`, so one distance slot addresses either
+    file.  The decoder is handed the same `prior`; it never searches and it
+    rebuilds every copied byte from bytes it already has.
+    """
+
+    __slots__ = (
+        "window",
+        "min_match",
+        "cap",
+        "depth",
+        "tok",
+        "slot",
+        "length",
+        "bytes",
+    )
+
+    def __init__(
+        self,
+        window: int = 1 << 20,
+        min_match: int = 8,
+        cap: int = 256,
+        depth: int = 16,
+        max_distance: int = 1 << 24,
+    ) -> None:
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        self.depth = depth
+        self.tok = Counts(2, init=np.ones(2, dtype=np.int64))
+        self.slot = Counts(
+            max((max_distance - 1).bit_length(), 1) + 1,
+            init=np.ones(max((max_distance - 1).bit_length(), 1) + 1, dtype=np.int64),
+        )
+        self.length = Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+        self.bytes = ByteArm()
+
+    def encode(
+        self,
+        data: bytes,
+        prior: bytes,
+        tokens: list[tuple[int, int]] | None = None,
+    ) -> bytes:
+        if tokens is None:
+            tokens = delta_parse(
+                data, prior, self.window, self.min_match, self.cap, self.depth
+            )
+        enc = ArithEncoder()
+        for length, value in tokens:
+            if length == 0:
+                _put(self.tok, 0, enc)
+                self.bytes.encode_one(value, enc)
+                continue
+            _put(self.tok, 1, enc)
+            v = value - 1
+            slot = v.bit_length()
+            _put(self.slot, slot, enc)
+            for shift in range(slot - 2, -1, -1):
+                bit = (v >> shift) & 1
+                enc.encode(bit, bit + 1, 2)
+            _put(self.length, length - self.min_match, enc)
+        return enc.finish()
+
+    def decode(self, blob: bytes, n: int, prior: bytes) -> bytes:
+        dec = ArithDecoder(blob)
+        out = bytearray(prior)
+        start = len(out)
+        while len(out) - start < n:
+            if _get(self.tok, dec) == 0:
+                out.append(self.bytes.decode_one(dec))
+                continue
+            slot = _get(self.slot, dec)
+            v = 1 if slot else 0
+            for _ in range(slot - 1):
+                bit = dec.target(2)
+                dec.update(bit, bit + 1, 2)
+                v = (v << 1) | bit
+            offset = v + 1
+            length = _get(self.length, dec) + self.min_match
+            for _ in range(length):
+                out.append(out[-offset])
+            if len(out) - start > n:
+                raise ValueError("delta arm overshot the frame length")
+        return bytes(out[start:])
+
+
 def _put(row: Counts, sym: int, enc: ArithEncoder) -> None:
     _encode_in(row, sym, enc)
     row.update(sym)

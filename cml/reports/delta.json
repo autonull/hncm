@@ -1,0 +1,23 @@
+{
+ "id": "delta-bench",
+ "source": "code sha 1ccd9ffc7f68",
+ "old_bytes": 756752,
+ "new_bytes": 756752,
+ "edits": 0.02,
+ "hunks": 20,
+ "seed": 0,
+ "window": 1048576,
+ "min_match": 8,
+ "cap": 256,
+ "depth": 128,
+ "tokens": 5622,
+ "matches": 4530,
+ "copied_bytes": 755660,
+ "copy_fraction": 0.9985569909296572,
+ "payload_bytes": 13380,
+ "payload_bpb": 0.1414466033786498,
+ "ratio": 56.55844544095665,
+ "roundtrip": true,
+ "git": "62adee8cda2424c3a8d449c820f19dfe0f5a13ea",
+ "seconds": 1.96
+}

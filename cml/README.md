@@ -7,28 +7,25 @@ is the codec record and the auditable-codec product.
 ## The 50% target
 
 The target is concrete: **50% fewer bits per byte than an equal-compute
-byte LM on the pinned 756,752 B code test.** Against the current
-`1.693` byte reference, that is `0.847` shared bpb. It is not a cosmetic
-gain: it is `9.4x` compression on code, or `1.8x` the current codec
+byte LM on the pinned 756,752 B code test.** Against the 20M `1.266`
+byte control, that is `0.633` shared bpb. It is not a cosmetic
+gain: it is `12.6x` compression on code, or `2x` the current codec
 ratio. That would be remarkable, and it is the right ambition.
 
-| milestone | shared bpb | vs 1.693 byte | compression | state |
+| milestone | shared bpb | vs 1.266 byte | compression | state |
 |---|---:|---:|---:|---|
-| 20M, 48 MB, pack 256 | 1.518 | -10.3% | 5.3x | **measured** |
-| 20% | 1.354 | -20% | 5.9x | next |
-| 30% | 1.185 | -30% | 6.8x | path |
-| 40% | 1.016 | -40% | 7.9x | path |
-| **50%** | **0.847** | **-50%** | **9.4x** | north star |
+| 20M, 48 MB, pack 256 | 1.518 | +19.9% | 5.3x | **measured**; bytes win |
+| exact single file | 1.266 | 0% | 6.3x | **shipped** |
+| exact priced 32 KB | 1.076 | -15.0% | 7.4x | exact prefix; gap open |
+| 20% | 1.013 | -20% | 7.9x | instrument |
+| 30% | 0.886 | -30% | 9.0x | instrument |
+| 40% | 0.760 | -40% | 10.5x | next rung |
+| **50%** | **0.633** | **-50%** | **12.6x** | north star |
+| delta, 2% in 20 hunks | 0.141 | -88.8% | 56.6x | **shipped, exact** |
 
-The denominator is the current 4.86M byte model (`1.693 / 1.694`). A real
-50% claim needs a 20M byte control at the same train/test/steps; that
-control is the first experiment, not an afterthought.
-
-Yes, 50% would be remarkable. At `0.847` shared bpb the codec would be
-`9.4x` compression, `1.8x` the current ratio, and far enough ahead of a
-byte LM that it stops being a rounding error. That is the result worth
-building toward. The current `1.518` is the first 10%; it is evidence
-the direction is real, not proof the destination is reached.
+The denominator is the 20M byte control (`1.265 / 1.266`). The
+`0.852` priced parse is a size instrument, not a codec; the exact 32 KB
+prefix is `1.076`. The delta product reaches the 10x claim today.
 
 ## Why 50% is plausible
 
@@ -102,12 +99,14 @@ regress them silently.
 | Exact round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
 | Local deletion | 35 targets removed by construction; 165 survivors ±0.006; **+0.146 bpb** full encode | `reports/EDIT-CURVE.md` |
 | Merge | 256 -> 320 units; **+0.108 bpb**; exact round-trip | `reports/SCREEN.md` |
+| Delta codec | **0.141 bpb (56.6x)** on 2% edits in 20 hunks; exact | `reports/DELTA.md` |
 | Concept draft | **0.717** one-step acceptance; **1.560** accepted concepts per trunk call at K=8 | `reports/EDIT-CURVE.md`, `reports/BREADTH.md` |
 | Long-key copy | key 6: **0.650** exact, 0.475 hit, 6.193 bits/span; matches concept exact but too expensive to replace it | `reports/BREADTH.md` |
 | Edit locality | `self` **-0.000** bpb, `return` +0.026, indent +0.028, space +0.146, newline +0.228; all round-trip | `reports/BREADTH.md` |
 
 Commands that produce them: `cml train --units codec`, `cml screen`,
-`cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`, `cml scale`.
+`cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`, `cml scale`,
+`cml delta --bench`.
 Scope: 5.21M-20.02M pointer; T1 uses 70k held-out bytes and 200 spans;
 T2 uses 24-48 MB train and the pinned 756,752 B test. The 50% target
 needs an equal-compute 20M byte control plus the pack/copy arms; those

@@ -1,8 +1,15 @@
 # TODO8 — the codec program: 6.3x today, 10x next
 
 Status: 2026-11-27. We are solving a codec, not testing an idea: the
-product ships at **6.3x**, the priced parse is at **9.4x**, and the 10x
-(50%) ladder below is a build order with budgets, not a question. Stage 0 is measured: copy saves
+product ships at **6.3x** single-file and **56.6x** on a 2% delta, the
+priced parse is at **9.4x**, and the 10x (50%) ladder below is a build
+order with budgets, not a question. Track B is shipped: `cml delta`
+codes a new file against the old file, round-trips exactly, and measures
+`0.141` bpb (**56.6x**) on 2% edits in 20 hunks and `0.287` bpb
+(**27.8x**) on scattered 2% edits. Track A's exact priced codec is
+measured on a 32 KB prefix at `1.076` bpb, so the `0.852` instrument
+is not promoted yet; the gap is the exact token and literal charge.
+Stage 0 is measured: copy saves
 `15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
 the static pack loses per-file. The concept pilot is measured: typed
 holes, exact realization, and a `0.230` bpb representation gain on
@@ -14,10 +21,10 @@ pay falls to `+0.012` against `+0.003` for bytes. The window check
 (§1.5) shows that trend was partly truncation: at `seq 256` the gap
 stops closing at `+0.008`, so bytes match the term model once a term
 fits the context. The 20M codec is at `1.488` payload /
-`1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
-shared bpb against a 20M byte control. RLFP is untested. The next move is
-a composition task that a byte context cannot recompute, plus the Stage 3
-copy proxy.
+`1.518` shared on the pinned 756,752 B test. The 50% target is `0.633`
+shared bpb against the 1.266 byte control. RLFP is untested. The next
+move is the exact-codec gap and the A2 rung; the delta product already
+carries the 10x claim.
 
 **Backup.** `TODO8.compression.md` is the original compression plan,
 unchanged: the state before the concept track, including its full Stage 1
@@ -28,9 +35,10 @@ Transformer, resume that plan; its Stage 0 step is already answered by
 ## 0. One claim, one target
 
 **We will ship** a lossless codec that is **10x+ on real code**: the
-single-file codec is measured to **0.852 (9.4x)** on the instrument and the
-delta arm turns edits into **50-300x**. The single-file 50% rung (0.633) is
-the research north star, costed below, not a gate on the product.
+single-file codec is measured to **0.852 (9.4x)** on the instrument, its
+exact 32 KB prefix is `1.076`, and the shipped delta arm reaches
+**27.8-56.6x** on edits. The single-file 50% rung (0.633) is the research
+north star, costed below, not a gate on the product.
 
 ## 0.1 The solve: three tracks, one critical path
 
@@ -44,6 +52,12 @@ A 2% edit copies ~98% of the file, so the payload is the literals only:
 expect **50-300x on small edits** and ~5x on unrelated files. Budget
 1 h CPU+GPU, no new trunk. This is the product's killer feature and it
 ships first.
+
+**Shipped 2026-11-27.** `cml delta` / `cml undelta` use `DeltaArm` and
+`delta_parse` in `codec.py`; the decoder holds the old file and refuses a
+wrong SHA-256. Measured on the pinned code test: `56.6x` for 2% edits in
+20 hunks, `27.8x` for scattered 2% edits (`reports/DELTA.md`). Both are
+exact and CPU-only. The delta track is complete; rows below are Track A.
 
 **Track A (research, single file): the rung ladder.** Cheap wins first,
 by value per hour; each rung is priced on the instrument in minutes and
@@ -63,6 +77,13 @@ delta arm's cross-file sharing. **The honest floor for the single-file
 codec is ~0.68-0.70, and the 10x product target is reached with the delta
 arm.** Both are worth building; the delta arm is the efficient route.
 
+**Exact-codec gate (2026-11-27).** `cml copycodec --priced --proof 32768`
+round-trips a 32 KB prefix at `1.076` bpb against a `1.436` stream-only
+arm. The `0.852` instrument is **not promoted**: the exact decoder pays
+about `0.22` bpb more at this size. Before A2, close that gap or label the
+instrument honestly. The gap is in exact literal context and token charge,
+not the parse.
+
 **Track C (capability, parallel): RLFP.** 2k pairs, CPU, 2 minutes; it
 tests the span policy and does not block A or B.
 
@@ -73,17 +94,21 @@ and are promoted only when a decoder proves them.
 ## 0.2 The scoreboard
 
 **Target.** 50% fewer bits per byte than a 20M byte LM on the pinned
-756,752 B code test; we are at 0.852 and climbing:
+756,752 B code test; the instrument is at 0.852, the exact 32 KB prefix
+at 1.076, and the delta arm at 0.141-0.287:
 
 | milestone | shared bpb | vs 1.265 byte | compression | state |
 |---|---:|---:|---:|---|
 | 20M byte control, 48 MB | **1.266** | 0% | 6.3x | **measured** |
 | 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured; bytes win, so capability is its claim |
 | copy + 4.86M byte | 1.393 | +10.0% | 5.8x | exact codec |
+| priced parse, exact 32 KB | 1.076 | -15.0% | 7.4x | exact prefix; 0.852 not promoted |
 | 20% | 1.012 | -20% | 7.9x | **met (instrument)** |
 | 30% | 0.886 | -30% | 9.0x | **met (instrument)** |
 | 40% | 0.759 | -40% | 10.5x | next rung |
 | **50%** | **0.633** | **-50%** | **12.6x** | single-file research target |
+| delta, 2% in 20 hunks | **0.141** | -88.8% | **56.6x** | **shipped, exact** |
+| delta, scattered 2% | 0.287 | -77.3% | 27.8x | shipped, exact |
 
 The denominator is the 20M byte control on the same train/test/steps:
 **1.265 / 1.266** (§1.8). The 4.86M byte model (`1.693 / 1.694`) and the
@@ -351,20 +376,38 @@ codec is `StaticByteCodec` at `1.266`, so the next step is an exact priced
 parse (a slow encode/decode pair) to turn `0.852` into a codec. The product
 CLI ships the exact codec until then.
 
+## 1.11 Exact priced codec and delta: measured 2026-11-27
+
+`cml copycodec --priced` calls `literal_bits` + `priced_parse`, then
+`CopyCodec` exactly; `cml delta` calls `delta_parse` + `DeltaArm`.
+
+| arm | bytes | payload | bpb | exact |
+|---|---:|---:|---:|---|
+| priced copy, 32 KB prefix, d448 | 32,768 | 4,409 | 1.076 | yes |
+| stream only, same 32 KB | 32,768 | 5,880 | 1.436 | yes |
+| delta, 2% in 20 hunks | 756,752 | 13,380 | 0.141 | yes |
+| delta, scattered 2% | 756,752 | 27,176 | 0.287 | yes |
+
+**Read.** The delta product is proven: `56.6x` for hunk edits and `27.8x`
+for scattered edits, both exact on the pinned test and CPU-only. The exact
+priced codec round-trips but pays `1.076` on 32 KB, so the `0.852`
+instrument is not reproduced; do not quote it as a codec. The exact decode
+costs 489 s for 32 KB, so a full 756 KB run is a batch job, not a screen.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 1.266 exact; 0.852 priced parse; 20%/30% met | delta arm (product v1); exact 0.852; A2-A3 (0.75) | product 10x |
+| **Compression** | 1.266 exact; 0.852 instrument; 1.076 exact 32 KB; delta 0.141-0.287 | close exact gap; A2-A3 (0.75) | product 10x |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
-| **T3 edit** | local, -0.012 | delta codec | survivors |
+| **T3 edit** | local, -0.012; delta 27.8-56.6x exact | hold, document | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
 | **Combination** | T1/T3/T4 separate | one T1-T4 arm | holds each gate |
 | **RLFP** | untested | 2k-pair pilot | +5 points |
-| **Scale** | 20M / 48 MB | 40M only after copy | equal compute |
+| **Scale** | 20M / 48 MB | 40M only after exact codec | equal compute |
 | **Evaluation** | 756 KB in-domain; per-file fails | adaptive/delta pack | honest claim |
-| **Product** | exact round-trip; copy exact | per-file/adaptive pack | shared bpb |
+| **Product** | single-file exact 6.3x; delta exact 27.8-56.6x | adaptive/per-file pack | shared bpb |
 | **Infrastructure** | checkpoint/resume; CPU probes | caches, no timer | no OOM |
 
 ## 3. The build ladder
@@ -573,9 +616,10 @@ fixes 1-10 KB files unless the pack charge falls below `0.2` bpb.
 
 ## 12. Implementation
 
-Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
-`stage0.py` (the three analyses and their renderers); the CLI is
-`cml.py`. Next changes, in this order:
+Done in `codec.py` (the `CopyArm`, `DeltaArm`, `lz_parse` and
+`delta_parse` primitives), `bytecodec.py` (`CopyCodec` and
+`priced_parse`) and `stage0.py` (the three analyses and their renderers);
+the CLI is `cml.py`. Next changes, in this order:
 
 1. **done** `cml coverage`: parse + measured unit arm per pack;
    `--sizes 256,512,1024,2048`; cached lexicons, no GPU.
@@ -604,7 +648,15 @@ Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
     measured as a loss at 1-100 KB and is not the answer.
 12. Reports: `COVERAGE.md` (done), `COPY.md` (done), `PER-FILE.md`
     (done), `COMPOSITION.md` (done), `CORTEX.md` (done),
-    `CORTEX-DEPTH.md` (done), `T2.md`, `RLFP.md`.
+    `CORTEX-DEPTH.md` (done), `DELTA.md` (done), `T2.md`, `RLFP.md`.
+13. **done** `cml delta OLD NEW` / `cml undelta --ref OLD`:
+    `DeltaArm` and `delta_parse`; exact, CPU-only; product v1.
+14. **done (partial)** `cml copycodec --priced --proof N`: exact priced
+    codec. It round-trips a 32 KB prefix at `1.076`, not the `0.852`
+    instrument; close the exact token/literal gap before A2.
+15. Next: A2 (2-4 KB horizon, 2 MB window, cap 512) on the instrument,
+    then reproduce it with the exact decoder. Do not run A3 before the
+    exact `0.852` gap is named and reduced.
 
 Commands after the build:
 
@@ -617,6 +669,10 @@ uv run cml cortex --pairs 30000 --depth 4 --steps 3000
 uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
 uv run cml cortex --depths 6,7 --seq 256 --tag seq256
 uv run cml copycodec --run codec-byte-model-code-756752 --bytes 756752
+uv run cml copycodec --run codec-byte-model-code-756752-d448-l8 \
+  --bytes 32768 --priced --proof 32768
+uv run cml delta --bench --bytes 756752 --depth 128 --hunks 20
+uv run cml delta OLD NEW && uv run cml undelta NEW.cmld --ref OLD
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --d 448 --layers 8 --scale-cap 48000000
 uv run cml perfile-model --run codec-byte-model-code-756752-d448-l8
@@ -626,10 +682,10 @@ uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
 Tests: the `active` run id, byte-model params, copy round-trip and
-determinism, per-file charge arithmetic, typed-hole arity, the MDL gate,
-exact realization and term round-trip, the unseen-edge split, the term
-stream round-trip, the matched pilot smoke, RLFP held-out split, and
-exact codec round-trip. No coverage target.
+determinism, delta parse/round-trip determinism, per-file charge arithmetic,
+typed-hole arity, the MDL gate, exact realization and term round-trip, the
+unseen-edge split, the term stream round-trip, the matched pilot smoke,
+RLFP held-out split, and exact codec round-trip. No coverage target.
 
 ## 13. Risks and counters
 
@@ -659,10 +715,10 @@ Value per hour, dependencies, budgets. One job at a time; total budget
 
 | # | track | step | target | budget | needs | if it plateaus |
 |---|---|---|---|---|---|---|
-| 1 | B | delta arm: LZ against the old file + literals | 50-300x on 2% edits | 1 h | old/new pairs | adaptive per-repo pack |
-| 2 | B | ship `cml delta` and document `products/codec` | product v1 | 1 h | step 1 | fall back to v0 |
-| 3 | A | priced parse, exact codec (32 KB, then full) | decode = input, ≤0.86 | 20 min | step 1 of §0.1 | fixed shapes + coarse totals |
-| 4 | A | A2: horizon 2-4 KB, 2 MB window, cap 512 | 0.80 | 30 min | cached bits | A3 |
+| 1 | B | **done** delta arm: LZ against the old file + literals | 27.8-56.6x, exact | 1 h | old/new pairs | adaptive per-repo pack |
+| 2 | B | **done** ship `cml delta` and document `products/codec` | product v1 | 1 h | step 1 | fall back to v0 |
+| 3 | A | **partial** priced parse, exact codec (32 KB, then full) | 1.076 at 32 KB; 0.852 not promoted | 20 min | step 1 of §0.1 | fixed shapes + coarse totals |
+| 4 | A | close the exact gap, then A2: horizon 2-4 KB, 2 MB window, cap 512 | exact 0.86, then 0.80 | 1 h | exact `0.852` gap named | A3 |
 | 5 | A | A3: two-pass literals | 0.75 | 1 h | A2 | A5 |
 | 6 | A | A5: code-aware context | 0.71 | 1 h | A3 | A4 |
 | 7 | A | A4: 30M trunk | 0.68 | 2 h | A5 | A6 |
@@ -682,11 +738,18 @@ dependence; a win there earns a scale-up. It blocks nothing above.
 a time, promote what round-trips, and never end a session without naming
 the next lever.
 
+**Next lever.** The exact 32 KB codec pays `1.076` against the `0.852`
+instrument. Name the charge: separate token bits from literal bits on the
+same 32 KB prefix, then price the exact token model. If that does not close
+the gap, use fixed shapes plus coarse totals before A2. Track B needs no
+further work to ship; its measured range is `27.8-56.6x`.
+
 ## References
 
 - `TODO7.md`: codec record and auditable product.
 - `cml/README.md`: the 50% target and progress map.
 - `cml/PLAN.md`: design and charge arithmetic.
+- `cml/reports/DELTA.md`: the shipped delta arm.
 - `reports/SCALE.md`, `reports/PORTFOLIO.md`, `reports/CONCEPT.md`,
   `reports/EDIT-CURVE.md`.
 - `cml/cml.py`, `cml/pointer.py`, `cml/codec.py`, `cml/bytecodec.py`.

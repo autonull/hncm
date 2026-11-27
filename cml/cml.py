@@ -6435,6 +6435,199 @@ def run_composition(pairs: int, depth: int, seed: int) -> int:
 
 
 CONTAINER = b"CMLC"
+DELTA_CONTAINER = b"CMLD"
+
+
+def _delta_arm(
+    window: int,
+    min_match: int,
+    cap: int,
+    depth: int,
+    old_bytes: int,
+    new_bytes: int,
+) -> "codec_mod.DeltaArm":
+    limit = max(old_bytes + new_bytes, window, 2)
+    return codec_mod.DeltaArm(window, min_match, cap, depth, max_distance=limit)
+
+
+def _mutate(data: bytes, rate: float, seed: int, hunks: int = 0) -> bytes:
+    """Replace spans totaling `rate` of the bytes: scattered or in `hunks`."""
+    rng = random.Random(seed)
+    new = bytearray(data)
+    total = max(1, int(len(data) * rate))
+    if hunks > 0:
+        width = max(1, total // hunks)
+        step = max(1, len(data) // hunks)
+        spans = [
+            (min(len(new) - width, k * step + rng.randrange(max(1, step // 2))), width)
+            for k in range(hunks)
+        ]
+    else:
+        width = 8
+        edits = max(1, total // width)
+        step = max(1, len(data) // edits)
+        spans = [
+            (min(len(new) - width, k * step + rng.randrange(max(1, step // 2))), width)
+            for k in range(edits)
+        ]
+    for pos, width in spans:
+        take = min(width, len(new) - pos)
+        word = f"/*{rng.randrange(1 << 24):06x}*/".encode()
+        new[pos : pos + take] = (word * (take // len(word) + 1))[:take]
+    return bytes(new)
+
+
+def run_delta(
+    old_path: Path | None,
+    new_path: Path | None,
+    out: Path | None,
+    window: int,
+    min_match: int,
+    cap: int,
+    depth: int,
+    bench: bool,
+    edits: float,
+    seed: int,
+    nbytes: int,
+    hunks: int,
+) -> int:
+    """Ship the delta arm: code a new version against the old file."""
+    from_paths = old_path is not None and new_path is not None
+    if bench == from_paths:
+        raise SystemExit("delta: pass OLD NEW or --bench, not both")
+    if bench:
+        corpus = _corpus("code")
+        old = corpus.test[:nbytes]
+        new = _mutate(old, edits, seed, hunks)
+        source = f"code sha {corpus.sha[:12]}"
+    else:
+        old = old_path.read_bytes()
+        new = new_path.read_bytes()
+        source = f"{old_path} -> {new_path}"
+
+    t0 = time.perf_counter()
+    arm = _delta_arm(window, min_match, cap, depth, len(old), len(new))
+    tokens = codec_mod.delta_parse(new, old, window, min_match, cap, depth)
+    payload = arm.encode(new, old, tokens)
+    if (
+        _delta_arm(window, min_match, cap, depth, len(old), len(new)).decode(
+            payload, len(new), old
+        )
+        != new
+    ):
+        raise SystemExit("delta: round-trip failed")
+    n = max(len(new), 1)
+    matches = sum(1 for length, _ in tokens if length)
+    copied = sum(length for length, _ in tokens if length)
+    delta_bpb = 8 * len(payload) / n
+    report = {
+        "id": "delta-bench" if bench else "delta-file",
+        "source": source,
+        "old_bytes": len(old),
+        "new_bytes": len(new),
+        "edits": edits if bench else None,
+        "hunks": hunks if bench else None,
+        "seed": seed if bench else None,
+        "window": window,
+        "min_match": min_match,
+        "cap": cap,
+        "depth": depth,
+        "tokens": len(tokens),
+        "matches": matches,
+        "copied_bytes": copied,
+        "copy_fraction": copied / n,
+        "payload_bytes": len(payload),
+        "payload_bpb": delta_bpb,
+        "ratio": len(new) / max(len(payload), 1),
+        "roundtrip": True,
+        "git": git_sha(),
+        "seconds": round(time.perf_counter() - t0, 2),
+    }
+    if not bench:
+        meta = {
+            "mode": "delta",
+            "n": len(new),
+            "ref_n": len(old),
+            "ref_sha": hashlib.sha256(old).hexdigest(),
+            "sha": hashlib.sha256(new).hexdigest(),
+            "window": window,
+            "min_match": min_match,
+            "cap": cap,
+            "depth": depth,
+            "git": report["git"],
+        }
+        head = json.dumps(meta).encode()
+        blob = DELTA_CONTAINER + struct.pack("<I", len(head)) + head + payload
+        target = out or new_path.with_suffix(new_path.suffix + ".cmld")
+        target.write_bytes(blob)
+        report["container"] = str(target)
+        report["container_bytes"] = len(blob)
+        print(
+            f"{new_path} -> {target}: {len(new):,} B -> {len(payload):,} B "
+            f"({delta_bpb:.3f} bpb, {report['ratio']:.1f}x), "
+            f"{time.perf_counter() - t0:.1f} s"
+        )
+        return 0
+
+    write_json(REPORTS / "delta.json", report)
+    lines = [
+        "# Delta arm: old file as dictionary",
+        "",
+        f"- pair `{source}`, {len(old):,} B old, {len(new):,} B new, "
+        f"{edits:.1%} replacement edits in {hunks or 'scattered'} spans, "
+        f"seed {seed}",
+        f"- window {window:,} B, min match {min_match}, cap {cap}, depth {depth}",
+        "- the decoder holds the old file and copies from it; it never searches",
+        "",
+        "| arm | payload B | bpb | ratio |",
+        "|---|---:|---:|---:|",
+        f"| raw new | {len(new):,} | 8.000 | 1.0x |",
+        f"| delta | {len(payload):,} | {delta_bpb:.3f} | {report['ratio']:.1f}x |",
+        "",
+        "## Read",
+        "",
+        f"- {matches:,} matches copy {copied / n:.1%} of the new file; "
+        f"the rest is literals.",
+        f"- the exact decoder reproduces all {len(new):,} B in {report['seconds']} s.",
+        "- 2% replacement edits leave long runs intact, so the delta arm "
+        "turns them into a handful of literal spans.",
+        "",
+    ]
+    text = "\n".join(lines)
+    write_text(REPORTS / "DELTA.md", text)
+    print(text)
+    return 0
+
+
+def run_undelta(path: Path, ref_path: Path, out: Path | None) -> int:
+    """Restore a `.cmld` file against its reference and check both digests."""
+    t0 = time.perf_counter()
+    blob = path.read_bytes()
+    if blob[:4] != DELTA_CONTAINER:
+        raise SystemExit("undelta: bad magic")
+    n_head = struct.unpack_from("<I", blob, 4)[0]
+    meta = json.loads(blob[8 : 8 + n_head])
+    old = ref_path.read_bytes()
+    if hashlib.sha256(old).hexdigest() != meta["ref_sha"]:
+        raise SystemExit("undelta: reference digest mismatch")
+    arm = _delta_arm(
+        meta["window"],
+        meta["min_match"],
+        meta["cap"],
+        meta["depth"],
+        len(old),
+        meta["n"],
+    )
+    new = arm.decode(blob[8 + n_head :], meta["n"], old)
+    if hashlib.sha256(new).hexdigest() != meta["sha"]:
+        raise SystemExit("undelta: digest mismatch")
+    target = out or path.with_suffix("")
+    target.write_bytes(new)
+    print(
+        f"{path} -> {target}: {len(new):,} B, digest ok, "
+        f"{time.perf_counter() - t0:.1f} s"
+    )
+    return 0
 
 
 def run_compress(path: Path, out: Path | None, run: str, proof: int) -> int:
@@ -6584,6 +6777,8 @@ def run_copycodec(
     window: int,
     min_match: int,
     cap: int,
+    priced: bool,
+    proof: int,
 ) -> int:
     """Stage 3 copy proxy: LZ tokens plus the trained trunk for literals."""
     import bytecodec
@@ -6596,8 +6791,20 @@ def run_copycodec(
     def fresh() -> "bytecodec.CopyCodec":
         return bytecodec.CopyCodec(bytecodec.StreamCoder(model), window, min_match, cap)
 
-    blob = fresh().encode(data)
-    if fresh().decode(blob, len(data)) != data:
+    tokens = None
+    if priced:
+        import bytecodec as bc
+
+        tokens = bc.priced_parse(
+            data,
+            bc.literal_bits(bc.FastByteCodec(model), data),
+            window,
+            min_match,
+            cap,
+        )
+    blob = fresh().encode(data, tokens)
+    want = min(proof, len(data)) if proof else len(data)
+    if fresh().decode(blob, want, limit=want) != data[:want]:
         raise SystemExit("copycodec: round-trip failed")
     n = max(len(data), 1)
     base = bytecodec.StreamCoder(model).encode(data)
@@ -6611,6 +6818,9 @@ def run_copycodec(
         "window": window,
         "min_match": min_match,
         "cap": cap,
+        "priced": priced,
+        "proof": want,
+        "matches": sum(1 for ell, _ in tokens if ell) if tokens else None,
         "payload_bytes": len(blob),
         "payload_bpb": 8 * len(blob) / n,
         "stream_bytes": len(base),
@@ -6629,6 +6839,7 @@ def run_copycodec(
         f"- run `{run}` on `{corpus_name}` sha `{corpus.sha[:12]}`, "
         f"held-out {len(data):,} B",
         f"- LZ window {window:,} B, min match {min_match}, cap {cap}",
+        f"- parse: {'priced DP against literal bits' if priced else 'greedy LZ'}",
         "- matches cost a token bit, a distance slot, raw slot bits and a",
         "  length symbol; literals and copied bytes advance the same trunk",
         "  cache, so the decoder rebuilds the literal context",
@@ -6645,8 +6856,9 @@ def run_copycodec(
         "",
         f"Took {report['seconds']:.0f} s on one GPU.",
     ]
-    write_json(REPORTS / "copy-model.json", report)
-    write_text(REPORTS / "COPY-MODEL.md", "\n".join(text) + "\n")
+    stem = "COPY-PRICED" if priced else "COPY-MODEL"
+    write_json(REPORTS / f"{stem.lower()}.json", report)
+    write_text(REPORTS / f"{stem}.md", "\n".join(text) + "\n")
     print("\n".join(text))
     return 0
 
@@ -8026,6 +8238,23 @@ def main(argv: list[str] | None = None) -> int:
     zd = sub.add_parser("decompress")
     zd.add_argument("path", type=Path)
     zd.add_argument("-o", "--out", type=Path)
+    dl = sub.add_parser("delta")
+    dl.add_argument("old", type=Path, nargs="?")
+    dl.add_argument("new", type=Path, nargs="?")
+    dl.add_argument("-o", "--out", type=Path)
+    dl.add_argument("--window", type=int, default=1 << 20)
+    dl.add_argument("--min-match", type=int, default=8)
+    dl.add_argument("--cap", type=int, default=256)
+    dl.add_argument("--depth", type=int, default=16)
+    dl.add_argument("--bench", action="store_true")
+    dl.add_argument("--edits", type=float, default=0.02)
+    dl.add_argument("--hunks", type=int, default=0)
+    dl.add_argument("--seed", type=int, default=0)
+    dl.add_argument("--bytes", type=int, default=756_752)
+    du = sub.add_parser("undelta")
+    du.add_argument("path", type=Path)
+    du.add_argument("--ref", type=Path, required=True)
+    du.add_argument("-o", "--out", type=Path)
     pf = sub.add_parser("perfile-model")
     pf.add_argument("--run", required=True)
     pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -8039,6 +8268,8 @@ def main(argv: list[str] | None = None) -> int:
     cc.add_argument("--window", type=int, default=65536)
     cc.add_argument("--min-match", type=int, default=8)
     cc.add_argument("--cap", type=int, default=256)
+    cc.add_argument("--priced", action="store_true")
+    cc.add_argument("--proof", type=int, default=0)
     cx = sub.add_parser("cortex")
     cx.add_argument("--pairs", type=int, default=30_000)
     cx.add_argument("--depth", type=int, default=4)
@@ -8238,10 +8469,36 @@ def main(argv: list[str] | None = None) -> int:
         return run_compress(a.path, a.out, a.run, a.proof)
     if a.cmd == "decompress":
         return run_decompress(a.path, a.out)
+    if a.cmd == "delta":
+        return run_delta(
+            a.old,
+            a.new,
+            a.out,
+            a.window,
+            a.min_match,
+            a.cap,
+            a.depth,
+            a.bench,
+            a.edits,
+            a.seed,
+            a.bytes,
+            a.hunks,
+        )
+    if a.cmd == "undelta":
+        return run_undelta(a.path, a.ref, a.out)
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":
-        return run_copycodec(a.run, a.corpus, a.bytes, a.window, a.min_match, a.cap)
+        return run_copycodec(
+            a.run,
+            a.corpus,
+            a.bytes,
+            a.window,
+            a.min_match,
+            a.cap,
+            a.priced,
+            a.proof,
+        )
     if a.cmd == "cortex":
         return run_cortex(
             a.pairs,
