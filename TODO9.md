@@ -14,7 +14,9 @@ funded; the benchmark decides which one wins.
 | 3 CLI | **done** | `cml editdata`, `cml editlm` |
 | 4 retrieval G0 | **done** | `cml/reports/EDIT-LM.md`, `cml/reports/editlm.json` |
 | 5 E1 locator | **attempted; GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
-| 6-11 models | **not started** | next session, in §8 order |
+| 6 E2 writer | **blocked** | needs a locator that passes GE1 |
+| 7 C1 copy-SFT | **attempted; GC1 fail** | `cml/reports/EDIT-COPY.md` |
+| 8-11 D/H/V | **not started** | blocked by GC1 |
 
 **G0 recorded: pass.** Retrieval on 1,648 held-out `tiangolo/fastapi`
 commits: exact `0.000`, valid decode `0.027`, output `0.991x`, line edit
@@ -27,9 +29,10 @@ Artifacts are local: manifest `cml/runs/edit-manifest.json` (ignored),
 blob cache `~/.cache/hncm/edit` (308 MB). Reports are tracked. Reuse
 them; do not re-mine unless the config changes.
 
-**Next, in order:** E1b locator (change the input, then rerun GE1), C1
-copy-SFT (teacher-forced actions; gate GC1), then E2 writer or DPO. Do
-not train D before C1 has a baseline. Do not tune on test.
+**Next:** stop capability training. Both tracks failed their first gate, so
+package the exact delta product (`cml delta`) and keep the benchmark. If
+work resumes, the lever is the task/data, not more steps. Do not train D,
+H, or V without a gate that passes.
 
 **E1 recorded: GE1 fail.** The 5.2M byte locator (`d256 l6`, 1024 B
 window, 1200 steps) scores byte F1 `0.000` against the message-only
@@ -41,6 +44,20 @@ byte pooling) on the same 50 files scored `0.055` with an unstable loss.
 The next lever is the model input/architecture (explicit message-to-file
 cross-attention or a different decoder), not more steps on this trunk. E2
 must not reuse this locator. C1 is independent and should run first.
+
+**C1 recorded: GC1 fail.** Pilot on files that fit one 1024 B window:
+596 train, 200 val, 1,000 steps, 5.2M causal byte LM. Exact `0.000`,
+valid program `0.370`, output `0.044x` of the new file. A 5,000-step run
+was worse (valid `0.300`, output `0.086x`). Constrained decoding keeps the
+bytes grammar-valid, but `assemble` rejects many programs and no file is
+exact. Since exact is zero, a +10-point lift over any baseline is
+impossible; the full-file arm is not needed to reject this arm. Do not
+start DPO or holes from it.
+
+**Program decision.** Both funded tracks now fail their first gate: GE1
+`0.000`, GC1 `0.000`. Per §7, stop capability training and ship the delta
+product. The next lever is the task/data (retrieval prior, smaller
+grammar, or a different edit distribution), not more GPU hours.
 
 ## 0. One claim, two formulations
 
@@ -214,6 +231,10 @@ GE1 recorded 2026-11-27: byte F1 `0.000` versus the message-only baseline
 no usable spans and the loss is unstable; see `cml/reports/EDIT-LOCATOR.md`.
 Do not run E2 on this locator.
 
+GC1 recorded 2026-11-27: exact `0.000`, valid `0.370`, output `0.044x` on
+200 val files, fail. Exact zero makes a +10-point lift impossible; see
+`cml/reports/EDIT-COPY.md`. Do not start DPO or holes from this arm.
+
 If G0 shows retrieval solving the task, harden before training. If GE2 and
 GC1 both fail, stop and ship the delta product. A gate that is not met
 names the next lever; it does not end the program.
@@ -233,6 +254,7 @@ Add two modules and one CLI command. Keep `TODO8` codec code untouched.
 6. `cml editlm --arm compiler`: E2; writer + exact assembler. Wait for a
    locator that passes GE1.
 7. `cml editlm --arm copy --sft`: C1; teacher-forced delta actions.
+   **Attempted; GC1 fail** (`reports/EDIT-COPY.md`).
 8. `cml editlm --arm copy --dpo`: D; sample K, score exact/test pass,
    build preference pairs, DPO. No learned reward model.
 9. `cml editlm --arm copy --rlfp`: G only if D plateaus.
@@ -254,6 +276,9 @@ uv run cml editlm --arm compiler --manifest runs/edit-manifest.json \
   --from edit-locator --steps 2000
 uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
   --from codec-byte-model-code-756752-d448-l8 --steps 2000
+uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
+  --split val --limit 200 --steps 1000
+# D/H/V only after a gate passes; both funded gates failed.
 uv run cml editlm --arm copy --dpo --manifest runs/edit-manifest.json \
   --from edit-copy-sft --pairs 2000
 uv run cml editlm --arm holes --sft --manifest runs/edit-manifest.json \
@@ -317,22 +342,20 @@ benchmark is the foundation for both tracks.
 
 ## 12. Next-session start
 
-Read this file first, then `cml/reports/EDIT-LM.md` and
-`cml/reports/EDIT-LOCATOR.md`. G0 passed; GE1 failed. Reuse the manifest
-and blob cache; do not re-mine unless the config changes.
+Read this file first, then `cml/reports/EDIT-LM.md`,
+`cml/reports/EDIT-LOCATOR.md`, and `cml/reports/EDIT-COPY.md`. G0 passed;
+GE1 and GC1 both failed.
 
-Remaining work, in order:
+**Stop capability training.** Ship `cml delta`: it is exact, CPU-only, and
+`56.6x` on hunk edits. Keep the Exact Edit Bench and both reports as the
+foundation. Do not train DPO, holes, or rerank from a zero-exact arm.
 
-1. C1 copy-SFT: teacher-forced `dump_actions(copy_actions(new, old))`
-   targets; gate GC1 against the full-file baseline. Run this first: it is
-   independent of the locator, and Track C is the original bet.
-2. E1b locator: change the model input, not the budget. Line-level pooling
-   on the same trunk scored `0.055` on 50 files. Try explicit
-   message-to-file cross-attention or a different decoder; rerun GE1.
-3. Only after a pass: E2 writer (`--arm compiler`), D (DPO), H (holes),
-   V (rerank).
+If the capability work resumes, change the task/data, not the schedule:
 
-Do not train D before C1 has a recorded baseline. Do not tune on test.
+1. retrieval prior or a smaller action grammar (C1 family);
+2. explicit message-to-file cross-attention (E1 family);
+3. a different edit distribution with longer, less ambiguous messages.
+
 Do not raise `max_diff` to make exact match easier; a gate that fails names
 the next lever, not a new goal.
 

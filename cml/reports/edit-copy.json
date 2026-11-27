@@ -1,0 +1,2114 @@
+{
+ "arm": "copy-sft",
+ "split": "val",
+ "manifest": {
+  "path": "runs/edit-manifest.json",
+  "sha256": "02c8c565422357739fdd44b87f5eeadd25231fc23a7283600bb7c42ca984b289",
+  "config": {
+   "repos": [
+    "encode/httpx",
+    "pallets/flask",
+    "psf/requests",
+    "pytest-dev/pytest",
+    "tiangolo/fastapi"
+   ],
+   "max_file": 65536,
+   "max_diff": 0.2,
+   "diff_metric": "changed lines / new lines",
+   "limit": 0,
+   "refresh": false
+  },
+  "heads": {
+   "encode/httpx": "e347fb5e93b91f7cf63a575f595f33db8d90fe20",
+   "pallets/flask": "49943b5a94413a530761350f04e896f76e8d620e",
+   "psf/requests": "3c7baaa05ab4aa49cc819ce3a819d260de19c157",
+   "pytest-dev/pytest": "71e8b57bcd1c1f352d888f1eb4f8575b29804ad4",
+   "tiangolo/fastapi": "05e6df7e906c3decba377c37548019973f40bf15"
+  },
+  "counts": {
+   "train": 5672,
+   "val": 5491,
+   "test": 1648
+  },
+  "splits": {
+   "train": [
+    "encode/httpx",
+    "pallets/flask",
+    "psf/requests"
+   ],
+   "val": [
+    "pytest-dev/pytest"
+   ],
+   "test": [
+    "tiangolo/fastapi"
+   ]
+  }
+ },
+ "config": {
+  "seed": 0,
+  "steps": 1000,
+  "split": "val",
+  "limit": 200,
+  "win": 1024,
+  "msg": 192,
+  "params": 5175552,
+  "train_files": 596,
+  "eval_files": 200,
+  "actions_max": 256
+ },
+ "copy": {
+  "n": 200,
+  "exact": 0.0,
+  "valid": 0.37,
+  "edit_distance": 0.3116187563313937,
+  "output_ratio": 0.04434963970448271,
+  "items": [
+   {
+    "id": "pytest-00be7c07390f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 13,
+    "output_ratio": 0.066,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-01a248d2a987",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 14,
+    "output_ratio": 0.0297,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-0285c96337ec",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 31,
+    "target_actions": 19,
+    "output_ratio": 0.102,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-02d4b3d75fd9",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-0540d72c8761",
+    "repo": "pytest-dev/pytest",
+    "path": "changelog/_template.rst",
+    "exact": false,
+    "actions": 35,
+    "target_actions": 24,
+    "output_ratio": 0.0408,
+    "edit_distance": 0.013
+   },
+   {
+    "id": "pytest-060cbef2604c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-06718da5d6b5",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 22,
+    "target_actions": 18,
+    "output_ratio": 0.0724,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-07b380bb3a7e",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 14,
+    "output_ratio": 0.0795,
+    "edit_distance": 0.7391
+   },
+   {
+    "id": "pytest-083285948f2a",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 31,
+    "target_actions": 14,
+    "output_ratio": 0.1026,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-08432c3e97b8",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 24,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0256
+   },
+   {
+    "id": "pytest-0a07b7104666",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 14,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-0b1e9ba270ac",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 86,
+    "target_actions": 16,
+    "output_ratio": 0.2848,
+    "edit_distance": 0.7
+   },
+   {
+    "id": "pytest-0d5f52b127e7",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 14,
+    "output_ratio": 0.0166,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-0d8491a4ecf9",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 43,
+    "target_actions": 63,
+    "output_ratio": 0.0468,
+    "edit_distance": 0.3438
+   },
+   {
+    "id": "pytest-0d9450d24b0f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0168,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-0e0f7813327c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 27,
+    "target_actions": 17,
+    "output_ratio": 0.0906,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-11f6dc9de6ee",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 45,
+    "target_actions": 19,
+    "output_ratio": 0.149,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-1367e030b752",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 101,
+    "target_actions": 13,
+    "output_ratio": 0.3378,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-1413f45b6f46",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0198,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-155886bb54ed",
+    "repo": "pytest-dev/pytest",
+    "path": "py/apigen/todo.txt",
+    "exact": false,
+    "actions": 19,
+    "target_actions": 138,
+    "output_ratio": 0.0201,
+    "edit_distance": 0.0492
+   },
+   {
+    "id": "pytest-16fae5ed73f9",
+    "repo": "pytest-dev/pytest",
+    "path": "py/io/dupfile.py",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 41,
+    "output_ratio": 0.0347,
+    "edit_distance": 0.0909
+   },
+   {
+    "id": "pytest-17ac05b58f53",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 19,
+    "output_ratio": 0.0203,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-1839713b71db",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 27,
+    "target_actions": 13,
+    "output_ratio": 0.0888,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-18e0a1828f7b",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 35,
+    "target_actions": 25,
+    "output_ratio": 0.0401,
+    "edit_distance": 0.0435
+   },
+   {
+    "id": "pytest-195d066ff8ab",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 38,
+    "target_actions": 66,
+    "output_ratio": 0.0393,
+    "edit_distance": 0.025
+   },
+   {
+    "id": "pytest-1a7641cf8819",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 44,
+    "target_actions": 21,
+    "output_ratio": 0.1447,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-1d0261e5cb94",
+    "repo": "pytest-dev/pytest",
+    "path": ".coveragerc",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 32,
+    "output_ratio": 0.0363,
+    "edit_distance": 0.0164
+   },
+   {
+    "id": "pytest-1d5215ab4f23",
+    "repo": "pytest-dev/pytest",
+    "path": "AUTHORS",
+    "exact": false,
+    "actions": 25,
+    "target_actions": 56,
+    "output_ratio": 0.0255,
+    "edit_distance": 0.1654
+   },
+   {
+    "id": "pytest-1ea10c20dfea",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 16,
+    "output_ratio": 0.0165,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-1eb83706b6c7",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 13,
+    "output_ratio": 0.0131,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-20bd56f4b2fd",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/_templates/layout.html",
+    "exact": false,
+    "actions": 47,
+    "target_actions": 74,
+    "output_ratio": 0.0527,
+    "edit_distance": 0.037
+   },
+   {
+    "id": "pytest-210bdde65cb7",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 27,
+    "target_actions": 14,
+    "output_ratio": 0.0906,
+    "edit_distance": 0.7
+   },
+   {
+    "id": "pytest-222fdd4a5830",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 13,
+    "output_ratio": 0.0297,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-22a17dba4e0d",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 14,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-22da561ae5bc",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/release-3.0.6.rst",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 29,
+    "output_ratio": 0.0161,
+    "edit_distance": 0.0606
+   },
+   {
+    "id": "pytest-23825f2983db",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 17,
+    "output_ratio": 0.0528,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-23aac10391bb",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 25,
+    "target_actions": 14,
+    "output_ratio": 0.0822,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-23e343af6018",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 33,
+    "output_ratio": 0.0327,
+    "edit_distance": 0.087
+   },
+   {
+    "id": "pytest-24abe4eb03f6",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 17,
+    "output_ratio": 0.0792,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-2516c3978829",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 17,
+    "output_ratio": 0.0436,
+    "edit_distance": 0.7
+   },
+   {
+    "id": "pytest-25aed0dca88b",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/_templates/globaltoc.html",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 46,
+    "output_ratio": 0.0339,
+    "edit_distance": 0.0286
+   },
+   {
+    "id": "pytest-26215b8f795a",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 22,
+    "output_ratio": 0.0777,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-27469b99c7e2",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 17,
+    "output_ratio": 0.0439,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-29222dffc9d9",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 33,
+    "target_actions": 66,
+    "output_ratio": 0.0353,
+    "edit_distance": 0.2294
+   },
+   {
+    "id": "pytest-2a8463c7455d",
+    "repo": "pytest-dev/pytest",
+    "path": ".pre-commit-config.yaml",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 119,
+    "output_ratio": 0.0283,
+    "edit_distance": 0.0508
+   },
+   {
+    "id": "pytest-2b127394122a",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 19,
+    "output_ratio": 0.0331,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-2cba2237cdbf",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 22,
+    "target_actions": 17,
+    "output_ratio": 0.0537,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-2d4e27daf2ef",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 22,
+    "output_ratio": 0.0391,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-2d6206b89a78",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 13,
+    "output_ratio": 0.0462,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-2e50788b6d74",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 14,
+    "output_ratio": 0.022,
+    "edit_distance": 0.7021
+   },
+   {
+    "id": "pytest-304ab8495e11",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 14,
+    "output_ratio": 0.0462,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-31bba4e087de",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgtags",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 70,
+    "output_ratio": 0.0056,
+    "edit_distance": 0.3939
+   },
+   {
+    "id": "pytest-31f114e51f0e",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/index.rst",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 27,
+    "output_ratio": 0.0223,
+    "edit_distance": 0.4023
+   },
+   {
+    "id": "pytest-3231199a092f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 13,
+    "output_ratio": 0.033,
+    "edit_distance": 0.3889
+   },
+   {
+    "id": "pytest-33951d48f18f",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/examples.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 25,
+    "output_ratio": 0.099,
+    "edit_distance": 0.04
+   },
+   {
+    "id": "pytest-34b898b47e32",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/index.rst",
+    "exact": false,
+    "actions": 29,
+    "target_actions": 30,
+    "output_ratio": 0.0317,
+    "edit_distance": 0.6341
+   },
+   {
+    "id": "pytest-37cf4693cf58",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 17,
+    "output_ratio": 0.0426,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-383774db1057",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 63,
+    "target_actions": 19,
+    "output_ratio": 0.0857,
+    "edit_distance": 0.0435
+   },
+   {
+    "id": "pytest-39f930635786",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 14,
+    "output_ratio": 0.0297,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-3ab94544b9f3",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgignore",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 25,
+    "output_ratio": 0.0392,
+    "edit_distance": 0.3443
+   },
+   {
+    "id": "pytest-3b230e06dbcc",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 13,
+    "output_ratio": 0.0452,
+    "edit_distance": 0.4167
+   },
+   {
+    "id": "pytest-3b798e54221f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 21,
+    "target_actions": 17,
+    "output_ratio": 0.0511,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-3cf82c6594e5",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 38,
+    "target_actions": 57,
+    "output_ratio": 0.0422,
+    "edit_distance": 0.0244
+   },
+   {
+    "id": "pytest-3d8b61c2467d",
+    "repo": "pytest-dev/pytest",
+    "path": "py/doc/io.txt",
+    "exact": false,
+    "actions": 40,
+    "target_actions": 25,
+    "output_ratio": 0.0453,
+    "edit_distance": 0.4667
+   },
+   {
+    "id": "pytest-3e108012d9d6",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 13,
+    "output_ratio": 0.0462,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-3e41c3cbb39a",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 30,
+    "output_ratio": 0.0167,
+    "edit_distance": 0.0244
+   },
+   {
+    "id": "pytest-3f463206f7b4",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 14,
+    "output_ratio": 0.0167,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-433efaeaa932",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 12,
+    "target_actions": 14,
+    "output_ratio": 0.04,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-442b09ed9f64",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 14,
+    "output_ratio": 0.0658,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-44afed9b13cd",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 10,
+    "output_ratio": 0.0328,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-45ced1dc056d",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/release-6.0.0.rst",
+    "exact": false,
+    "actions": 25,
+    "target_actions": 21,
+    "output_ratio": 0.0277,
+    "edit_distance": 0.025
+   },
+   {
+    "id": "pytest-47e56e0deed9",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 63,
+    "target_actions": 32,
+    "output_ratio": 0.0738,
+    "edit_distance": 0.0968
+   },
+   {
+    "id": "pytest-48ec7d28c648",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/PULL_REQUEST_TEMPLATE.md",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 27,
+    "output_ratio": 0.0242,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-496196b15c2c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 17,
+    "output_ratio": 0.0462,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-4a8cefbf64ac",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0146,
+    "edit_distance": 0.6316
+   },
+   {
+    "id": "pytest-4b710010a65b",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgtags",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 69,
+    "output_ratio": 0.0141,
+    "edit_distance": 0.3548
+   },
+   {
+    "id": "pytest-4c894f20a1df",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 8,
+    "target_actions": 18,
+    "output_ratio": 0.0195,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-4d31ea831603",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/test_modimport.py",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 175,
+    "output_ratio": 0.0207,
+    "edit_distance": 0.087
+   },
+   {
+    "id": "pytest-4e3dd21506a9",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 19,
+    "target_actions": 115,
+    "output_ratio": 0.0218,
+    "edit_distance": 0.087
+   },
+   {
+    "id": "pytest-4eebfb2f1905",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 16,
+    "output_ratio": 0.02,
+    "edit_distance": 0.6216
+   },
+   {
+    "id": "pytest-5096a8cbe182",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0167,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-51742e14a157",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 17,
+    "output_ratio": 0.0429,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-524025216469",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/contents.txt",
+    "exact": false,
+    "actions": 40,
+    "target_actions": 26,
+    "output_ratio": 0.099,
+    "edit_distance": 0.037
+   },
+   {
+    "id": "pytest-5366cd2d4b79",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 13,
+    "output_ratio": 0.0433,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-53a74feea7ab",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 18,
+    "target_actions": 13,
+    "output_ratio": 0.0592,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-549cc512f7ac",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 16,
+    "output_ratio": 0.0131,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-5855f65d0fbc",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 17,
+    "output_ratio": 0.0391,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-5a7a91b4188f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 19,
+    "output_ratio": 0.0303,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-5ae9e4761b42",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 36,
+    "target_actions": 17,
+    "output_ratio": 0.1208,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-5d20e285387d",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 19,
+    "output_ratio": 0.0331,
+    "edit_distance": 0.4167
+   },
+   {
+    "id": "pytest-5e081162df92",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 14,
+    "output_ratio": 0.0297,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-6053bb8d6a00",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-62ef87579647",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-6359e75ff891",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/cx_freeze/runtests_setup.py",
+    "exact": false,
+    "actions": 26,
+    "target_actions": 18,
+    "output_ratio": 0.0544,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-643845feb76f",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 13,
+    "output_ratio": 0.066,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-6514041a351a",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 19,
+    "output_ratio": 0.0197,
+    "edit_distance": 0.6216
+   },
+   {
+    "id": "pytest-65cbf591d826",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgignore",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 19,
+    "output_ratio": 0.0421,
+    "edit_distance": 0.0196
+   },
+   {
+    "id": "pytest-684d7f86685e",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/_templates/layout.html",
+    "exact": false,
+    "actions": 30,
+    "target_actions": 19,
+    "output_ratio": 0.0417,
+    "edit_distance": 0.4211
+   },
+   {
+    "id": "pytest-6a1685baa930",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0167,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-6b661795cf07",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/links.inc",
+    "exact": false,
+    "actions": 28,
+    "target_actions": 44,
+    "output_ratio": 0.0295,
+    "edit_distance": 0.0233
+   },
+   {
+    "id": "pytest-6cba4e6c1af2",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0161,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-6fa58fd8c9f4",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 15,
+    "output_ratio": 0.0374,
+    "edit_distance": 0.0244
+   },
+   {
+    "id": "pytest-711cee58b5d4",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 17,
+    "output_ratio": 0.066,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-723e41481457",
+    "repo": "pytest-dev/pytest",
+    "path": "AUTHORS",
+    "exact": false,
+    "actions": 21,
+    "target_actions": 35,
+    "output_ratio": 0.0386,
+    "edit_distance": 0.0294
+   },
+   {
+    "id": "pytest-7305adfdbafd",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/index.rst",
+    "exact": false,
+    "actions": 21,
+    "target_actions": 25,
+    "output_ratio": 0.0265,
+    "edit_distance": 0.0204
+   },
+   {
+    "id": "pytest-7421f3bb94df",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 16,
+    "output_ratio": 0.0429,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-7541c5a999e1",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 11,
+    "target_actions": 17,
+    "output_ratio": 0.0364,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-7678f891f96e",
+    "repo": "pytest-dev/pytest",
+    "path": "scripts/report-coverage.sh",
+    "exact": false,
+    "actions": 19,
+    "target_actions": 98,
+    "output_ratio": 0.0401,
+    "edit_distance": 0.0857
+   },
+   {
+    "id": "pytest-773b8b69dd7a",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgignore",
+    "exact": false,
+    "actions": 8,
+    "target_actions": 28,
+    "output_ratio": 0.0161,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-7783fb1b1ebd",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0199,
+    "edit_distance": 0.6
+   },
+   {
+    "id": "pytest-7a06bc24161b",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 14,
+    "output_ratio": 0.0132,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-7ca1bc90400e",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/FUNDING.yml",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 28,
+    "output_ratio": 0.0229,
+    "edit_distance": 0.8
+   },
+   {
+    "id": "pytest-7d721d2b9338",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0168,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-7dab2e1efedc",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 55,
+    "output_ratio": 0.0104,
+    "edit_distance": 0.7143
+   },
+   {
+    "id": "pytest-7f24cc2feb87",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/release-5.3.2.rst",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 15,
+    "output_ratio": 0.0237,
+    "edit_distance": 0.0189
+   },
+   {
+    "id": "pytest-80778eb3aed5",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/examples.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 19,
+    "output_ratio": 0.0904,
+    "edit_distance": 0.4737
+   },
+   {
+    "id": "pytest-818de59080a3",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgtags",
+    "exact": false,
+    "actions": 8,
+    "target_actions": 72,
+    "output_ratio": 0.0091,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-83b022078855",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 17,
+    "output_ratio": 0.0772,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-8490ff52774b",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 19,
+    "output_ratio": 0.0198,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-85c5bd26b6d9",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 37,
+    "target_actions": 18,
+    "output_ratio": 0.1213,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-864338de71d6",
+    "repo": "pytest-dev/pytest",
+    "path": "scripts/report-coverage.sh",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 14,
+    "output_ratio": 0.0313,
+    "edit_distance": 0.0556
+   },
+   {
+    "id": "pytest-875bcd4224f8",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/index.rst",
+    "exact": false,
+    "actions": 17,
+    "target_actions": 29,
+    "output_ratio": 0.021,
+    "edit_distance": 0.6341
+   },
+   {
+    "id": "pytest-87bbbaa0dc55",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 17,
+    "output_ratio": 0.0297,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-8872e8e7c751",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-897b5a3bd6c4",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 28,
+    "target_actions": 19,
+    "output_ratio": 0.0921,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-8b3550c6cb4e",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 36,
+    "target_actions": 17,
+    "output_ratio": 0.1208,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-8c0dfb525da9",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 23,
+    "output_ratio": 0.0576,
+    "edit_distance": 0.6923
+   },
+   {
+    "id": "pytest-8c894f512036",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 17,
+    "output_ratio": 0.0792,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-8ce76c307e8e",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/stale.yml",
+    "exact": false,
+    "actions": 13,
+    "target_actions": 19,
+    "output_ratio": 0.0177,
+    "edit_distance": 0.4211
+   },
+   {
+    "id": "pytest-8e67dd13e756",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/_templates/links.html",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 49,
+    "output_ratio": 0.0393,
+    "edit_distance": 0.0909
+   },
+   {
+    "id": "pytest-904637baa746",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 16,
+    "output_ratio": 0.0297,
+    "edit_distance": 0.8
+   },
+   {
+    "id": "pytest-913d93debb75",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 17,
+    "output_ratio": 0.0098,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-919ae9d7c12b",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 13,
+    "output_ratio": 0.0134,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-923174718efe",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 153,
+    "output_ratio": 0.0172,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-92cd7950e685",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 4,
+    "target_actions": 16,
+    "output_ratio": 0.0132,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-9417aeb2d800",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 14,
+    "output_ratio": 0.0461,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-9446f024df84",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 17,
+    "output_ratio": 0.0532,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-958981cab1dc",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 25,
+    "target_actions": 13,
+    "output_ratio": 0.0833,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-9666efad756b",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 16,
+    "output_ratio": 0.0669,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-976549cc8860",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 39,
+    "target_actions": 31,
+    "output_ratio": 0.0481,
+    "edit_distance": 0.0435
+   },
+   {
+    "id": "pytest-98b008ff6ca6",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 18,
+    "output_ratio": 0.0122,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-9ae64aae5615",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/pytest.ini",
+    "exact": false,
+    "actions": 8,
+    "target_actions": 33,
+    "output_ratio": 0.0385,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-9c5b6fbab239",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 19,
+    "output_ratio": 0.0331,
+    "edit_distance": 0.6571
+   },
+   {
+    "id": "pytest-9c8937b4800c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 16,
+    "output_ratio": 0.0297,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-9e867ce8642d",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/PULL_REQUEST_TEMPLATE.md",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 70,
+    "output_ratio": 0.0226,
+    "edit_distance": 0.2143
+   },
+   {
+    "id": "pytest-9eacaef044dc",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/FUNDING.yml",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 28,
+    "output_ratio": 0.0385,
+    "edit_distance": 0.0909
+   },
+   {
+    "id": "pytest-9fa6ca885a14",
+    "repo": "pytest-dev/pytest",
+    "path": "bin-for-dist/hudson.py",
+    "exact": false,
+    "actions": 40,
+    "target_actions": 26,
+    "output_ratio": 0.0485,
+    "edit_distance": 0.0385
+   },
+   {
+    "id": "pytest-a0a37adfb205",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 19,
+    "output_ratio": 0.0497,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-a20c6d072d70",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/_getdoctarget.py",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 55,
+    "output_ratio": 0.0208,
+    "edit_distance": 0.0625
+   },
+   {
+    "id": "pytest-a2974dd06795",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/mark.rst",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 63,
+    "output_ratio": 0.0266,
+    "edit_distance": 0.0323
+   },
+   {
+    "id": "pytest-a3cf2ad3bcc4",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 14,
+    "output_ratio": 0.0528,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-a5bc98136d9f",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 31,
+    "output_ratio": 0.0278,
+    "edit_distance": 0.025
+   },
+   {
+    "id": "pytest-a72660795b63",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 21,
+    "target_actions": 14,
+    "output_ratio": 0.0705,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-a756dc8106ba",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/contents.txt",
+    "exact": false,
+    "actions": 25,
+    "target_actions": 21,
+    "output_ratio": 0.0661,
+    "edit_distance": 0.0769
+   },
+   {
+    "id": "pytest-a7de613ed031",
+    "repo": "pytest-dev/pytest",
+    "path": "py/conftest.py",
+    "exact": false,
+    "actions": 31,
+    "target_actions": 44,
+    "output_ratio": 0.0417,
+    "edit_distance": 0.0357
+   },
+   {
+    "id": "pytest-a9b3d41be319",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 11,
+    "target_actions": 17,
+    "output_ratio": 0.0369,
+    "edit_distance": 0.7
+   },
+   {
+    "id": "pytest-aa4308883cc5",
+    "repo": "pytest-dev/pytest",
+    "path": "tox.ini",
+    "exact": false,
+    "actions": 23,
+    "target_actions": 20,
+    "output_ratio": 0.0567,
+    "edit_distance": 0.0455
+   },
+   {
+    "id": "pytest-aaa547e7638e",
+    "repo": "pytest-dev/pytest",
+    "path": "MANIFEST.in",
+    "exact": false,
+    "actions": 17,
+    "target_actions": 74,
+    "output_ratio": 0.0291,
+    "edit_distance": 0.0645
+   },
+   {
+    "id": "pytest-ab03c0c16101",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0168,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-abfae83130a6",
+    "repo": "pytest-dev/pytest",
+    "path": "extra/setup-py.test/setup.py",
+    "exact": false,
+    "actions": 18,
+    "target_actions": 14,
+    "output_ratio": 0.0571,
+    "edit_distance": 0.0435
+   },
+   {
+    "id": "pytest-ac9c70926cb7",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 21,
+    "target_actions": 13,
+    "output_ratio": 0.0705,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-ae89436d9734",
+    "repo": "pytest-dev/pytest",
+    "path": "AUTHORS",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 21,
+    "output_ratio": 0.0244,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-aeca93f0b312",
+    "repo": "pytest-dev/pytest",
+    "path": "py/cmdline/testing/test_cmdline.py",
+    "exact": false,
+    "actions": 45,
+    "target_actions": 20,
+    "output_ratio": 0.0705,
+    "edit_distance": 0.0556
+   },
+   {
+    "id": "pytest-af5ba099b3d9",
+    "repo": "pytest-dev/pytest",
+    "path": "py/conftest.py",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 30,
+    "output_ratio": 0.0137,
+    "edit_distance": 0.0556
+   },
+   {
+    "id": "pytest-af78efc7fa90",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 16,
+    "output_ratio": 0.0461,
+    "edit_distance": 0.6508
+   },
+   {
+    "id": "pytest-afde9f07f730",
+    "repo": "pytest-dev/pytest",
+    "path": "tasks/release.minor.rst",
+    "exact": false,
+    "actions": 16,
+    "target_actions": 20,
+    "output_ratio": 0.0232,
+    "edit_distance": 0.037
+   },
+   {
+    "id": "pytest-b04aa015b940",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 13,
+    "output_ratio": 0.0495,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-b10612810dc6",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 17,
+    "output_ratio": 0.0302,
+    "edit_distance": 0.8
+   },
+   {
+    "id": "pytest-b1de564f337c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0168,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-b2701a027245",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 14,
+    "output_ratio": 0.0331,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-b33a27d12b93",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 13,
+    "output_ratio": 0.0168,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-b3eafdd776fe",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgignore",
+    "exact": false,
+    "actions": 18,
+    "target_actions": 14,
+    "output_ratio": 0.0849,
+    "edit_distance": 0.4
+   },
+   {
+    "id": "pytest-b5115963ee6c",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgtags",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 67,
+    "output_ratio": 0.0272,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-b61dcded3781",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 11,
+    "target_actions": 50,
+    "output_ratio": 0.0103,
+    "edit_distance": 0.7353
+   },
+   {
+    "id": "pytest-b7054495a714",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 20,
+    "output_ratio": 0.0855,
+    "edit_distance": 0.1
+   },
+   {
+    "id": "pytest-b7c0d84ee36e",
+    "repo": "pytest-dev/pytest",
+    "path": "py/builtin/exception.py",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 43,
+    "output_ratio": 0.0221,
+    "edit_distance": 0.037
+   },
+   {
+    "id": "pytest-b7d31952eb0f",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/nose.txt",
+    "exact": false,
+    "actions": 51,
+    "target_actions": 83,
+    "output_ratio": 0.0584,
+    "edit_distance": 0.0133
+   },
+   {
+    "id": "pytest-b91d5a311289",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 11,
+    "target_actions": 13,
+    "output_ratio": 0.0363,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-ba14a81c7f2c",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0198,
+    "edit_distance": 0.6216
+   },
+   {
+    "id": "pytest-ba6ecc14c80b",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/announce/index.rst",
+    "exact": false,
+    "actions": 27,
+    "target_actions": 27,
+    "output_ratio": 0.0312,
+    "edit_distance": 0.0095
+   },
+   {
+    "id": "pytest-bce0ceafe4a7",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 24,
+    "target_actions": 16,
+    "output_ratio": 0.0792,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-c0fd2d883940",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 26,
+    "target_actions": 13,
+    "output_ratio": 0.0861,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-c22bf3ff3e83",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0198,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-c393f95c9989",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 10,
+    "target_actions": 17,
+    "output_ratio": 0.0331,
+    "edit_distance": 0.4167
+   },
+   {
+    "id": "pytest-c58b67c5404a",
+    "repo": "pytest-dev/pytest",
+    "path": "pyproject.toml",
+    "exact": false,
+    "actions": 12,
+    "target_actions": 40,
+    "output_ratio": 0.016,
+    "edit_distance": 1.0
+   },
+   {
+    "id": "pytest-c61eb2caac01",
+    "repo": "pytest-dev/pytest",
+    "path": "py/doc/test-config.txt",
+    "exact": false,
+    "actions": 35,
+    "target_actions": 44,
+    "output_ratio": 0.0384,
+    "edit_distance": 0.4688
+   },
+   {
+    "id": "pytest-c6eb3413f302",
+    "repo": "pytest-dev/pytest",
+    "path": ".coveragerc",
+    "exact": false,
+    "actions": 9,
+    "target_actions": 31,
+    "output_ratio": 0.0239,
+    "edit_distance": 0.0909
+   },
+   {
+    "id": "pytest-c73e35401932",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 13,
+    "output_ratio": 0.0197,
+    "edit_distance": 0.44
+   },
+   {
+    "id": "pytest-c842893b02ec",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 6,
+    "target_actions": 17,
+    "output_ratio": 0.0198,
+    "edit_distance": 0.3913
+   },
+   {
+    "id": "pytest-c971f2f474df",
+    "repo": "pytest-dev/pytest",
+    "path": ".github/workflows/update-plugin-list.yml",
+    "exact": false,
+    "actions": 47,
+    "target_actions": 83,
+    "output_ratio": 0.0441,
+    "edit_distance": 0.0149
+   },
+   {
+    "id": "pytest-ca88c02507e0",
+    "repo": "pytest-dev/pytest",
+    "path": ".hgignore",
+    "exact": false,
+    "actions": 19,
+    "target_actions": 72,
+    "output_ratio": 0.0475,
+    "edit_distance": 0.1111
+   },
+   {
+    "id": "pytest-cb57bf50b183",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 17,
+    "output_ratio": 0.0367,
+    "edit_distance": 0.0588
+   },
+   {
+    "id": "pytest-cbb41f1ae24e",
+    "repo": "pytest-dev/pytest",
+    "path": ".gitignore",
+    "exact": false,
+    "actions": 30,
+    "target_actions": 32,
+    "output_ratio": 0.0554,
+    "edit_distance": 0.011
+   },
+   {
+    "id": "pytest-cccb9d8530c8",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 14,
+    "target_actions": 17,
+    "output_ratio": 0.0464,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-cd0dd3c9787a",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/requirements.txt",
+    "exact": false,
+    "actions": 15,
+    "target_actions": 42,
+    "output_ratio": 0.0375,
+    "edit_distance": 0.037
+   },
+   {
+    "id": "pytest-cdead1a99132",
+    "repo": "pytest-dev/pytest",
+    "path": ".travis.yml",
+    "exact": false,
+    "actions": 47,
+    "target_actions": 38,
+    "output_ratio": 0.0582,
+    "edit_distance": 0.0864
+   },
+   {
+    "id": "pytest-cfa0c3b0d94e",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0164,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-cfda801ebf0b",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 20,
+    "target_actions": 14,
+    "output_ratio": 0.066,
+    "edit_distance": 0.0667
+   },
+   {
+    "id": "pytest-d08c4ce0ad59",
+    "repo": "pytest-dev/pytest",
+    "path": "doc/en/example/xfail_demo.py",
+    "exact": false,
+    "actions": 32,
+    "target_actions": 22,
+    "output_ratio": 0.0729,
+    "edit_distance": 0.0333
+   },
+   {
+    "id": "pytest-d0cc45d72393",
+    "repo": "pytest-dev/pytest",
+    "path": "testing/plugins_integration/requirements.txt",
+    "exact": false,
+    "actions": 5,
+    "target_actions": 17,
+    "output_ratio": 0.0166,
+    "edit_distance": 1.0
+   }
+  ]
+ },
+ "log": [
+  {
+   "step": 0,
+   "loss": 5.6238
+  },
+  {
+   "step": 100,
+   "loss": 3.3501
+  },
+  {
+   "step": 200,
+   "loss": 2.6947
+  },
+  {
+   "step": 300,
+   "loss": 2.9299
+  },
+  {
+   "step": 400,
+   "loss": 2.2854
+  },
+  {
+   "step": 500,
+   "loss": 2.2889
+  },
+  {
+   "step": 600,
+   "loss": 2.3863
+  },
+  {
+   "step": 700,
+   "loss": 1.7492
+  },
+  {
+   "step": 800,
+   "loss": 1.377
+  },
+  {
+   "step": 900,
+   "loss": 1.409
+  },
+  {
+   "step": 999,
+   "loss": 1.3422
+  }
+ ]
+}

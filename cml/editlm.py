@@ -39,6 +39,8 @@ LOCATOR_LAYERS = 6
 LOCATOR_HEADS = 8
 LOCATOR_MSG = 192
 LOCATOR_WIN = 1024
+COPY_ACT = 256
+COPY_SEQ = LOCATOR_MSG + 1 + LOCATOR_WIN + COPY_ACT
 
 
 @dataclass(frozen=True, slots=True)
@@ -1145,6 +1147,383 @@ def run_locator(
     return 0
 
 
+class CausalBlock(nn.Module):
+    """A pre-LN causal block for the copy-action LM."""
+
+    def __init__(self, d: int, heads: int):
+        super().__init__()
+        self.heads = heads
+        self.ln1 = nn.LayerNorm(d)
+        self.qkv = nn.Linear(d, 3 * d, bias=False)
+        self.proj = nn.Linear(d, d, bias=False)
+        self.ln2 = nn.LayerNorm(d)
+        self.fc = nn.Linear(d, 4 * d)
+        self.out = nn.Linear(4 * d, d)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, t, d = x.shape
+        h = self.ln1(x)
+        q, k, v = self.qkv(h).chunk(3, dim=-1)
+        shape = (b, t, self.heads, d // self.heads)
+        q, k, v = (z.view(shape).transpose(1, 2) for z in (q, k, v))
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        y = y.transpose(1, 2).reshape(b, t, d)
+        x = x + self.proj(y)
+        return x + self.out(F.gelu(self.fc(self.ln2(x))))
+
+
+class CopyLM(nn.Module):
+    """Causal byte LM over `message + old + action target`."""
+
+    def __init__(
+        self,
+        d: int = LOCATOR_D,
+        layers: int = LOCATOR_LAYERS,
+        heads: int = LOCATOR_HEADS,
+        seq: int = LOCATOR_MSG + 1 + LOCATOR_WIN + COPY_ACT,
+    ):
+        super().__init__()
+        self.tok = nn.Embedding(256, d)
+        self.pos = nn.Embedding(seq, d)
+        self.blocks = nn.ModuleList(CausalBlock(d, heads) for _ in range(layers))
+        self.ln = nn.LayerNorm(d)
+        self.head = nn.Linear(d, 256, bias=False)
+        self.head.weight = self.tok.weight
+        self.seq = seq
+        nn.init.normal_(self.tok.weight, std=0.02)
+        nn.init.normal_(self.pos.weight, std=0.02)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.tok(x) + self.pos.weight[: x.size(1)]
+        for block in self.blocks:
+            h = block(h)
+        return self.head(self.ln(h))
+
+
+def copy_example(rec: dict, old: bytes, new: bytes) -> tuple[bytes, bytes] | None:
+    """One window: message + old as the prompt, serialized actions as target."""
+    if len(old) > LOCATOR_WIN:
+        return None
+    actions = copy_actions(new, old, min_match=8, cap=256)
+    target = dump_actions(actions)
+    if len(target) > COPY_ACT:
+        return None
+    prompt = rec["message"].encode("utf-8")[:LOCATOR_MSG] + b"\x00" + old
+    return prompt, target
+
+
+def load_copy(
+    manifest: dict, cache: Path, split: str, limit: int = 0
+) -> list[tuple[dict, bytes, bytes, bytes, bytes]]:
+    out = []
+    for rec, old, new in editdata.load_edits(manifest, cache, split):
+        pair = copy_example(rec, old, new)
+        if pair is None:
+            continue
+        out.append((rec, old, new, *pair))
+    if limit and len(out) > limit:
+        step = max(1, len(out) // limit)
+        out = out[::step][:limit]
+    return out
+
+
+def _copy_batch(examples: list, rng: random.Random, device: torch.device, batch: int):
+    seq = torch.zeros(batch, COPY_SEQ, dtype=torch.long)
+    labels = torch.zeros(batch, COPY_SEQ, dtype=torch.long)
+    mask = torch.zeros(batch, COPY_SEQ, dtype=torch.bool)
+    for k in range(batch):
+        _, _, _, prompt, target = examples[rng.randrange(len(examples))]
+        if len(prompt) + len(target) >= COPY_SEQ:
+            continue
+        p = len(prompt)
+        t = len(target)
+        seq[k, : p + t - 1] = torch.cat(
+            [
+                torch.frombuffer(bytearray(prompt), dtype=torch.uint8),
+                torch.frombuffer(bytearray(target[:-1]), dtype=torch.uint8),
+            ]
+        ).long()
+        labels[k, p - 1 : p - 1 + t] = torch.frombuffer(
+            bytearray(target), dtype=torch.uint8
+        ).long()
+        mask[k, p - 1 : p - 1 + t] = True
+    return (
+        seq.to(device),
+        labels.to(device),
+        mask.to(device),
+    )
+
+
+def train_copy(
+    examples: list,
+    steps: int,
+    seed: int,
+    device: torch.device,
+    batch: int = 8,
+) -> tuple[CopyLM, list[dict]]:
+    torch.manual_seed(seed)
+    rng = random.Random(seed)
+    model = CopyLM().to(device)
+    opt = torch.optim.AdamW(model.parameters(), 3e-4)
+    warm = min(100, max(1, steps // 10))
+
+    def factor(step: int) -> float:
+        if step < warm:
+            return (step + 1) / warm
+        progress = (step - warm) / max(1, steps - warm)
+        return 0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * progress))
+
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, factor)
+    log = []
+    model.train()
+    for step in range(steps):
+        seq, labels, mask = _copy_batch(examples, rng, device, batch)
+        with torch.autocast(
+            device_type="cuda", dtype=torch.bfloat16, enabled=seq.is_cuda
+        ):
+            logits = model(seq)
+        logits = logits.float()
+        loss = F.cross_entropy(logits[mask], labels[mask])
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()
+        sched.step()
+        if step % 100 == 0 or step == steps - 1:
+            log.append({"step": step, "loss": round(float(loss.detach()), 4)})
+    return model, log
+
+
+@torch.no_grad()
+def generate_actions(
+    model: CopyLM, prompt: bytes, device: torch.device, max_new: int = COPY_ACT
+) -> bytes:
+    """Constrained decode: only bytes the action grammar admits."""
+    seq = list(prompt)
+    if len(seq) >= model.seq:
+        seq = seq[: model.seq - 1]
+    out = bytearray()
+    model.eval()
+    state = "tag"
+    value = 0
+    shift = 0
+    remaining = 0
+    for _ in range(max_new):
+        if len(seq) >= model.seq:
+            break
+        x = torch.frombuffer(bytearray(seq), dtype=torch.uint8).long()
+        x = x.unsqueeze(0).to(device)
+        with torch.autocast(
+            device_type="cuda", dtype=torch.bfloat16, enabled=x.is_cuda
+        ):
+            logits = model(x)
+        keep = torch.zeros(256, dtype=torch.bool, device=logits.device)
+        if state == "tag":
+            keep[[0, 1, 2]] = True
+        else:
+            keep[:] = True
+        scores = logits[0, -1].float().masked_fill(~keep, float("-inf"))
+        nxt = int(scores.argmax())
+        out.append(nxt)
+        seq.append(nxt)
+        if state == "tag":
+            if nxt == 0:
+                break
+            state = "off" if nxt == 1 else "size"
+            value = 0
+            shift = 0
+        elif state in ("off", "len", "size"):
+            value |= (nxt & 0x7F) << shift
+            if nxt < 0x80:
+                if state == "size":
+                    remaining = value
+                    state = "lit" if remaining > 0 else "tag"
+                else:
+                    state = "len" if state == "off" else "tag"
+                value = 0
+                shift = 0
+            else:
+                shift += 7
+        else:
+            remaining -= 1
+            if remaining <= 0:
+                state = "tag"
+    return bytes(out)
+
+
+def eval_copy(model: CopyLM, examples: list, device: torch.device) -> dict:
+    items = []
+    exact = valid = 0
+    distance = 0.0
+    output = 0.0
+    for rec, old, new, prompt, target in examples:
+        blob = generate_actions(model, prompt, device)
+        parsed = False
+        try:
+            actions = load_actions(blob)
+            pred = assemble(actions, old)
+            parsed = True
+        except ValueError:
+            pred = old
+        ok = parsed and pred == new
+        valid += int(parsed)
+        exact += int(ok)
+        distance += line_distance(pred, new)
+        output += len(blob) / max(len(new), 1)
+        items.append(
+            {
+                "id": rec["id"],
+                "repo": rec["repo"],
+                "path": rec["path"],
+                "exact": ok,
+                "actions": len(blob),
+                "target_actions": len(target),
+                "output_ratio": round(len(blob) / max(len(new), 1), 4),
+                "edit_distance": round(line_distance(pred, new), 4),
+            }
+        )
+    n = len(items)
+    return {
+        "n": n,
+        "exact": exact / n,
+        "valid": valid / n,
+        "edit_distance": distance / n,
+        "output_ratio": output / n,
+        "items": items,
+    }
+
+
+def render_copy_report(result: dict) -> str:
+    c1 = result["copy"]
+    cfg = result["config"]
+    lines = [
+        "# Exact Edit Bench: C1 copy-SFT",
+        "",
+        f"- arm **C1 copy-SFT**; split `{result['split']}`; n = {c1['n']}",
+        f"- seed `{cfg['seed']}`; steps `{cfg['steps']}`; "
+        f"{cfg['params']:,} params; one window ≤{cfg['win']} B",
+        f"- manifest sha256 `{result['manifest']['sha256'][:16]}`",
+        "",
+        "## Task",
+        "",
+        "Emit a serialized copy/literal action program that rebuilds `new`",
+        "from `old`, given `old` and the commit message. Exact match is the",
+        "label; an invalid program scores zero. Only files that fit one",
+        "window are in this pilot.",
+        "",
+        "## Results",
+        "",
+        "| arm | n | exact | valid | line distance | output bytes |",
+        "|---|---:|---:|---:|---:|---:|",
+        f"| C1 copy-SFT | {c1['n']} | {c1['exact']:.3f} | "
+        f"{c1['valid']:.3f} | {c1['edit_distance']:.3f} | "
+        f"{c1['output_ratio']:.3f} |",
+        "",
+        "## Gate GC1",
+        "",
+    ]
+    if c1["exact"] > 0:
+        lines += [
+            "The full-file byte LM arm is not built on this split, so the",
+            "relative GC1 comparison is blocked. GC1 needs +10 exact or +20",
+            "test pass over that baseline at ≤5% output bytes. The absolute",
+            "exact rate above is the pilot result; do not claim a pass.",
+        ]
+    else:
+        lines += [
+            "GC1 fails: C1 is exact on `0` files. Every baseline has exact",
+            "rate ≥ 0, so a +10-point lift is impossible from here. The",
+            "full-file arm is not needed to reject this arm.",
+        ]
+    lines += [
+        "",
+        "## Data",
+        "",
+        "| split | files |",
+        "|---|---:|",
+        f"| train | {cfg['train_files']} |",
+        f"| eval | {cfg['eval_files']} |",
+        "",
+        "## Reading",
+        "",
+    ]
+    if c1["exact"] > 0:
+        lines += [
+            "C1 produces at least one exact reconstruction. The next step is",
+            "the full-file baseline and the GC1 comparison on the same",
+            "files; then DPO only if GC1 has a recorded baseline.",
+        ]
+    else:
+        lines += [
+            "C1 is not exact on any file. The action grammar and decoder",
+            "work for valid programs only if `valid` is high; that is not",
+            "an edit capability. Do not start DPO from this arm. The next",
+            "lever is the target (shorter action grammar) or a copy-aware",
+            "decoder, not more steps.",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def run_copy(
+    manifest: dict,
+    manifest_path: Path,
+    cache: Path,
+    split: str,
+    limit: int,
+    seed: int,
+    steps: int,
+    report: Path,
+    out: Path,
+) -> int:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train = load_copy(manifest, cache, "train")
+    queries = load_copy(manifest, cache, split, limit)
+    if not train or not queries:
+        raise SystemExit("editlm: copy-SFT needs non-empty train and eval splits")
+    steps = steps or 1000
+    model, log = train_copy(train, steps, seed, device)
+    metrics = eval_copy(model, queries, device)
+    config = {
+        "seed": seed,
+        "steps": steps,
+        "split": split,
+        "limit": limit,
+        "win": LOCATOR_WIN,
+        "msg": LOCATOR_MSG,
+        "params": _param_count(model),
+        "train_files": len(train),
+        "eval_files": len(queries),
+        "actions_max": COPY_ACT,
+    }
+    result = {
+        "arm": "copy-sft",
+        "split": split,
+        "manifest": {
+            "path": str(manifest_path),
+            "sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "config": manifest["config"],
+            "heads": manifest["heads"],
+            "counts": manifest["counts"],
+            "splits": manifest["splits"],
+        },
+        "config": config,
+        "copy": metrics,
+        "log": log,
+    }
+    _write_json(out, result)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(render_copy_report(result))
+    ckpt = RUNS / "edit-copy-sft"
+    ckpt.mkdir(parents=True, exist_ok=True)
+    torch.save({"model": model.state_dict(), "config": config}, ckpt / "model.pt")
+    print(
+        f"editlm: C1 copy-SFT n={metrics['n']} exact={metrics['exact']:.3f} "
+        f"valid={metrics['valid']:.3f} output={metrics['output_ratio']:.3f}"
+    )
+    print(f"editlm: {report}")
+    return 0
+
+
 def _write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -1186,6 +1565,24 @@ def run(
             pretrain,
             report or REPORTS / "EDIT-LOCATOR.md",
             out or REPORTS / "edit-locator.json",
+        )
+    if arm == "copy":
+        if mode != "sft":
+            raise SystemExit("editlm: copy supports --sft in this session")
+        if base or pretrain or pairs or samples:
+            raise SystemExit("editlm: copy-SFT takes --steps, --limit, and --seed only")
+        manifest = editdata.load_manifest(manifest_path)
+        cache = editdata.cache_root(cache)
+        return run_copy(
+            manifest,
+            manifest_path,
+            cache,
+            split,
+            limit,
+            seed,
+            steps,
+            report or REPORTS / "EDIT-COPY.md",
+            out or REPORTS / "edit-copy.json",
         )
     if arm != "retrieval":
         raise SystemExit(

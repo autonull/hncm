@@ -172,6 +172,30 @@ def test_locator_trains_on_cpu() -> None:
     assert trained is model
 
 
+def test_copy_lm_forward_and_batch() -> None:
+    import torch
+
+    model = editlm.CopyLM(d=16, layers=1, heads=2, seq=64)
+    x = torch.randint(0, 256, (2, 10))
+    assert model(x).shape == (2, 10, 256)
+    target = b"\x01\x05\x00"
+    example = ({"message": "edit"}, b"abc\n", b"abd\n", b"abc\n", target)
+    seq, labels, mask = editlm._copy_batch(
+        [example], random.Random(0), torch.device("cpu"), 1
+    )
+    assert labels[0][mask[0]].tolist() == list(target)
+    assert seq.shape == (1, editlm.COPY_SEQ)
+
+
+def test_copy_example_assembles_exactly() -> None:
+    pair = editlm.copy_example({"message": "edit b"}, b"a\nb\nc\n", b"a\nB\nc\n")
+    assert pair is not None
+    prompt, target = pair
+    assert prompt.endswith(b"a\nb\nc\n")
+    actions = editlm.load_actions(target)
+    assert editlm.assemble(actions, b"a\nb\nc\n") == b"a\nB\nc\n"
+
+
 def test_mine_local_repo(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
