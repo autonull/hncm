@@ -1,5 +1,9 @@
 # TODO8 — the codec program: 6.3x today, 10x next
 
+> **Capability work continues in `TODO9.md`.** This file remains the codec
+> record. The delta product shipped; A2-A6 are paused until the exact-edit
+> capability track has a G0/G1 verdict.
+
 Status: 2026-11-27. We are solving a codec, not testing an idea: the
 product ships at **6.3x** single-file and **56.6x** on a 2% delta, the
 priced parse is at **9.4x**, and the 10x (50%) ladder below is a build
@@ -753,9 +757,15 @@ Run the exact codec on the full 756 KB test as a background batch job
 (about 55 min encode plus proof) before promoting `0.852`. Then A2. Do not
 compare a short exact prefix to the full instrument.
 
+**Capability track.** `TODO9.md` replaces the bpb ladder as the primary
+capability bet: a copy-edit LM emits an exact delta program, trained by
+SFT, then DPO/RLFP on exact-decode preferences, then typed holes. First
+deliverable is the data harness and the retrieval baseline (G0), no GPU.
+
 ## References
 
 - `TODO7.md`: codec record and auditable product.
+- `TODO9.md`: the exact-edit capability program (active).
 - `cml/README.md`: the 50% target and progress map.
 - `cml/PLAN.md`: design and charge arithmetic.
 - `cml/reports/DELTA.md`: the shipped delta arm.
