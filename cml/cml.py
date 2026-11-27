@@ -6430,10 +6430,19 @@ def run_cortex(
     seq: int,
     batch: int,
     seed: int,
+    depths: tuple[int, ...] = (),
 ) -> int:
-    """P5d/P5f pilot: predict the term stream against a matched byte model."""
+    """P5d/P5f pilot: term stream versus a matched byte model, one or many depths."""
     import cortex
 
+    if depths:
+        report = cortex.sweep(depths, pairs, steps, d, layers, heads, seq, batch, seed)
+        report |= {"git": git_sha()}
+        write_json(REPORTS / "cortex-depth.json", report)
+        text = cortex.render_sweep(report)
+        write_text(REPORTS / "CORTEX-DEPTH.md", text)
+        print(text)
+        return 0
     report = cortex.pilot(pairs, depth, steps, d, layers, heads, seq, batch, seed)
     report |= {"git": git_sha()}
     write_json(REPORTS / "cortex.json", report)
@@ -7782,6 +7791,7 @@ def main(argv: list[str] | None = None) -> int:
     cx.add_argument("--seq", type=int, default=128)
     cx.add_argument("--batch", type=int, default=32)
     cx.add_argument("--seed", type=int, default=0)
+    cx.add_argument("--depths", default="")
     ce = sub.add_parser("composition")
     ce.add_argument("--pairs", type=int, default=1000)
     ce.add_argument("--depth", type=int, default=3)
@@ -7972,6 +7982,7 @@ def main(argv: list[str] | None = None) -> int:
             a.seq,
             a.batch,
             a.seed,
+            tuple(int(s) for s in a.depths.split(",") if s.strip()),
         )
     if a.cmd == "scale":
         return run_scale(

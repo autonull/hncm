@@ -253,3 +253,85 @@ def render(report: dict) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def sweep(
+    depths: tuple[int, ...] = (3, 4, 5),
+    pairs: int = 20_000,
+    steps: int = 2_500,
+    d: int = 128,
+    layers: int = 4,
+    heads: int = 4,
+    seq: int = 128,
+    batch: int = 32,
+    seed: int = 0,
+) -> dict:
+    """One matched pair per depth: does structure pay more as depth grows?"""
+    runs = [
+        pilot(pairs, depth, steps, d, layers, heads, seq, batch, seed)
+        for depth in depths
+    ]
+    return {
+        "runs": runs,
+        "depths": list(depths),
+        "pairs": pairs,
+        "steps": steps,
+        "seq": seq,
+        "batch": batch,
+        "seed": seed,
+        "cfg": {"d": d, "layers": layers, "heads": heads},
+        "params": runs[0]["params"],
+        "seconds": round(sum(r["seconds"] for r in runs), 1),
+    }
+
+
+def render_sweep(report: dict) -> str:
+    lines = [
+        "# Cortex: the depth sweep",
+        "",
+        f"- {report['pairs']} terms per split, {report['steps']} steps, "
+        f"batch {report['batch']}, seed {report['seed']}",
+        f"- both arms at d{report['cfg']['d']} l{report['cfg']['layers']} "
+        f"h{report['cfg']['heads']} seq{report['seq']}, "
+        f"{report['params']:,} params",
+        "- `edge pay` is the unseen minus twin cost: the price of the novel",
+        "  composition at matched shape. Lower is better.",
+        "",
+        "| depth | seen delta | unseen delta | cortex edge | byte edge | gap |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for run in report["runs"]:
+        rows = {r["split"]: r for r in run["rows"]}
+        seen, unseen, twin = rows["seen"], rows["unseen"], rows["twin"]
+        pay = unseen["cortex_bpb"] - twin["cortex_bpb"]
+        byte_pay = unseen["byte_bpb"] - twin["byte_bpb"]
+        lines.append(
+            f"| {run['depth']} | "
+            f"{seen['cortex_bpb'] - seen['byte_bpb']:+.3f} | "
+            f"{unseen['cortex_bpb'] - unseen['byte_bpb']:+.3f} | "
+            f"{pay:+.3f} | {byte_pay:+.3f} | {pay - byte_pay:+.3f} |"
+        )
+    first, last = report["runs"][0], report["runs"][-1]
+    f_rows = {r["split"]: r for r in first["rows"]}
+    l_rows = {r["split"]: r for r in last["rows"]}
+    f_gap = (f_rows["unseen"]["cortex_bpb"] - f_rows["twin"]["cortex_bpb"]) - (
+        f_rows["unseen"]["byte_bpb"] - f_rows["twin"]["byte_bpb"]
+    )
+    l_gap = (l_rows["unseen"]["cortex_bpb"] - l_rows["twin"]["cortex_bpb"]) - (
+        l_rows["unseen"]["byte_bpb"] - l_rows["twin"]["byte_bpb"]
+    )
+    lines += [
+        "",
+        "## Read",
+        "",
+        f"- the edge gap moves {l_gap - f_gap:+.3f} bpb from depth "
+        f"{first['depth']} to {last['depth']}.",
+        "- A gap that falls with depth supports structure; a gap that rises",
+        "  or stays positive says the byte arm still computes the composition.",
+        "- This is a synthetic arithmetic sweep with matched params and steps,",
+        "  not code reasoning. No claim follows from one depth alone.",
+        "",
+        f"The sweep took {report['seconds']:.0f} s on one GPU.",
+        "",
+    ]
+    return "\n".join(lines)

@@ -6,7 +6,9 @@ the static pack loses per-file. The concept pilot is measured: typed
 holes, exact realization, and a `0.230` bpb representation gain on
 unseen compositions (a pilot, not reasoning). The cortex pilot is a
 negative at this grain: the term model leads on seen (`-0.022` bpb) and
-loses the unseen edge (`+0.004`). The 20M codec is at `1.488` payload /
+loses the unseen edge (`+0.004`). The depth sweep shows the cortex
+winning unseen at depth 5 (`-0.011`) while its novel-edge pay falls to
+`+0.018` against `+0.005` for bytes. The 20M codec is at `1.488` payload /
 `1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
 shared bpb against a 20M byte control. RLFP is untested. The next move is
 a composition task that a byte context cannot recompute, plus the Stage 3
@@ -142,12 +144,32 @@ below the marginal. The pilot needs both enough terms and a converged
 run; 30,000 terms and 3,000 steps is the smallest point where train and
 held-out agree.
 
+## 1.4 Cortex depth sweep: measured 2026-11-27
+
+`cml cortex --depths 3,4,5`: one matched pair per depth, 20,000 terms per
+split, 2,500 steps, batch 32, `d128 l4 h4 seq128`, 810,496 params,
+243 s on one GPU. Report: `reports/CORTEX-DEPTH.md`.
+
+| depth | seen delta | unseen delta | cortex edge pay | byte edge pay | gap |
+|---:|---:|---:|---:|---:|---:|
+| 3 | +0.020 | +0.050 | +0.038 | +0.014 | +0.024 |
+| 4 | -0.017 | +0.008 | +0.028 | +0.008 | +0.020 |
+| 5 | -0.027 | -0.011 | +0.018 | +0.005 | +0.013 |
+
+**Read.** The cortex wins the total rate from depth 4 and wins unseen at
+depth 5 (`-0.011`). Its novel-edge pay falls with depth (`+0.038` to
+`+0.018`) while the byte arm stays near `+0.005`; the gap closes about
+`0.006` bpb per depth. That is a direction, not evidence: extrapolation
+past the measured points is not a result. The next points are depth 6
+with `seq 256` (the term outgrows the 128 context) and argument
+dependence, where a local byte context cannot recompute the structure.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
 | **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
-| **Concepts** | typed holes, exact realize, library gate; cortex ties bytes on the edge | argument-dependent task; depth 6 | P5d |
+| **Concepts** | typed holes, exact realize; depth 5 cortex wins unseen, edge gap +0.013 | depth 6 at seq 256; argument dependence | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
@@ -366,19 +388,22 @@ Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
 5. **done (negative)** `cml cortex`: a 22-symbol term model against a
    matched byte model; the byte arm wins the novel edge at this grain
    (`reports/CORTEX.md`).
-6. `cml composition --hard`: argument dependence and depth 6, where a
-   byte context cannot recompute the structure; rerun the matched pair.
-7. `cml scale --copy`: put the measured LZ tokens in front of the
+6. **done (direction)** `cml cortex --depths 3,4,5`: the edge gap falls
+   with depth, but the byte arm still pays less (`reports/CORTEX-DEPTH.md`).
+7. `cml composition --hard`: argument dependence and depth 6 at
+   `seq 256`, where a byte context cannot recompute the structure;
+   rerun the matched pair.
+8. `cml scale --copy`: put the measured LZ tokens in front of the
    frozen 20M model; charge only the residual literals; report the
    proxy saving on `reports/T2.md`. This is the next GPU lever.
-8. `cml codec --arm byte-model --params/--d/--layers`: the 20M control
+9. `cml codec --arm byte-model --params/--d/--layers`: the 20M control
    (G1) must be a manifest, not an ad-hoc run.
-9. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
-10. Product pack: an adaptive or delta pack per file; a static pack is
+10. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
+11. Product pack: an adaptive or delta pack per file; a static pack is
     measured as a loss at 1-100 KB and is not the answer.
-11. Reports: `reports/COVERAGE.md` (done), `reports/COPY.md` (done),
-    `reports/PER-FILE.md` (done), `reports/COMPOSITION.md` (done),
-    `reports/CORTEX.md` (done), `reports/T2.md`, `reports/RLFP.md`.
+12. Reports: `COVERAGE.md` (done), `COPY.md` (done), `PER-FILE.md`
+    (done), `COMPOSITION.md` (done), `CORTEX.md` (done),
+    `CORTEX-DEPTH.md` (done), `T2.md`, `RLFP.md`.
 
 Commands after the build:
 
@@ -388,6 +413,7 @@ uv run cml copyprobe --window 4096 --bytes 756752
 uv run cml perfile --sizes 1024,4096,10240,102400
 uv run cml composition --pairs 1000 --depth 3 --seed 0
 uv run cml cortex --pairs 30000 --depth 4 --steps 3000
+uv run cml cortex --depths 3,4,5 --pairs 20000 --steps 2500
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
@@ -419,21 +445,24 @@ Two tracks share one baseline; keep both.
 **Concept track (architectural milestone).**
 1. **Done.** Typed holes, recursive composition, exact realization, the
    MDL library gate, and the unseen-composition pilot (`§1.2`).
-2. **Done, negative.** The matched Cortex pilot (`§1.3`): the term model
-   leads on seen, the byte arm wins the novel edge.
-3. Build the harder task: argument dependence, long-range binding, depth
-   6, so a local byte context cannot recompute the composition. Rerun
-   the matched pair there before any Cortex claim.
-4. Only then scale the Cortex and compare against a matched byte
+2. **Done, negative at depth 4.** The matched Cortex pilot (`§1.3`): the
+   term model leads on seen, the byte arm wins the novel edge.
+3. **Done, direction only.** The depth sweep (`§1.4`): the cortex wins
+   unseen at depth 5 and the edge gap falls with depth, but the byte arm
+   still pays less for a novel composition.
+4. Next: depth 6 at `seq 256` and an argument-dependent task, where a
+   local byte context cannot recompute the structure. Rerun the matched
+   pair before any Cortex claim or scale-up.
+5. Only then scale the Cortex and compare against a matched byte
    Transformer at 5M and 20M params.
 
 **Compression track.**
-5. **Done.** Stage 0: coverage, copy, per-file.
-6. **Skip Stage 1**; run the Stage 3 copy proxy on the frozen 20M model.
-7. Run the RLFP span pilot in parallel (CPU, 2 minutes).
-8. Add the 20M byte control manifest before any 20% claim.
-9. Decide: 20% claim, 50% program, or park compression.
-10. Product pack: adaptive or delta, never a bigger static pack (G5).
+6. **Done.** Stage 0: coverage, copy, per-file.
+7. **Skip Stage 1**; run the Stage 3 copy proxy on the frozen 20M model.
+8. Run the RLFP span pilot in parallel (CPU, 2 minutes).
+9. Add the 20M byte control manifest before any 20% claim.
+10. Decide: 20% claim, 50% program, or park compression.
+11. Product pack: adaptive or delta, never a bigger static pack (G5).
 
 ## References
 

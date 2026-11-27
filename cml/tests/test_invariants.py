@@ -477,3 +477,33 @@ def test_cortex_trains_and_codes() -> None:
     bits, n = cortex.stream_bits(model, ids, 16, batch=4)
     assert n > 0
     assert bits > 0
+
+
+def test_cortex_sweep_render() -> None:
+    import cortex
+
+    def run(depth: int, seen: float, unseen: float, twin: float) -> dict:
+        return {
+            "depth": depth,
+            "rows": [
+                {"split": "seen", "cortex_bpb": seen, "byte_bpb": 1.0},
+                {"split": "unseen", "cortex_bpb": unseen, "byte_bpb": 1.0},
+                {"split": "twin", "cortex_bpb": twin, "byte_bpb": 1.0},
+            ],
+        }
+
+    report = {
+        "runs": [run(3, 1.1, 1.2, 1.0), run(5, 1.0, 1.05, 0.99)],
+        "pairs": 100,
+        "steps": 10,
+        "seq": 64,
+        "batch": 8,
+        "seed": 0,
+        "cfg": {"d": 32, "layers": 1, "heads": 4},
+        "params": 1000,
+        "seconds": 1.0,
+    }
+    text = cortex.render_sweep(report)
+    assert "| depth |" in text
+    assert "| 3 |" in text and "| 5 |" in text
+    assert "edge gap" in text

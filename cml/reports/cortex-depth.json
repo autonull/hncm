@@ -1,0 +1,151 @@
+{
+ "runs": [
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 168325,
+     "bytes": 643332,
+     "cortex_bpb": 0.9961867313477537,
+     "byte_bpb": 0.9759446919644328
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 216541,
+     "bytes": 833424,
+     "cortex_bpb": 1.018470289117101,
+     "byte_bpb": 0.968659255387144
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 216541,
+     "bytes": 833424,
+     "cortex_bpb": 0.9802203890205553,
+     "byte_bpb": 0.9542168177825847
+    }
+   ],
+   "pairs": 20000,
+   "depth": 3,
+   "steps": 2500,
+   "seq": 128,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 810496,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 78.2
+  },
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 248968,
+     "bytes": 971829,
+     "cortex_bpb": 0.9641845628665685,
+     "byte_bpb": 0.9812925305141043
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 345225,
+     "bytes": 1356326,
+     "cortex_bpb": 0.9767065808154201,
+     "byte_bpb": 0.9686956325971906
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 345225,
+     "bytes": 1356326,
+     "cortex_bpb": 0.9488860113602006,
+     "byte_bpb": 0.9606598879487472
+    }
+   ],
+   "pairs": 20000,
+   "depth": 4,
+   "steps": 2500,
+   "seq": 128,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 810496,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 77.3
+  },
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 345611,
+     "bytes": 1365220,
+     "cortex_bpb": 0.9624435033556092,
+     "byte_bpb": 0.9896667268160753
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 519678,
+     "bytes": 2065149,
+     "cortex_bpb": 0.9644429400913592,
+     "byte_bpb": 0.9758303733226296
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 519678,
+     "bytes": 2065149,
+     "cortex_bpb": 0.9463888477704876,
+     "byte_bpb": 0.9712004527188546
+    }
+   ],
+   "pairs": 20000,
+   "depth": 5,
+   "steps": 2500,
+   "seq": 128,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 810496,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 87.9
+  }
+ ],
+ "depths": [
+  3,
+  4,
+  5
+ ],
+ "pairs": 20000,
+ "steps": 2500,
+ "seq": 128,
+ "batch": 32,
+ "seed": 0,
+ "cfg": {
+  "d": 128,
+  "layers": 4,
+  "heads": 4
+ },
+ "params": 810496,
+ "seconds": 243.4,
+ "git": "27954c6c803ac2e885bd2a748a1cef6a030948b3"
+}
