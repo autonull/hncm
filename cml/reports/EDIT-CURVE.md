@@ -44,13 +44,17 @@ Draft 4 concepts with the pointer, verify them with one trunk forward; accept un
 The draft is the concept+copy blend; the trunk verifies each block.
 `key 0` is the pointer-only control.
 
-| key | alpha | K | accepted/call | all accepted | accept/step |
-|---:|---:|---:|---:|---:|---:|
-| 0 | 0.00 | 8 | 1.480 | 0.000 | 0.182 |
-| 10 | 0.50 | 8 | 1.480 | 0.000 | 0.182 |
-| 10 | 0.90 | 8 | 1.480 | 0.000 | 0.182 |
-| 6 | 0.90 | 8 | 1.415 | 0.000 | 0.176 |
-| 10 | 0.90 | 4 | 1.410 | 0.105 | 0.343 |
+| key | alpha | temp | K | accepted/call | all accepted | accept/step |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.00 | 1.0 | 8 | 1.480 | 0.000 | 0.182 |
+| 0 | 0.00 | 2.0 | 8 | 2.415 | 0.035 | 0.303 |
+| 0 | 0.00 | 4.0 | 8 | 3.795 | 0.160 | 0.476 |
+| 0 | 0.00 | 4.0 | 16 | 4.450 | 0.045 | 0.280 |
+| 0 | 0.00 | 4.0 | 4 | 2.720 | 0.490 | 0.687 |
+| 10 | 0.90 | 1.0 | 8 | 1.480 | 0.000 | 0.182 |
+| 10 | 0.90 | 2.0 | 8 | 2.400 | 0.020 | 0.303 |
+| 10 | 0.90 | 4.0 | 8 | 3.835 | 0.200 | 0.480 |
+| 10 | 0.90 | 4.0 | 16 | 4.650 | 0.040 | 0.289 |
 
 ## Read
 
@@ -62,4 +66,4 @@ one pointer proposal against one trunk target call. `accepted/call`
 above 1 means a 4-concept draft can cut target calls per emitted
 concept; it is not a wall-clock measurement.
 
-Run took 140.0 s.
+Run took 94.9 s.

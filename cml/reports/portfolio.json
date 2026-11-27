@@ -2792,7 +2792,7 @@
   },
   {
    "family": "r8",
-   "arm": "specgate-0-a0.00-k8",
+   "arm": "specgate-0-a0.00-t1.0-k8",
    "task": "t4",
    "target_calls": 0.6756756756756757,
    "source": "editcurve",
@@ -2802,7 +2802,47 @@
   },
   {
    "family": "r8",
-   "arm": "specgate-10-a0.50-k8",
+   "arm": "specgate-0-a0.00-t2.0-k8",
+   "task": "t4",
+   "target_calls": 0.41407867494824013,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-0-a0.00-t4.0-k16",
+   "task": "t4",
+   "target_calls": 0.2247191011235955,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-0-a0.00-t4.0-k4",
+   "task": "t4",
+   "target_calls": 0.3676470588235294,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-0-a0.00-t4.0-k8",
+   "task": "t4",
+   "target_calls": 0.2635046113306983,
+   "source": "editcurve",
+   "exact": null,
+   "bits": null,
+   "decisions": null
+  },
+  {
+   "family": "r8",
+   "arm": "specgate-10-a0.90-t1.0-k8",
    "task": "t4",
    "target_calls": 0.6756756756756757,
    "source": "editcurve",
@@ -2812,9 +2852,9 @@
   },
   {
    "family": "r8",
-   "arm": "specgate-10-a0.90-k4",
+   "arm": "specgate-10-a0.90-t2.0-k8",
    "task": "t4",
-   "target_calls": 0.7092198581560284,
+   "target_calls": 0.4166666666666667,
    "source": "editcurve",
    "exact": null,
    "bits": null,
@@ -2822,9 +2862,9 @@
   },
   {
    "family": "r8",
-   "arm": "specgate-10-a0.90-k8",
+   "arm": "specgate-10-a0.90-t4.0-k16",
    "task": "t4",
-   "target_calls": 0.6756756756756757,
+   "target_calls": 0.2150537634408602,
    "source": "editcurve",
    "exact": null,
    "bits": null,
@@ -2832,9 +2872,9 @@
   },
   {
    "family": "r8",
-   "arm": "specgate-6-a0.90-k8",
+   "arm": "specgate-10-a0.90-t4.0-k8",
    "task": "t4",
-   "target_calls": 0.7067137809187279,
+   "target_calls": 0.2607561929595828,
    "source": "editcurve",
    "exact": null,
    "bits": null,
@@ -2997,10 +3037,10 @@
   },
   "r8": {
    "family": "r8",
-   "arm": "spec-8",
+   "arm": "specgate-10-a0.90-t4.0-k16",
    "task": "t4",
-   "target_calls": 0.641025641025641,
-   "source": "breadth",
+   "target_calls": 0.2150537634408602,
+   "source": "editcurve",
    "exact": null,
    "bits": null,
    "decisions": null
@@ -3171,7 +3211,7 @@
     "t4"
    ],
    "families": "all",
-   "arms": 310,
+   "arms": 314,
    "frontier": 6,
    "allocation": {
     "frontier": 0.7,
@@ -3213,8 +3253,8 @@
      "capability families: r5, r8"
     ]
    },
-   "seconds": 0.026,
-   "at": "2026-11-26T18:59:13"
+   "seconds": 0.014,
+   "at": "2026-11-26T19:19:53"
   }
  ]
 }

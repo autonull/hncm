@@ -88,56 +88,102 @@
   "k": 4,
   "key": 0,
   "alpha": 0.0,
+  "temp": 1.0,
   "blocks": 200,
   "accepted_per_call": 1.31,
   "all_accept": 0.08,
-  "accept_step": 0.3342191289899389
+  "accept_step": 0.3342191282559028
  },
  "spec_gates": [
   {
    "k": 8,
    "key": 0,
    "alpha": 0.0,
+   "temp": 1.0,
    "blocks": 200,
    "accepted_per_call": 1.48,
    "all_accept": 0.0,
-   "accept_step": 0.1820645878391892
+   "accept_step": 0.1820645871320019
   },
   {
    "k": 8,
-   "key": 10,
-   "alpha": 0.5,
+   "key": 0,
+   "alpha": 0.0,
+   "temp": 2.0,
    "blocks": 200,
-   "accepted_per_call": 1.48,
-   "all_accept": 0.0,
-   "accept_step": 0.18223830718286643
+   "accepted_per_call": 2.415,
+   "all_accept": 0.035,
+   "accept_step": 0.303289190565286
   },
   {
    "k": 8,
-   "key": 10,
-   "alpha": 0.9,
+   "key": 0,
+   "alpha": 0.0,
+   "temp": 4.0,
    "blocks": 200,
-   "accepted_per_call": 1.48,
-   "all_accept": 0.0,
-   "accept_step": 0.18231261184702469
+   "accepted_per_call": 3.795,
+   "all_accept": 0.16,
+   "accept_step": 0.4760655509477669
   },
   {
-   "k": 8,
-   "key": 6,
-   "alpha": 0.9,
+   "k": 16,
+   "key": 0,
+   "alpha": 0.0,
+   "temp": 4.0,
    "blocks": 200,
-   "accepted_per_call": 1.415,
-   "all_accept": 0.0,
-   "accept_step": 0.1758215871449749
+   "accepted_per_call": 4.45,
+   "all_accept": 0.045,
+   "accept_step": 0.28026180088770586
   },
   {
    "k": 4,
+   "key": 0,
+   "alpha": 0.0,
+   "temp": 4.0,
+   "blocks": 200,
+   "accepted_per_call": 2.72,
+   "all_accept": 0.49,
+   "accept_step": 0.6867852125031152
+  },
+  {
+   "k": 8,
    "key": 10,
    "alpha": 0.9,
+   "temp": 1.0,
    "blocks": 200,
-   "accepted_per_call": 1.41,
-   "all_accept": 0.105,
-   "accept_step": 0.3433898398020744
+   "accepted_per_call": 1.48,
+   "all_accept": 0.0,
+   "accept_step": 0.1823126111805822
+  },
+  {
+   "k": 8,
+   "key": 10,
+   "alpha": 0.9,
+   "temp": 2.0,
+   "blocks": 200,
+   "accepted_per_call": 2.4,
+   "all_accept": 0.02,
+   "accept_step": 0.3031547056835433
+  },
+  {
+   "k": 8,
+   "key": 10,
+   "alpha": 0.9,
+   "temp": 4.0,
+   "blocks": 200,
+   "accepted_per_call": 3.835,
+   "all_accept": 0.2,
+   "accept_step": 0.47959320280639534
+  },
+  {
+   "k": 16,
+   "key": 10,
+   "alpha": 0.9,
+   "temp": 4.0,
+   "blocks": 200,
+   "accepted_per_call": 4.65,
+   "all_accept": 0.04,
+   "accept_step": 0.28922823234426204
   }
  ],
  "prefix": " "

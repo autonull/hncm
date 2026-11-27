@@ -5,7 +5,7 @@ measured arms, keeps the T1 frontier, and allocates the next round.
 A parked family is not killed: it keeps the exploration reserve.
 
 - families `all`, tasks `t1,t3,t4`, budget `6h` (6.00 h)
-- 310 measured arms, 283 on T1, 6 on the frontier, 7 parked families
+- 314 measured arms, 283 on T1, 6 on the frontier, 7 parked families
 
 ## Pareto frontier (T1)
 
@@ -44,7 +44,7 @@ A parked family is not killed: it keeps the exploration reserve.
 | r5 | `edit-self` | t3 | +0.000 bpb edit | breadth |
 | r6 | `pack-256` | t1 | 0.415 exact | packs |
 | r7 | `template-2` | t1 | 0.340 exact | breadth |
-| r8 | `spec-8` | t4 | 1.560 accepted/call | breadth |
+| r8 | `specgate-10-a0.90-t4.0-k16` | t4 | 4.650 accepted/call | editcurve |
 
 ## Task views
 
@@ -52,7 +52,7 @@ A parked family is not killed: it keeps the exploration reserve.
 |---|---|---|---|
 | t1 | `r2+r3/r4:conceptcopy-6-cinf-t0.00` | 0.720 exact | breadth |
 | t3 | `r5:edit-self` | +0.000 bpb edit | breadth |
-| t4 | `r8:spec-8` | 1.560 accepted/call | breadth |
+| t4 | `r8:specgate-10-a0.90-t4.0-k16` | 4.650 accepted/call | editcurve |
 
 ## Combination matrix
 
@@ -76,7 +76,7 @@ A parked family is not killed: it keeps the exploration reserve.
 - **parked r6**: 4 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r7**: 9 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **capability r5**: 11 arms on t3, best `edit-self` (+0.000 bpb edit).
-- **capability r8**: 11 arms on t4, best `spec-8` (1.560 accepted/call).
+- **capability r8**: 15 arms on t4, best `specgate-10-a0.90-t4.0-k16` (4.650 accepted/call).
 
 ## Next allocation
 
@@ -100,4 +100,4 @@ Promote a combination only if it keeps round-trip and provenance.
 | round | budget | arms | frontier | tasks |
 |---:|---|---:|---:|---|
 | 1 | 2h | 80 | 10 | t1 |
-| 2 | 6h | 310 | 6 | t1,t3,t4 |
+| 2 | 6h | 314 | 6 | t1,t3,t4 |

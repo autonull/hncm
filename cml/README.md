@@ -155,8 +155,9 @@ The four bets, and where they live:
 - `cml editcurve`: causal pack-edit curve, concept-draft acceptance, a
   4-concept speculative block, and the concept+blend T3/T4 arms;
   `reports/EDIT-CURVE.md`. Concept-only exact is 0.650 at 1.72 bits/span.
-  The blend edit is local (−0.012 on survivors); the blend draft is
-  neutral (1.480 accepted/call, same as pointer).
+  The blend edit is local (−0.012 on survivors). The blend draft is
+  calibration-limited, not trunk-limited: τ1 K8 is 1.480; τ4 K16 is
+  4.650 (pointer 4.450).
 - `cml breadth`: small hyperparameter grids for copy, template/hole, library,
   edit prefixes, and speculative draft length; `reports/BREADTH.md`. Copy
   keys 1 -> 12; the concept+copy blend is 0.705 at 2.362 bits (target) and

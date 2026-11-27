@@ -2301,6 +2301,7 @@ def _spec_score(
     seed: int,
     key: int = 0,
     alpha: float = 0.0,
+    temp: float = 1.0,
 ) -> dict[str, float | int]:
     """Draft K concepts with the blend; one trunk forward verifies the block."""
     rng = np.random.default_rng(seed)
@@ -2319,12 +2320,11 @@ def _spec_score(
             vec = _copy_vec(cctx, key, k) if key else None
             if vec is not None:
                 logp = (1 - alpha) * torch.log(q) + alpha * torch.log(vec.to(q.device))
-                p = torch.softmax(logp, -1)
-                c = int(p.argmax())
-                prob = float(p[c])
-            else:
-                c = int(q.argmax())
-                prob = float(q[c])
+                q = torch.softmax(logp, -1)
+            q = q ** (1.0 / temp)
+            q = q / q.sum().clamp_min(1e-12)
+            c = int(q.argmax())
+            prob = float(q[c])
             choices.append(c)
             probs.append(prob)
             cctx = torch.cat((cctx, torch.tensor([c])))
@@ -2347,6 +2347,7 @@ def _spec_score(
         "k": K,
         "key": key,
         "alpha": alpha,
+        "temp": temp,
         "blocks": blocks,
         "accepted_per_call": accepted / max(blocks, 1),
         "all_accept": all_accept / max(blocks, 1),
@@ -2493,14 +2494,29 @@ def run_edit_curve(
     spec = _spec_score(pmodel, tmodel, ids, pos, active_lex, seq, k, 4, seed + 1)
     spec_gates = [
         _spec_score(
-            pmodel, tmodel, ids, pos, active_lex, seq, k, kg, seed + 1, key, alpha
+            pmodel,
+            tmodel,
+            ids,
+            pos,
+            active_lex,
+            seq,
+            k,
+            kg,
+            seed + 1,
+            key,
+            alpha,
+            temp,
         )
-        for key, alpha, kg in (
-            (0, 0.0, 8),
-            (10, 0.5, 8),
-            (10, 0.9, 8),
-            (6, 0.9, 8),
-            (10, 0.9, 4),
+        for key, alpha, kg, temp in (
+            (0, 0.0, 8, 1.0),
+            (0, 0.0, 8, 2.0),
+            (0, 0.0, 8, 4.0),
+            (0, 0.0, 16, 4.0),
+            (0, 0.0, 4, 4.0),
+            (10, 0.9, 8, 1.0),
+            (10, 0.9, 8, 2.0),
+            (10, 0.9, 8, 4.0),
+            (10, 0.9, 16, 4.0),
         )
     ]
     secs = time.perf_counter() - t0
@@ -2565,12 +2581,12 @@ def run_edit_curve(
         "The draft is the concept+copy blend; the trunk verifies each block.",
         "`key 0` is the pointer-only control.",
         "",
-        "| key | alpha | K | accepted/call | all accepted | accept/step |",
-        "|---:|---:|---:|---:|---:|---:|",
+        "| key | alpha | temp | K | accepted/call | all accepted | accept/step |",
+        "|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in spec_gates:
         lines.append(
-            f"| {r['key']} | {r['alpha']:.2f} | {r['k']} | "
+            f"| {r['key']} | {r['alpha']:.2f} | {r['temp']:.1f} | {r['k']} | "
             f"{r['accepted_per_call']:.3f} | {r['all_accept']:.3f} | "
             f"{r['accept_step']:.3f} |"
         )
@@ -3715,7 +3731,10 @@ def _collect_arms() -> list[dict]:
             arms.append(
                 {
                     "family": "r8",
-                    "arm": (f"specgate-{row['key']}-a{row['alpha']:.2f}-k{row['k']}"),
+                    "arm": (
+                        f"specgate-{row['key']}-a{row['alpha']:.2f}"
+                        f"-t{row['temp']:.1f}-k{row['k']}"
+                    ),
                     "task": "t4",
                     "target_calls": 1 / max(row["accepted_per_call"], 1e-9),
                     "source": "editcurve",
