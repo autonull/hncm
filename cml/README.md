@@ -1,8 +1,9 @@
 # cml
 
 The concept memory LM: the v11 codebase for the plan in `PLAN.md`.
-The active capability plan is `../TODO9.md` (exact-edit LM); the codec
-record is `../TODO8.md`; `../TODO7.md` is the auditable-codec product.
+The active capability plan is `../TODO9.md` (exact-edit program: compiler
+and copy-edit LM); the codec record is `../TODO8.md`; `../TODO7.md` is the
+auditable-codec product.
 
 ## The 50% target
 

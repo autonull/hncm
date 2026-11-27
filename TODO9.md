@@ -1,32 +1,35 @@
-# TODO9 — the exact-edit capability program
+# TODO9 — the exact-edit capability program: two tracks, one benchmark
 
 Status: 2026-11-27. `TODO8.md` shipped the delta codec. This plan changes
-the objective from bits per byte to **exact edit capability**. It is the
-active capability track; codec rungs A2-A6 are paused, not deleted.
+the objective from bits per byte to **exact edit capability**. It keeps
+the original copy-edit LM and adds a cheaper edit-compiler track. Both are
+funded; the benchmark decides which one wins.
 
-## 0. One claim
+## 0. One claim, two formulations
 
-**A small LM that emits an exact edit program beats a larger full-file
-byte LM on real code edits, at 5-50x fewer output tokens.** The decoder
-verifies every result. Success is exact match or test pass, not bpb.
+**Track E (edit compiler).** A small model that predicts *where* a file
+changed and *what* replaces it beats a larger full-file byte LM on real
+commits, at a small fraction of the output bytes.
 
-The claim is falsifiable. A retrieval/diff baseline and a full-file LM
-are measured on the same held-out repositories. If retrieval already wins,
-the capability is not real and the track stops.
+**Track C (original copy-edit LM).** A small LM that emits an exact delta
+program beats a larger full-file byte LM on real commits, at 5-50x fewer
+output tokens.
+
+Both are verified by exact decode, exact match, or test pass. Neither is a
+bpb claim.
 
 ## 1. Why this is the better bet
 
 - The delta arm is exact and measured: **56.6x** on 2% edits in 20 hunks,
   **27.8x** on scattered 2% edits (`cml/reports/DELTA.md`).
-- `delta_parse(new, old)` is a free teacher. No human labels.
 - The exact decoder is a free verifier. The reward is binary.
-- A full-file LM pays for every byte. A copy-edit LM pays only for
-  changes: copy spans, literals, and typed holes.
-- TODO8 A2-A6 optimize a proxy and cap near `0.68-0.71` bpb. This track
-  produces a capability result: instruction-conditioned, exact editing.
+- A full-file LM pays for every byte; both edit tracks pay only for
+  changes.
 - The synthetic delta benchmark is replaced by real old/new commit pairs.
+- Track E is cheaper to train; Track C is more general and is the original
+  bet. Run both.
 
-## 2. The task
+## 2. The shared task and benchmark
 
 Given:
 
@@ -34,22 +37,9 @@ Given:
 - `message`: the commit message (and optional failing test name);
 - `new`: the target file bytes.
 
-The model emits an action sequence:
-
-```
-COPY(offset, length)   # exact bytes from old
-LIT(span)              # new bytes
-HOLE(type)             # phase 3 only
-END
-```
-
-The target sequence is the `delta_parse(new, old)` result, serialized as
-actions. Restrict phase 1 to copies from `old`; copies from already-emitted
-output are phase 2. Decode the actions with the exact delta decoder and
-compare to `new`.
-
-Start with serialized delta tokens. A pointer/copy head over old-file
-positions is the fallback if the action sequence is too long.
+The benchmark is **Exact Edit Bench**: real commits, split by repository,
+with exact-match and test-pass labels. It is shared by both tracks and is
+itself a product.
 
 ## 3. Data
 
@@ -71,7 +61,7 @@ Filters:
 - non-empty message, no generated/vendor files;
 - parent blob and commit blob both available.
 
-Split by **repository**, not commit, so held-out code cannot leak:
+Split by **repository**, not commit:
 
 | split | repos | commits |
 |---|---|---:|
@@ -80,32 +70,84 @@ Split by **repository**, not commit, so held-out code cannot leak:
 | test | 1 | ~500 |
 
 Store blobs by SHA. Deduplicate near-identical edits by content hash.
-Record the exact repo SHAs and the mining config; a run without provenance
-is not evidence.
+Record repo SHAs and mining config; a run without provenance is not
+evidence.
 
-## 4. Arms: a variety of solutions
+## 4. Track E: the edit compiler
+
+```
+old file + message
+      |
+      v
+[ edit locator ]  -> changed spans
+      |
+      v
+[ edit writer ]   -> replacement text / typed holes
+      |
+      v
+[ exact assembler ] -> copy unchanged bytes, splice changes
+      |
+      v
+new file, verified byte-for-byte
+```
+
+Phase 1 copies from `old` only. Phase 2 may copy from already-emitted
+output. The locator is a span-classification model; the writer is a small
+autoregressive model over replacement bytes or typed holes.
+
+Why this is efficient:
+
+- the locator is token classification, not autoregressive action decoding;
+- the writer generates only changed bytes;
+- the assembler is exact and deterministic;
+- synthetic edits give controllable pretraining;
+- the locator is a standalone product.
+
+## 5. Track C: the original copy-edit LM
+
+The model emits a serialized delta action sequence:
+
+```
+COPY(offset, length)   # exact bytes from old
+LIT(span)              # new bytes
+HOLE(type)             # typed hole, later
+END
+```
+
+The target is `delta_parse(new, old)`, serialized as actions. Restrict
+phase 1 to copies from `old`; output copies are phase 2. Decode with the
+exact delta decoder and compare to `new`.
+
+This track is not a fallback. It is the original idea: a single
+autoregressive policy over edits, with SFT, DPO/RLFP, and typed holes.
+
+## 6. Arms: a variety of solutions
 
 | arm | what it does | role | cost |
 |---|---|---|---:|
-| **R** retrieval | nearest old/new pair or patch by message similarity; apply it | cheap baseline; kills a fake win | 30 min CPU |
-| **F** full-file | same trunk, generate the whole new file | compute-matched baseline | 1-2 GPU-h |
-| **S** copy-SFT | SFT on serialized delta actions | first real arm | 1-2 GPU-h |
+| **R** retrieval | nearest old/new pair or patch by message; apply exactly | cheap baseline; kills a fake win | 30 min CPU |
+| **F** full-file | same trunk generates the whole new file | compute-matched baseline | 1-2 GPU-h |
+| **E1** locator | old + message -> changed spans | fast Track E gate | 1 GPU-h |
+| **E2** locator + writer | spans + replacement bytes -> exact assembler | Track E product | 1-2 GPU-h |
+| **C1** copy-SFT | SFT on serialized delta actions | original Track C arm | 1-2 GPU-h |
 | **D** copy-DPO | SFT + DPO on exact-decode preferences | RLFP-style preference step | 1 GPU-h |
-| **G** copy-RLFP | GRPO/REINFORCE if DPO plateaus | last resort, verifiable reward | 1 GPU-h |
+| **G** copy-RLFP | GRPO/REINFORCE if DPO plateaus | verifiable-reward fallback | 1 GPU-h |
 | **H** holes-SFT | copy + typed holes for new code | compositional capability | 1 GPU-h |
-| **V** verifier rerank | sample K parses, decode each, keep the exact/test-pass one | test-time compute | 2-4x inference |
+| **V** verifier rerank | sample K, decode each, keep exact/test-pass | test-time compute | 2-4x inference |
 
-The order is R → F → S → D → G → H → V. Do not train D before S has a
-recorded baseline. Do not start H before D or G has a verdict.
+Order: R -> F -> E1 -> E2 -> C1 -> D -> G -> H -> V. Do not train D before
+C1 has a recorded baseline. Do not drop C because E is cheaper: C is the
+general arm and the original bet.
 
-## 5. Metrics and pre-registered gates
+## 7. Metrics and pre-registered gates
 
 Primary:
 
-- **exact match**: decoded file equals `new` byte-for-byte;
+- **exact match**: assembled file equals `new` byte-for-byte;
 - **test pass** on the subset with runnable tests;
-- **valid decode**: action sequence decodes without error;
+- **valid decode**: actions assemble without error;
 - **output bytes**: payload bytes divided by new-file bytes;
+- **locator span F1** and **location exact** (Track E);
 - **latency** and **test-time compute**.
 
 Secondary: edit distance, copy-span F1, instruction counterfactual accuracy
@@ -115,33 +157,38 @@ Gates:
 
 | gate | test | promote if |
 |---|---|---|
-| **G0** | retrieval on 500 held-out commits | retrieval exact < 20%; else harden the task |
-| **G1** | copy-SFT vs full-file | +10 points exact or +20 test pass, at ≤5% output bytes |
-| **G2** | copy-DPO vs copy-SFT | +3 points exact; else drop DPO |
-| **G3** | holes-SFT vs copy-SFT | +5 points on held-out compositions; else drop holes |
-| **G4** | verifier rerank | +2 points at ≤4x test-time compute; else drop |
+| **G0** | retrieval on 500 held-out commits | retrieval exact < 20%; else harden |
+| **GE1** | locator vs message-only baseline | span F1 +20 points |
+| **GE2** | locator + writer vs full-file | +10 exact or +20 test pass, ≤20% output bytes |
+| **GC1** | copy-SFT vs full-file | +10 exact or +20 test pass, ≤5% output bytes |
+| **G3** | DPO/RLFP on the best SFT arm | +3 exact over SFT; else drop |
+| **G4** | holes-SFT vs best arm | +5 points on held-out compositions |
+| **G5** | verifier rerank | +2 points at ≤4x test-time compute |
+| **G6** | head-to-head E2 vs C1 | pick the winner; record the loser |
 
-If G1 fails and retrieval wins, stop the track and ship the delta product.
-A gate that is not met names the next lever; it does not end the program.
+If G0 shows retrieval solving the task, harden before training. If GE2 and
+GC1 both fail, stop and ship the delta product. A gate that is not met
+names the next lever; it does not end the program.
 
-## 6. Implementation order
+## 8. Implementation order
 
 Add two modules and one CLI command. Keep `TODO8` codec code untouched.
 
 1. `cml/editdata.py`: mining, filters, repo split, manifest, blob cache.
    Tests: deterministic split, no repo leakage, diff-size filter.
-2. `cml/editlm.py`: action grammar, target builder from `delta_parse`,
-   exact decoder check, metrics.
-3. `cml editdata --repos ... --out ...`: build the manifest and split.
+2. `cml/editlm.py`: action grammar for both tracks, target builders,
+   exact assembler, metrics.
+3. `cml editdata --repos ... --out ...`: build manifest and split.
 4. `cml editlm --arm retrieval`: G0 baseline; write `reports/EDIT-LM.md`.
-5. `cml editlm --arm full --train`: F baseline on the same trunk.
-6. `cml editlm --arm copy --sft`: S arm; teacher-forced delta actions.
-7. `cml editlm --arm copy --dpo`: D arm; sample K, score exact/test pass,
+5. `cml editlm --arm locator`: E1; synthetic pretrain, then real commits.
+6. `cml editlm --arm compiler`: E2; writer + exact assembler.
+7. `cml editlm --arm copy --sft`: C1; teacher-forced delta actions.
+8. `cml editlm --arm copy --dpo`: D; sample K, score exact/test pass,
    build preference pairs, DPO. No learned reward model.
-8. `cml editlm --arm copy --rlfp`: G arm only if D plateaus.
-9. `cml editlm --arm holes --sft`: H arm; typed holes + exact realizer.
-10. `cml editlm --arm copy --rerank`: V arm; sample K and verify.
-11. Reports and tests: `reports/EDIT-LM.md`, `tests/test_editlm.py`.
+9. `cml editlm --arm copy --rlfp`: G only if D plateaus.
+10. `cml editlm --arm holes --sft`: H; typed holes + exact realizer.
+11. `cml editlm --arm compiler --rerank`: V; sample K and verify.
+12. Reports and tests: `reports/EDIT-LM.md`, `tests/test_editlm.py`.
 
 Commands, after the build:
 
@@ -149,52 +196,74 @@ Commands, after the build:
 uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
   --cache ~/.cache/hncm/edit --out cml/runs/edit-manifest.json
 uv run cml editlm --arm retrieval --manifest cml/runs/edit-manifest.json
-uv run cml editlm --arm full --manifest cml/runs/edit-manifest.json \
-  --run codec-byte-model-code-756752-d448-l8 --steps 2000
+uv run cml editlm --arm locator --manifest cml/runs/edit-manifest.json \
+  --pretrain synthetic --steps 1000
+uv run cml editlm --arm compiler --manifest cml/runs/edit-manifest.json \
+  --from edit-locator --steps 2000
 uv run cml editlm --arm copy --sft --manifest cml/runs/edit-manifest.json \
   --run codec-byte-model-code-756752-d448-l8 --steps 2000
 uv run cml editlm --arm copy --dpo --manifest cml/runs/edit-manifest.json \
   --from edit-copy-sft --pairs 2000
 uv run cml editlm --arm holes --sft --manifest cml/runs/edit-manifest.json \
   --from edit-copy-sft
-uv run cml editlm --arm copy --rerank --manifest cml/runs/edit-manifest.json \
-  --from edit-copy-sft --samples 8
+uv run cml editlm --arm compiler --rerank --manifest cml/runs/edit-manifest.json \
+  --from edit-compiler --samples 8
 uv run pytest cml/tests
 ```
 
-## 7. Budget
+## 9. Budget
 
-Under **6 GPU-hours total**, one job at a time:
+Under **8 GPU-hours total**, one job at a time:
 
 | step | budget |
 |---|---:|
 | data + retrieval | 2 h CPU |
 | full-file baseline | 1-2 GPU-h |
-| copy-SFT | 1-2 GPU-h |
-| DPO | 1 GPU-h |
+| locator + writer (Track E) | 2-3 GPU-h |
+| copy-SFT (Track C) | 1-2 GPU-h |
+| DPO / RLFP | 1 GPU-h |
 | holes | 1 GPU-h |
 | rerank | inference only |
 
 Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before G1. Do not
 run 40M.
 
-## 8. Risks and counters
+## 10. Products/wins within reach
+
+| product | what it is | effort | value |
+|---|---|---:|---|
+| **`cml delta`** | exact version compression; 56.6x on edits | built; 1 day to package | immediate |
+| **Exact Edit Bench** | real commits, repo split, exact/test-pass | 1 day CPU | foundation + artifact |
+| **Edit locator API** | old file + instruction -> changed spans | 1 week | useful to any coding agent |
+| **Edit compiler** | locator + writer + exact assembler | 2-3 weeks | the capability win |
+| **Repo memory** | delta chain across versions; exact retrieval | 2-3 days | agent context compression |
+| **Patch verifier** | apply a proposed diff, reject non-exact results | 1 day | hallucination guard |
+| **CI log codec** | delta repeated test logs | 1 day | small but real |
+
+The fastest conclusive win is the Exact Edit Bench plus the retrieval
+baseline. If retrieval solves it, save the GPU budget. If not, the
+benchmark is the foundation for both tracks.
+
+## 11. Risks and counters
 
 - **Retrieval solves it.** Harden with held-out repos, longer edits, and
   counterfactual messages; if retrieval still wins, stop.
 - **Exact match is too hard.** Pre-register test pass and edit distance as
   secondary; do not move the goal after seeing results.
-- **Leakage.** Split by repo, deduplicate near-identical edits, and never
-  put the target file in the prompt.
+- **Leakage.** Split by repo, deduplicate near-identical edits, never put
+  the target file in the prompt.
 - **Instruction ignored.** Include counterfactual pairs: same old file,
   different messages, different targets.
+- **LZ parse is not the edit.** Track E trains on real changed spans, not
+  `delta_parse` offsets. Track C keeps the original action space; compare
+  them on the same benchmark.
 - **DPO reward hacking.** The reward is exact decode, not a learned model;
   edit distance is only a tie-break.
 - **Action grammar errors.** Use constrained decoding or a valid-action
   mask; invalid parses score zero.
 - **Compute creep.** One job at a time; small trunk; budgets, not timers.
 
-## 9. Fresh-session start
+## 12. Fresh-session start
 
 Read this file first, then `TODO8.md` §1.10 and `cml/reports/DELTA.md`.
 
@@ -202,7 +271,7 @@ First session deliverable, no GPU:
 
 1. `cml/editdata.py` + deterministic repo split + manifest.
 2. `cml editlm --arm retrieval` + G0 on 500 held-out commits.
-3. `cml/reports/EDIT-LM.md` with the G0 number and the task difficulty.
+3. `cml/reports/EDIT-LM.md` with G0 and the task difficulty.
 
 Do not start A2-A6. Do not train a model before G0. The first session is
 done when G0 is recorded, not when a model is trained.
@@ -213,6 +282,6 @@ done when G0 is recorded, not when a model is trained.
 - `cml/reports/DELTA.md`: 56.6x / 27.8x exact delta.
 - `cml/codec.py`: `DeltaArm`, `delta_parse`.
 - `cml/bytecodec.py`: `RepCopyCodec`, exact verifier.
-- `cml/pointer.py`: the pointer/copy head if the action sequence is long.
+- `cml/pointer.py`: pointer/copy head if the action sequence is long.
 - `cml/concepts.py`: typed holes and exact realization.
 - `products/codec/README.md`: what ships today.

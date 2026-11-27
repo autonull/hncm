@@ -758,9 +758,10 @@ Run the exact codec on the full 756 KB test as a background batch job
 compare a short exact prefix to the full instrument.
 
 **Capability track.** `TODO9.md` replaces the bpb ladder as the primary
-capability bet: a copy-edit LM emits an exact delta program, trained by
-SFT, then DPO/RLFP on exact-decode preferences, then typed holes. First
-deliverable is the data harness and the retrieval baseline (G0), no GPU.
+capability bet with two tracks: an edit compiler (locator + writer + exact
+assembler) and the original copy-edit LM (delta-action SFT, then DPO/RLFP,
+then typed holes). Both share the Exact Edit Bench. First deliverable is
+the data harness and retrieval baseline (G0), no GPU.
 
 ## References
 
