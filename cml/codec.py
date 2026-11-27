@@ -206,7 +206,7 @@ def _decode_in(row: Counts, dec: ArithDecoder) -> int:
     return sym
 
 
-def _emit(rungs: list[Counts], sym: int, esc: int, enc: ArithEncoder) -> None:
+def emit(rungs: list[Counts], sym: int, esc: int, enc: ArithEncoder) -> None:
     """Encode `sym` through ordered rows, escaping toward the last row."""
     if sym == esc:
         for row in rungs:
@@ -227,7 +227,7 @@ def _emit(rungs: list[Counts], sym: int, esc: int, enc: ArithEncoder) -> None:
         row.update(sym)
 
 
-def _take(rungs: list[Counts], esc: int, dec: ArithDecoder) -> int:
+def take(rungs: list[Counts], esc: int, dec: ArithDecoder) -> int:
     for row in rungs[:-1]:
         sym = _decode_in(row, dec)
         if sym != esc:
@@ -244,7 +244,7 @@ def _take(rungs: list[Counts], esc: int, dec: ArithDecoder) -> int:
     return sym
 
 
-def _row(n: int, escape: int, init: int = 0) -> Counts:
+def new_row(n: int, escape: int, init: int = 0) -> Counts:
     table = np.full(n, init, dtype=np.int64)
     table[escape] = 1
     return Counts(n, init=table)
@@ -266,12 +266,12 @@ class ByteArm:
         if self.prev1 >= 0:
             one = self.o1.get(self.prev1)
             if one is None:
-                one = self.o1[self.prev1] = _row(257, ESC)
+                one = self.o1[self.prev1] = new_row(257, ESC)
             if self.prev2 >= 0:
                 key = self.prev2 << 8 | self.prev1
                 row = self.o2.get(key)
                 if row is None:
-                    row = self.o2[key] = _row(257, ESC)
+                    row = self.o2[key] = new_row(257, ESC)
                 return [row, one, self.o0]
             return [one, self.o0]
         return [self.o0]
@@ -280,11 +280,11 @@ class ByteArm:
         self.prev2, self.prev1 = self.prev1, sym
 
     def encode_one(self, sym: int, enc: ArithEncoder) -> None:
-        _emit(self._rungs(), sym, ESC, enc)
+        emit(self._rungs(), sym, ESC, enc)
         self._push(sym)
 
     def decode_one(self, dec: ArithDecoder) -> int:
-        sym = _take(self._rungs(), ESC, dec)
+        sym = take(self._rungs(), ESC, dec)
         self._push(sym)
         return sym
 
@@ -431,7 +431,7 @@ class UnitArm:
             return [self.o0]
         row = self.rows.get(self.prev)
         if row is None:
-            row = self.rows[self.prev] = _row(self.esc + 1, self.esc)
+            row = self.rows[self.prev] = new_row(self.esc + 1, self.esc)
         return [row, self.o0]
 
     def _push(self, sym: int) -> None:
@@ -442,7 +442,7 @@ class UnitArm:
             self._emit_literal(enc)
             self.bytes.encode_one(-1 - sym, enc)
             return
-        _emit(self._rungs(), sym, self.esc, enc)
+        emit(self._rungs(), sym, self.esc, enc)
         self._push(sym)
 
     def _emit_literal(self, enc: ArithEncoder) -> None:
@@ -452,7 +452,7 @@ class UnitArm:
         self._push(self.esc)
 
     def decode_one(self, dec: ArithDecoder) -> int:
-        sym = _take(self._rungs(), self.esc, dec)
+        sym = take(self._rungs(), self.esc, dec)
         if sym == self.esc:
             self._push(self.esc)
             return -1 - self.bytes.decode_one(dec)

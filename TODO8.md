@@ -2,10 +2,13 @@
 
 Status: 2026-11-27. R3 is complete. Stage 0 is measured: copy saves
 `15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
-the static pack loses per-file. The 20M codec is at `1.488` payload /
-`1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
-shared bpb against a 20M byte control. RLFP is untested. The next move is
-the Stage 3 copy proxy, not another scale seed.
+the static pack loses per-file. The concept pilot is measured: typed
+holes, exact realization, and a `0.230` bpb representation gain on
+unseen compositions (a pilot, not reasoning). The 20M codec is at
+`1.488` payload / `1.518` shared on the pinned 756,752 B test. The 50%
+target is `0.847` shared bpb against a 20M byte control. RLFP is
+untested. The next move is the concept Cortex with a matched byte
+Transformer, plus the Stage 3 copy proxy.
 
 ## 0. One claim, one target
 
@@ -74,11 +77,40 @@ static pack at every size (1/4/10/100 KB); the product needs an adaptive
 or delta pack, not a bigger static one. Stage 1's ranking job is served
 at 756 KB: skip straight to the Stage 3 copy proxy.
 
+## 1.2 Concept representation: measured 2026-11-27
+
+`cml/concepts.py`: templates with typed holes, recursive `Term` composition,
+exact `realize`, an MDL library gate, and `cml composition`. Report:
+`reports/COMPOSITION.md`. Synthetic arithmetic grammar, depth 3, seed 0,
+1,000 terms per split; the held-out edge is `ADD -> MUL`, never in train.
+
+| split | nodes | realized B | concept bpb | shared | byte arm |
+|---|---:|---:|---:|---:|---:|
+| train | 6,876 | 26,437 | 0.956 | 1.007 | 1.232 |
+| seen | 6,950 | 26,769 | 0.952 | 1.004 | 1.226 |
+| unseen | 10,255 | 39,732 | 0.931 | 0.965 | 1.161 |
+| twin | 10,255 | 39,732 | 0.919 | 0.953 | 1.147 |
+
+**Read.** Realization is exact and the term is the message; the library
+charge is 171 B. The novel edge costs `+0.012` bpb in the term code and
+`+0.014` in the byte arm at matched shape (the `twin` control rewrites
+`ADD -> MUL` to `ADD -> SUB`). Both arms generalize this edge, so at this
+grain the term gain is symbolization, not composition: `0.230` bpb, not
+the 50% claim. That is a pilot limit, not a gate. The separating test
+needs a harder composition task (argument dependence, wider depth) and a
+matched byte Transformer; the encoder and decoder both hold the term, so
+this prices representation, not reasoning.
+
+**Keep the compression baseline.** The span lexicon stays a compression
+dictionary; terms are a different kind: an operation with holes that the
+library composes, not a byte string that repeats.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
 | **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
+| **Concepts** | typed holes, exact realize, library gate; unseen edge +0.012 | Cortex predicts terms; matched byte Transformer | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
@@ -201,6 +233,8 @@ shared bpb. At the current `1.693` reference that is `1.354`; 50%
 
 RLFP is the unique capability lever and does not need a T1-T4 survivor.
 It does not directly lower T2 bpb; it improves the span policy.
+**This is span selection, not language-model alignment:** SFT precedes
+any DPO, and the pilot is labelled synthetic-preference, not human RLHF.
 
 - **Data:** 2,000 pairs, 80/20 train/held-out.
 - **Chosen:** the exact target span from a T1 context.
@@ -289,16 +323,24 @@ Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
    exact round-trip; `--window/--min-match/--cap/--depth`.
 3. **done** `cml perfile`: 1/4/10/100 KB table, the pack charged once
    per file, byte baseline on the same chunks.
-4. `cml scale --copy`: put the measured LZ tokens in front of the
+4. **done** `cml composition`: templates with typed holes, recursive
+   `realize`, the MDL library gate, and an unseen-edge split with a
+   shape-matched `twin` control (`concepts.py`).
+5. `cml composition --hard`: argument dependence and depth 4-5, so the
+   novel edge is not absorbed by an order-2 byte context.
+6. Cortex: predict the term stream from context; score exact
+   composition and accepted/call; then the matched byte Transformer.
+7. `cml scale --copy`: put the measured LZ tokens in front of the
    frozen 20M model; charge only the residual literals; report the
    proxy saving on `reports/T2.md`. This is the next GPU lever.
-5. `cml codec --arm byte-model --params/--d/--layers`: the 20M control
+8. `cml codec --arm byte-model --params/--d/--layers`: the 20M control
    (G1) must be a manifest, not an ad-hoc run.
-6. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
-7. Product pack: an adaptive or delta pack per file; a static pack is
-   measured as a loss at 1-100 KB and is not the answer.
-8. Reports: `reports/COVERAGE.md` (done), `reports/COPY.md` (done),
-   `reports/PER-FILE.md` (done), `reports/T2.md`, `reports/RLFP.md`.
+9. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
+10. Product pack: an adaptive or delta pack per file; a static pack is
+    measured as a loss at 1-100 KB and is not the answer.
+11. Reports: `reports/COVERAGE.md` (done), `reports/COPY.md` (done),
+    `reports/PER-FILE.md` (done), `reports/COMPOSITION.md` (done),
+    `reports/T2.md`, `reports/RLFP.md`.
 
 Commands after the build:
 
@@ -306,14 +348,16 @@ Commands after the build:
 uv run cml coverage --sizes 256,512,1024,2048 --bytes 756752
 uv run cml copyprobe --window 4096 --bytes 756752
 uv run cml perfile --sizes 1024,4096,10240,102400
+uv run cml composition --pairs 1000 --depth 3 --seed 0
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
 Tests: the `active` run id, byte-model params, copy round-trip and
-determinism, the per-file charge arithmetic, RLFP held-out split, and
-exact codec round-trip. No coverage target for the rest.
+determinism, per-file charge arithmetic, typed-hole arity, the MDL gate,
+exact realization and term round-trip, the unseen-edge split, RLFP
+held-out split, and exact codec round-trip. No coverage target.
 
 ## 13. Risks
 
@@ -330,20 +374,25 @@ exact codec round-trip. No coverage target for the rest.
 
 ## 14. Next actions
 
-0. Do not restart the 5-minute timer. Use one explicit task per stage.
-1. **Done.** Stage 0: coverage, copy, per-file. No GPU, 7 minutes.
-2. **Skip Stage 1.** Its pack/copy ranking is answered at 756 KB and
-   its arms cost more than `reports/COVERAGE.md` already shows.
-3. Run the Stage 3 copy proxy: LZ tokens in front of the frozen 20M
-   model, charge the residual literals, no new training. This is the
-   next lever; the honest bar is >5% on the 756 KB test.
-4. Run the RLFP pilot in parallel (CPU, 2 minutes). It is still the
-   only untested capability lever.
-5. If the copy proxy and the pointer plateau, run Stage 2 for the
-   literal head only.
-6. Add the 20M byte control as a manifest before any 20% claim.
-7. Decide: 20% claim, 50% program, or park compression.
-8. Only then consider 40M or an adaptive/delta pack for the product.
+Two tracks share one baseline; keep both.
+
+**Concept track (architectural milestone).**
+1. **Done.** Typed holes, recursive composition, exact realization, the
+   MDL library gate, and the unseen-composition pilot (`§1.2`).
+2. Add a harder composition task: argument dependence and depth 4-5, so a
+   novel edge is not solved by an order-2 byte context.
+3. Add the Cortex: predict the term stream from context, not the whole
+   term. Score exact composition and accepted/call.
+4. Compare against a matched byte Transformer (same params, data,
+   compute). This is the only test that separates concept from capacity.
+
+**Compression track.**
+5. **Done.** Stage 0: coverage, copy, per-file.
+6. **Skip Stage 1**; run the Stage 3 copy proxy on the frozen 20M model.
+7. Run the RLFP span pilot in parallel (CPU, 2 minutes).
+8. Add the 20M byte control manifest before any 20% claim.
+9. Decide: 20% claim, 50% program, or park compression.
+10. Product pack: adaptive or delta, never a bigger static pack (G5).
 
 ## References
 

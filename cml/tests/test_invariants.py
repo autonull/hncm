@@ -377,3 +377,60 @@ def test_pointer_design_matrix() -> None:
                 blob = pc.encode(data, parse=parse)
                 assert pc.decode(blob, len(data)) == data
             assert len(pc.sample(16, seed=0)) == 16
+
+
+def test_concept_realize_exact() -> None:
+    import concepts
+
+    lib = concepts.arithmetic_library()
+    x = concepts.Literal("Int", b"2")
+    y = concepts.Literal("Int", b"3")
+    mul = concepts.Term("MUL", (x, y))
+    root = concepts.Term("ADD", (mul, concepts.Literal("Int", b"4")))
+    assert concepts.realize(root, lib) == b"ADD(MUL(2, 3), 4)"
+    assert concepts.size(root) == 5
+    assert concepts.pairs(root) == {("@root", "ADD"), ("ADD", "MUL")}
+    assert concepts.has_ban(root)
+
+
+def test_concept_typed_holes() -> None:
+    import concepts
+
+    lib = concepts.arithmetic_library()
+    with pytest.raises(ValueError):
+        concepts.realize(concepts.Term("ADD", (concepts.Literal("Int", b"1"),)), lib)
+    with pytest.raises(KeyError):
+        concepts.realize(concepts.Term("EXP", ()), lib)
+
+
+def test_concept_library_mdl_gate() -> None:
+    import concepts
+
+    lib = concepts.Library()
+    template = concepts.arithmetic_library().templates["ADD"]
+    cost = 8 * len(template.blob())
+    assert not lib.offer(template, cost - 1)
+    assert not lib.offer(template, cost)
+    assert lib.offer(template, cost + 1)
+    assert lib.rejected == 2
+    assert "ADD" in lib.templates
+
+
+def test_concept_composition_generalizes() -> None:
+    import concepts
+
+    lib = concepts.arithmetic_library()
+    banned = concepts.split(lib, 50, 3, seed=2, ban=True)
+    clean = concepts.split(lib, 50, 3, seed=3, ban=False)
+    assert all(concepts.has_ban(t) for t in banned)
+    assert not any(concepts.has_ban(t) for t in clean)
+    assert all(not concepts.has_ban(concepts.twin(t)) for t in banned)
+    assert [concepts.size(concepts.twin(t)) for t in banned] == [
+        concepts.size(t) for t in banned
+    ]
+    terms = clean
+    blob = concepts.ConceptArm(lib).encode(terms)
+    back = concepts.ConceptArm(lib).decode(blob)
+    assert [concepts.realize(t, lib) for t in back] == [
+        concepts.realize(t, lib) for t in terms
+    ]

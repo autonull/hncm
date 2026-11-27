@@ -29,6 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import codec as codec_mod
+import concepts
 import stage0
 
 ROOT = Path(__file__).resolve().parent
@@ -6409,6 +6410,16 @@ def run_perfile(
     return 0
 
 
+def run_composition(pairs: int, depth: int, seed: int) -> int:
+    """P5 pilot: typed holes, exact realization, an unseen composition."""
+    report = concepts.benchmark(pairs, depth, seed) | {"git": git_sha()}
+    write_json(REPORTS / "composition.json", report)
+    text = concepts.render(report)
+    write_text(REPORTS / "COMPOSITION.md", text)
+    print(text)
+    return 0
+
+
 def run_scale(
     sizes: str = "5m,10m",
     corpus_name: str = "code",
@@ -7738,6 +7749,10 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--min-count", type=int, default=16)
     cf.add_argument("--cap", type=int, default=16)
     cf.add_argument("--no-baseline", action="store_true")
+    ce = sub.add_parser("composition")
+    ce.add_argument("--pairs", type=int, default=1000)
+    ce.add_argument("--depth", type=int, default=3)
+    ce.add_argument("--seed", type=int, default=0)
     sl = sub.add_parser("scale")
     sl.add_argument("--sizes", default="5m,10m")
     sl.add_argument("--corpus", choices=("code",), default="code")
@@ -7911,6 +7926,8 @@ def main(argv: list[str] | None = None) -> int:
             a.cap,
             not a.no_baseline,
         )
+    if a.cmd == "composition":
+        return run_composition(a.pairs, a.depth, a.seed)
     if a.cmd == "scale":
         return run_scale(
             a.sizes,

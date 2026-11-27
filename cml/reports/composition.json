@@ -1,0 +1,62 @@
+{
+ "rows": [
+  {
+   "split": "train",
+   "terms": 1000,
+   "nodes": 6876,
+   "bytes": 26437,
+   "payload_bytes": 3158,
+   "shared_bytes": 3329,
+   "concept_bpb": 0.9556303665317547,
+   "shared_bpb": 1.007376026024133,
+   "byte_bpb": 1.232212429549495,
+   "ban": false
+  },
+  {
+   "split": "seen",
+   "terms": 1000,
+   "nodes": 6950,
+   "bytes": 26769,
+   "payload_bytes": 3187,
+   "shared_bytes": 3358,
+   "concept_bpb": 0.952444992341888,
+   "shared_bpb": 1.0035488811685158,
+   "byte_bpb": 1.2264933318390676,
+   "ban": false
+  },
+  {
+   "split": "unseen",
+   "terms": 1000,
+   "nodes": 10255,
+   "bytes": 39732,
+   "payload_bytes": 4622,
+   "shared_bytes": 4793,
+   "concept_bpb": 0.9306352562166516,
+   "shared_bpb": 0.9650659418101278,
+   "byte_bpb": 1.1609785563273936,
+   "ban": true
+  },
+  {
+   "split": "twin",
+   "terms": 1000,
+   "nodes": 10255,
+   "bytes": 39732,
+   "payload_bytes": 4491,
+   "shared_bytes": 4662,
+   "concept_bpb": 0.9042585321655089,
+   "shared_bpb": 0.9386892177589852,
+   "byte_bpb": 1.138226114970301,
+   "ban": false
+  }
+ ],
+ "library_bytes": 171,
+ "library": 4,
+ "rejected": 0,
+ "banned": [
+  "ADD->MUL"
+ ],
+ "seed": 0,
+ "depth": 3,
+ "n": 1000,
+ "git": "5c62f786ded8eb67caf7492b65851ec16fb689bc"
+}
