@@ -46,14 +46,19 @@ uv run cml decompress NOTES.md.cmlc      # -> NOTES.md, digest checked
 
 `decompress` checks the SHA-256 against the header and refuses a mismatch.
 
-## Roadmap to 10x
+## Roadmap to 10x+
 
-The priced parse is measured at `0.852 (9.4x)` on the size instrument. The
-rungs from there are costed in the plan (`TODO8.md` §0.1): longer horizon
-and a 2 MB window (`~0.80`), two-pass literals (`~0.74`), a 30M trunk on
-64 MB (`~0.68`), code-aware literal context (`0.633 = 12.6x`). Each rung
-ships only when its decoder reproduces it; the product above stays exact
-throughout.
+The product goal is **10x+ on real code**, reached on two tracks:
+
+1. **Delta arm (v1, no training).** Code a new version as LZ matches
+   against the old file plus literals: a 2% edit copies ~98% of the file,
+   so expect **50-300x on small edits**. Budget 1 h; ships first.
+2. **Single file (v2).** The priced parse is measured at `0.852 (9.4x)` on
+   the size instrument. The rungs from there are costed in the plan
+   (`TODO8.md` §0.1): horizon 2-4 KB and a 2 MB window (`~0.80`), two-pass
+   literals (`~0.75`), code-aware context (`~0.71`), a 30M trunk (`~0.68`),
+   then 1K context (`0.633`). Each rung ships only when its decoder
+   reproduces it; the product above stays exact throughout.
 
 ## Known limits
 

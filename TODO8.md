@@ -27,27 +27,48 @@ Transformer, resume that plan; its Stage 0 step is already answered by
 
 ## 0. One claim, one target
 
-**We will ship** a lossless codec for code at **50% below a 20M byte LM**
-(0.633 shared bpb = 12.6x) with exact round-trip, provenance and a product
-CLI. The ladder from 6.3x to 12.6x is measured to 0.852 and costed below.
+**We will ship** a lossless codec that is **10x+ on real code**: the
+single-file codec is measured to **0.852 (9.4x)** on the instrument and the
+delta arm turns edits into **50-300x**. The single-file 50% rung (0.633) is
+the research north star, costed below, not a gate on the product.
 
-## 0.1 The solve: how 0.633 is reached
+## 0.1 The solve: three tracks, one critical path
 
-Each rung is a lever with a measured or costed gain, a budget, and a
-named next lever if it plateaus. We build, we price, we promote.
+The goal is a product that is **10x+ on real code**. Two tracks reach it,
+and the cheapest one carries the product while the research track grinds
+the last points.
 
-| rung | from | to | lever | budget | confidence |
-|---|---:|---:|---|---|---|
-| 1 **done** | 1.266 | **0.852** | priced parse + four repeat distances | 5 min | measured |
-| 2 | 0.852 | ~0.800 | longer horizon (2-4 KB lookahead), 2 MB window, cap 512 | 30 min | high |
-| 3 | 0.800 | ~0.740 | two-pass literals: draft pass + trunk-coded correction | 1 h | medium-high |
-| 4 | 0.740 | ~0.680 | 30M trunk on 64 MB train (G1 at 30M) | 2 h | medium |
-| 5 | 0.680 | **0.633** | code-aware literal context: indent/keyword/AST features | 1 h | medium |
-| 6 | product | | exact priced codec, delta arm for versioned code, adaptive pack | 2 h | high |
+**Track B (fast win, no training): the delta arm.** A new version is coded
+as matches against the *old file* (an external dictionary) plus literals.
+A 2% edit copies ~98% of the file, so the payload is the literals only:
+expect **50-300x on small edits** and ~5x on unrelated files. Budget
+1 h CPU+GPU, no new trunk. This is the product's killer feature and it
+ships first.
 
-The rungs compound: `1.266 x 0.67 x 0.94 x 0.925 x 0.92 x 0.93 = 0.63`.
-If a rung plateaus, hand its bytes to the next rung; no rung ends the
-program.
+**Track A (research, single file): the rung ladder.** Cheap wins first,
+by value per hour; each rung is priced on the instrument in minutes and
+promoted to a codec only when its decoder reproduces it.
+
+| order | rung | from | to | lever | budget | value/h |
+|---:|---|---:|---:|---|---:|---:|
+| 1 | **done** | 1.266 | **0.852** | priced parse + repeat distances | 5 min | huge |
+| 2 | A2 | 0.852 | 0.80 | 2-4 KB horizon, 2 MB window, cap 512 | 30 min | high |
+| 3 | A3 | 0.80 | 0.75 | two-pass literals: draft + trunk correction | 1 h | high |
+| 4 | A5 | 0.75 | 0.71 | code-aware context: indent/keyword/AST features | 1 h | medium |
+| 5 | A4 | 0.71 | 0.68 | 30M trunk, 64 MB train, G1 at 30M | 2 h | low |
+| 6 | A6 | 0.68 | **0.633** | 1K context + two-model blend | 3 h | low |
+
+Rungs 2-5 compound to ~0.70-0.71; the 10x (0.633) needs rung 6 or the
+delta arm's cross-file sharing. **The honest floor for the single-file
+codec is ~0.68-0.70, and the 10x product target is reached with the delta
+arm.** Both are worth building; the delta arm is the efficient route.
+
+**Track C (capability, parallel): RLFP.** 2k pairs, CPU, 2 minutes; it
+tests the span policy and does not block A or B.
+
+**Critical path.** B ships a product this cycle; A2-A3 lift the single-file
+codec to ~0.75 and ship as v2; A5/A6 and C run after, on the instrument,
+and are promoted only when a decoder proves them.
 
 ## 0.2 The scoreboard
 
@@ -62,7 +83,7 @@ program.
 | 20% | 1.012 | -20% | 7.9x | **met (instrument)** |
 | 30% | 0.886 | -30% | 9.0x | **met (instrument)** |
 | 40% | 0.759 | -40% | 10.5x | next rung |
-| **50%** | **0.633** | **-50%** | **12.6x** | **the program** |
+| **50%** | **0.633** | **-50%** | **12.6x** | single-file research target |
 
 The denominator is the 20M byte control on the same train/test/steps:
 **1.265 / 1.266** (§1.8). The 4.86M byte model (`1.693 / 1.694`) and the
@@ -334,7 +355,7 @@ CLI ships the exact codec until then.
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 20M byte 1.266; priced parse 0.852 instrument; 20%/30% met | exact priced parse; 40% (0.759) | 40/50% |
+| **Compression** | 1.266 exact; 0.852 priced parse; 20%/30% met | delta arm (product v1); exact 0.852; A2-A3 (0.75) | product 10x |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
@@ -363,6 +384,19 @@ non-negotiables.
 One full cycle is **about 2 GPU-hours and under 3 GB**. Run one task at
 a time. Checkpoint every 500 pointer steps. Never use a timer that can
 kill an active task.
+
+**Efficiency rules (the ones that make this plan cheap):**
+
+0. **Instrument first, codec once.** Price every rung with the fast arms;
+   build the exact codec once, for the winner, not per rung.
+1. **One bits pass, many parses.** `literal_bits` costs 17 s and is reused
+   by every parse variant; cache parses by `(window, min_match, cap, depth)`.
+2. **One job at a time, budgets not timers**, 1 h per session, 2 GPU-hours
+   per track.
+3. **Ship the delta arm before the last bpb points**: it is a day of work
+   for 50-300x on edits, while rungs 5-6 cost hours for ~7%.
+4. **Batch decode across streams**; cache chunk forwards; fixed shapes to
+   remove the rounding gap.
 
 **Rules that save the most:**
 
@@ -620,63 +654,33 @@ reason to stop.
 
 ## 14. Next actions: the solve order
 
-Every step has a target, a budget and a named successor. The product is
-live; the research rungs run on the instrument and are promoted to codecs
-when they prove out.
+Value per hour, dependencies, budgets. One job at a time; total budget
+**under 10 GPU-hours across sessions**.
 
-| # | step | target | budget | if it plateaus |
-|---|---|---|---|---|
-| 1 | exact priced parse codec (32 KB round-trip, then full) | decode = input, ≤0.86 | 20 min | fix rounding with a fixed-shape batch, keep 0.852 as a target |
-| 2 | longer horizon + 2 MB window/cap 512 | 0.800 | 30 min | two-pass literals (rung 3) |
-| 3 | two-pass literals (draft + correction) | 0.740 | 1 h | 30M trunk (rung 4) |
-| 4 | 30M trunk, 64 MB train, G1 at 30M | 0.680 | 2 h | code-aware context (rung 5) |
-| 5 | code-aware literal context (indent/keyword/AST) | **0.633** | 1 h | delta arm + adaptive pack (product) |
-| 6 | product: exact codec, delta arm, adaptive pack | 10x with install-once | 2 h | ship 9.4x |
-| 7 | RLFP pilot in parallel (CPU) | +5 pairwise | 2 min | record and move on |
+| # | track | step | target | budget | needs | if it plateaus |
+|---|---|---|---|---|---|---|
+| 1 | B | delta arm: LZ against the old file + literals | 50-300x on 2% edits | 1 h | old/new pairs | adaptive per-repo pack |
+| 2 | B | ship `cml delta` and document `products/codec` | product v1 | 1 h | step 1 | fall back to v0 |
+| 3 | A | priced parse, exact codec (32 KB, then full) | decode = input, ≤0.86 | 20 min | step 1 of §0.1 | fixed shapes + coarse totals |
+| 4 | A | A2: horizon 2-4 KB, 2 MB window, cap 512 | 0.80 | 30 min | cached bits | A3 |
+| 5 | A | A3: two-pass literals | 0.75 | 1 h | A2 | A5 |
+| 6 | A | A5: code-aware context | 0.71 | 1 h | A3 | A4 |
+| 7 | A | A4: 30M trunk | 0.68 | 2 h | A5 | A6 |
+| 8 | C | RLFP pilot | +5 pairwise | 2 min | frozen 5M | record and move on |
+| 9 | A | A6: 1K context + blend | **0.633** | 3 h | A4 | ship 0.68-0.71 |
 
-**Concept track** is a research note, not a gate on the codec: typed holes
-and exact realization are measured (`0.230` bpb as a codec); the matched
-Cortex pilot is negative at this grain. If it is pursued, the next test is
-argument dependence, and only a win there earns a scale-up. It does not
-block any rung above.
+**Promotion rule.** A rung ships only when its own decoder round-trips;
+until then it is a target, not a claim. The product README states what
+ships and what is research.
 
-**Rules of engagement.** One job at a time, budgets not timers, promote
-what beats its rung, and never end a session without naming the next lever.
+**Concept track** is a research note, not a gate: typed holes and exact
+realization are measured (`0.230` bpb as a codec); the matched Cortex pilot
+is negative at this grain. If pursued, the next test is argument
+dependence; a win there earns a scale-up. It blocks nothing above.
 
-**Concept track (architectural milestone).**
-1. **Done.** Typed holes, recursive composition, exact realization, the
-   MDL library gate, and the unseen-composition pilot (`§1.2`).
-2. **Done, negative at depth 4.** The matched Cortex pilot (`§1.3`): the
-   term model leads on seen, the byte arm wins the novel edge.
-3. **Done, negative.** The depth sweep (`§1.4`) and its window check
-   (`§1.5`): the apparent closure was context truncation. At `seq 256`
-   the edge gap saturates at `+0.008`, so bytes match the term model
-   once a term fits the context.
-4. Next: argument dependence, where a byte context cannot infer the type
-   of a hole from its bytes. Design the grammar so the type is not
-   written, rerun the matched pair, and score exact type recovery.
-5. Only then scale the Cortex and compare against a matched byte
-   Transformer at 5M and 20M params.
-
-**Compression track (the live product).**
-6. **Done.** Stage 0, the fast encoder (290x), the 20M byte control
-   (`1.266`, G1), the per-file charge (G5 fails), the copy arm and the
-   priced parse (`0.852` instrument; 20% and 30% met).
-7. **Shipped.** `products/codec`: `cml compress` / `cml decompress`, exact
-   round-trip, `.cmlc` container, SHA-256, 1.266 bpb = 6.3x.
-8. **Next: exact priced parse.** A slow encode/decode pair with
-   `priced_parse`: encode 32 KB, decode it, compare with the instrument's
-   `0.852`. If it round-trips, it becomes the product codec; cost about 20
-   minutes for 32 KB, so prove on a slice first.
-9. **Then the 40% point (0.759).** Levers, in order: a longer price horizon
-   (DP lookahead), window/cap up (2 MB, 512), a second literal pass, or a
-   24-30M trunk. One at a time, instrument only, and only promote what
-   survives at 40%.
-10. **Per-file with the priced parse** and the install-once charge; then
-    decide 40/50% or park.
-11. RLFP span pilot (CPU, 2 minutes); it is still the only untested
-    capability lever. The concept track parks except for argument dependence
-    if the priced parse plateaus.
+**Rules of engagement.** Instrument first, one bits pass reused, one job at
+a time, promote what round-trips, and never end a session without naming
+the next lever.
 
 ## References
 
