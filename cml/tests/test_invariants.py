@@ -434,3 +434,46 @@ def test_concept_composition_generalizes() -> None:
     assert [concepts.realize(t, lib) for t in back] == [
         concepts.realize(t, lib) for t in terms
     ]
+
+
+def test_cortex_stream_roundtrip() -> None:
+    import concepts
+    import cortex
+
+    lib = cortex.library()
+    terms = concepts.split(lib, 20, 3, seed=4, ban=False, banned=cortex.BANNED)
+    ids, nbytes = cortex.pack(terms, lib)
+    back = cortex.unpacked(ids, lib, len(terms))
+    assert [concepts.realize(t, lib) for t in back] == [
+        concepts.realize(t, lib) for t in terms
+    ]
+    assert nbytes == len(b"\n".join(concepts.realize(t, lib) for t in terms))
+    assert ids.count(cortex.SEP) == len(terms)
+
+
+def test_cortex_split_and_twin() -> None:
+    import concepts
+    import cortex
+
+    lib = cortex.library()
+    unseen = concepts.split(lib, 20, 3, seed=5, ban=True, banned=cortex.BANNED)
+    assert all(concepts.has_ban(t, cortex.BANNED) for t in unseen)
+    twins = [concepts.twin(t, "ADD", "XOR", "AND") for t in unseen]
+    assert not any(concepts.has_ban(t, cortex.BANNED) for t in twins)
+    assert [concepts.size(t) for t in twins] == [concepts.size(t) for t in unseen]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="cortex trains on cuda")
+def test_cortex_trains_and_codes() -> None:
+    import concepts
+    import cortex
+
+    lib = cortex.library()
+    terms = concepts.split(lib, 60, 3, seed=6, ban=False, banned=cortex.BANNED)
+    ids, _ = cortex.pack(terms, lib)
+    model, _ = cortex.train(
+        ids, cortex.VOCAB, {"d": 32, "layers": 1, "heads": 4}, 16, 5, 4, 0
+    )
+    bits, n = cortex.stream_bits(model, ids, 16, batch=4)
+    assert n > 0
+    assert bits > 0

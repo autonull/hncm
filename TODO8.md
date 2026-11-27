@@ -4,11 +4,13 @@ Status: 2026-11-27. R3 is complete. Stage 0 is measured: copy saves
 `15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
 the static pack loses per-file. The concept pilot is measured: typed
 holes, exact realization, and a `0.230` bpb representation gain on
-unseen compositions (a pilot, not reasoning). The 20M codec is at
-`1.488` payload / `1.518` shared on the pinned 756,752 B test. The 50%
-target is `0.847` shared bpb against a 20M byte control. RLFP is
-untested. The next move is the concept Cortex with a matched byte
-Transformer, plus the Stage 3 copy proxy.
+unseen compositions (a pilot, not reasoning). The cortex pilot is a
+negative at this grain: the term model leads on seen (`-0.022` bpb) and
+loses the unseen edge (`+0.004`). The 20M codec is at `1.488` payload /
+`1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
+shared bpb against a 20M byte control. RLFP is untested. The next move is
+a composition task that a byte context cannot recompute, plus the Stage 3
+copy proxy.
 
 **Backup.** `TODO8.compression.md` is the original compression plan,
 unchanged: the state before the concept track, including its full Stage 1
@@ -111,12 +113,41 @@ this prices representation, not reasoning.
 dictionary; terms are a different kind: an operation with holes that the
 library composes, not a byte string that repeats.
 
+## 1.3 Cortex pilot: measured 2026-11-27
+
+`cml cortex`: a 22-symbol term model against a matched 256-symbol byte
+model, both `d128 l4 h4 seq128`, 3,000 steps, 30,000 terms per split,
+810,496 params, 108 s on one GPU. Report: `reports/CORTEX.md`.
+
+| split | bytes | cortex bpb | byte bpb | delta |
+|---|---:|---:|---:|---:|
+| seen | 1,451,231 | 0.958 | 0.980 | -0.022 |
+| unseen | 2,035,976 | 0.970 | 0.966 | +0.004 |
+| twin | 2,035,976 | 0.938 | 0.959 | -0.021 |
+
+**Read.** The novel edge costs `+0.032` bpb for the term model and
+`+0.007` for bytes at matched shape. The term model leads on seen and
+loses the unseen edge: the byte arm absorbs the new composition better.
+So §1.2's gain is a *coding* gain when the term is given, not a
+*prediction* gain. That is a pilot limit: this grammar has random values
+and shallow structure, so local byte contexts recompute it. The
+separating test needs argument dependence, long-range binding, and a
+depth where bytes cannot recover the structure. Until then the concept
+track has no evidence over bytes, and `TODO8.compression.md` is the
+fallback.
+
+**Pilot defects found and fixed.** At 3,000 terms the model memorized
+(train `1.16` bits/token, held-out `5.23`); at 50,000 terms it stopped
+below the marginal. The pilot needs both enough terms and a converged
+run; 30,000 terms and 3,000 steps is the smallest point where train and
+held-out agree.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
 | **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
-| **Concepts** | typed holes, exact realize, library gate; unseen edge +0.012 | Cortex predicts terms; matched byte Transformer | P5d |
+| **Concepts** | typed holes, exact realize, library gate; cortex ties bytes on the edge | argument-dependent task; depth 6 | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
@@ -332,10 +363,11 @@ Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
 4. **done** `cml composition`: templates with typed holes, recursive
    `realize`, the MDL library gate, and an unseen-edge split with a
    shape-matched `twin` control (`concepts.py`).
-5. `cml composition --hard`: argument dependence and depth 4-5, so the
-   novel edge is not absorbed by an order-2 byte context.
-6. Cortex: predict the term stream from context; score exact
-   composition and accepted/call; then the matched byte Transformer.
+5. **done (negative)** `cml cortex`: a 22-symbol term model against a
+   matched byte model; the byte arm wins the novel edge at this grain
+   (`reports/CORTEX.md`).
+6. `cml composition --hard`: argument dependence and depth 6, where a
+   byte context cannot recompute the structure; rerun the matched pair.
 7. `cml scale --copy`: put the measured LZ tokens in front of the
    frozen 20M model; charge only the residual literals; report the
    proxy saving on `reports/T2.md`. This is the next GPU lever.
@@ -346,7 +378,7 @@ Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
     measured as a loss at 1-100 KB and is not the answer.
 11. Reports: `reports/COVERAGE.md` (done), `reports/COPY.md` (done),
     `reports/PER-FILE.md` (done), `reports/COMPOSITION.md` (done),
-    `reports/T2.md`, `reports/RLFP.md`.
+    `reports/CORTEX.md` (done), `reports/T2.md`, `reports/RLFP.md`.
 
 Commands after the build:
 
@@ -355,6 +387,7 @@ uv run cml coverage --sizes 256,512,1024,2048 --bytes 756752
 uv run cml copyprobe --window 4096 --bytes 756752
 uv run cml perfile --sizes 1024,4096,10240,102400
 uv run cml composition --pairs 1000 --depth 3 --seed 0
+uv run cml cortex --pairs 30000 --depth 4 --steps 3000
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
@@ -362,8 +395,9 @@ uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 
 Tests: the `active` run id, byte-model params, copy round-trip and
 determinism, per-file charge arithmetic, typed-hole arity, the MDL gate,
-exact realization and term round-trip, the unseen-edge split, RLFP
-held-out split, and exact codec round-trip. No coverage target.
+exact realization and term round-trip, the unseen-edge split, the term
+stream round-trip, the matched pilot smoke, RLFP held-out split, and
+exact codec round-trip. No coverage target.
 
 ## 13. Risks
 
@@ -385,12 +419,13 @@ Two tracks share one baseline; keep both.
 **Concept track (architectural milestone).**
 1. **Done.** Typed holes, recursive composition, exact realization, the
    MDL library gate, and the unseen-composition pilot (`§1.2`).
-2. Add a harder composition task: argument dependence and depth 4-5, so a
-   novel edge is not solved by an order-2 byte context.
-3. Add the Cortex: predict the term stream from context, not the whole
-   term. Score exact composition and accepted/call.
-4. Compare against a matched byte Transformer (same params, data,
-   compute). This is the only test that separates concept from capacity.
+2. **Done, negative.** The matched Cortex pilot (`§1.3`): the term model
+   leads on seen, the byte arm wins the novel edge.
+3. Build the harder task: argument dependence, long-range binding, depth
+   6, so a local byte context cannot recompute the composition. Rerun
+   the matched pair there before any Cortex claim.
+4. Only then scale the Cortex and compare against a matched byte
+   Transformer at 5M and 20M params.
 
 **Compression track.**
 5. **Done.** Stage 0: coverage, copy, per-file.

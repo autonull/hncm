@@ -1,0 +1,44 @@
+{
+ "rows": [
+  {
+   "split": "seen",
+   "terms": 30000,
+   "nodes": 371850,
+   "bytes": 1451231,
+   "cortex_bpb": 0.9577850422713763,
+   "byte_bpb": 0.9802416215934059
+  },
+  {
+   "split": "unseen",
+   "terms": 30000,
+   "nodes": 518217,
+   "bytes": 2035976,
+   "cortex_bpb": 0.9703854026453264,
+   "byte_bpb": 0.9660576453507153
+  },
+  {
+   "split": "twin",
+   "terms": 30000,
+   "nodes": 518217,
+   "bytes": 2035976,
+   "cortex_bpb": 0.9382492746876729,
+   "byte_bpb": 0.9590637281977228
+  }
+ ],
+ "pairs": 30000,
+ "depth": 4,
+ "steps": 3000,
+ "seq": 128,
+ "batch": 32,
+ "seed": 0,
+ "cfg": {
+  "d": 128,
+  "layers": 4,
+  "heads": 4
+ },
+ "params": 810496,
+ "library_bytes": 351,
+ "banned": "ADD->XOR",
+ "seconds": 108.5,
+ "git": "1fed5b9351d332bad3f8b73ffe7f46f54c12f410"
+}

@@ -6420,6 +6420,29 @@ def run_composition(pairs: int, depth: int, seed: int) -> int:
     return 0
 
 
+def run_cortex(
+    pairs: int,
+    depth: int,
+    steps: int,
+    d: int,
+    layers: int,
+    heads: int,
+    seq: int,
+    batch: int,
+    seed: int,
+) -> int:
+    """P5d/P5f pilot: predict the term stream against a matched byte model."""
+    import cortex
+
+    report = cortex.pilot(pairs, depth, steps, d, layers, heads, seq, batch, seed)
+    report |= {"git": git_sha()}
+    write_json(REPORTS / "cortex.json", report)
+    text = cortex.render(report)
+    write_text(REPORTS / "CORTEX.md", text)
+    print(text)
+    return 0
+
+
 def run_scale(
     sizes: str = "5m,10m",
     corpus_name: str = "code",
@@ -7749,6 +7772,16 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--min-count", type=int, default=16)
     cf.add_argument("--cap", type=int, default=16)
     cf.add_argument("--no-baseline", action="store_true")
+    cx = sub.add_parser("cortex")
+    cx.add_argument("--pairs", type=int, default=30_000)
+    cx.add_argument("--depth", type=int, default=4)
+    cx.add_argument("--steps", type=int, default=3000)
+    cx.add_argument("--d", type=int, default=128)
+    cx.add_argument("--layers", type=int, default=4)
+    cx.add_argument("--heads", type=int, default=4)
+    cx.add_argument("--seq", type=int, default=128)
+    cx.add_argument("--batch", type=int, default=32)
+    cx.add_argument("--seed", type=int, default=0)
     ce = sub.add_parser("composition")
     ce.add_argument("--pairs", type=int, default=1000)
     ce.add_argument("--depth", type=int, default=3)
@@ -7928,6 +7961,18 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "composition":
         return run_composition(a.pairs, a.depth, a.seed)
+    if a.cmd == "cortex":
+        return run_cortex(
+            a.pairs,
+            a.depth,
+            a.steps,
+            a.d,
+            a.layers,
+            a.heads,
+            a.seq,
+            a.batch,
+            a.seed,
+        )
     if a.cmd == "scale":
         return run_scale(
             a.sizes,

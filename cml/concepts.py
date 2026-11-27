@@ -145,11 +145,16 @@ def pairs(term: Term | Literal, parent: str | None = None) -> set[tuple[str, str
     return out
 
 
-def has_ban(term: Term | Literal) -> bool:
-    return bool(pairs(term) & BANNED)
+def has_ban(term: Term | Literal, banned: frozenset = BANNED) -> bool:
+    return bool(pairs(term) & banned)
 
 
-def twin(term: Term | Literal) -> Term | Literal:
+def twin(
+    term: Term | Literal,
+    parent: str = "ADD",
+    old: str = "MUL",
+    new: str = "SUB",
+) -> Term | Literal:
     """The same tree with the banned ADD -> MUL edge rewritten to ADD -> SUB.
 
     The control has the identical shape and op count, so the two splits differ
@@ -159,10 +164,10 @@ def twin(term: Term | Literal) -> Term | Literal:
         return term
     args = []
     for arg in term.args:
-        if term.op == "ADD" and isinstance(arg, Term) and arg.op == "MUL":
-            args.append(Term("SUB", arg.args))
+        if term.op == parent and isinstance(arg, Term) and arg.op == old:
+            args.append(Term(new, arg.args))
         else:
-            args.append(twin(arg))
+            args.append(twin(arg, parent, old, new))
     return Term(term.op, tuple(args))
 
 
@@ -235,7 +240,14 @@ def term(rng: random.Random, depth: int, lib: Library) -> Term | Literal:
     return Term(op, tuple(term(rng, depth - 1, lib) for _ in range(template.arity())))
 
 
-def split(lib: Library, n: int, depth: int, seed: int, ban: bool) -> list[Term]:
+def split(
+    lib: Library,
+    n: int,
+    depth: int,
+    seed: int,
+    ban: bool,
+    banned: frozenset = BANNED,
+) -> list[Term]:
     """Rejection-sample terms that do or do not contain the banned edge."""
     rng = random.Random(seed)
     out: list[Term] = []
@@ -245,7 +257,7 @@ def split(lib: Library, n: int, depth: int, seed: int, ban: bool) -> list[Term]:
         candidate = term(rng, depth, lib)
         if not isinstance(candidate, Term):
             continue
-        if has_ban(candidate) == ban:
+        if has_ban(candidate, banned) == ban:
             out.append(candidate)
         if tries > 100 * n:
             raise RuntimeError("concept split: cannot satisfy the ban")
