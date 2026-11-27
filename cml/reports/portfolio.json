@@ -2571,11 +2571,128 @@
   },
   {
    "family": "r10",
+   "arm": "codec-scale-code-756752-p10m-c48m",
+   "task": "t2",
+   "bits": 1.4758986099504363,
+   "payload": 1.5689684335158678,
+   "shared": 1.5987906209696174,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m-n1",
+   "task": "t2",
+   "bits": 1.4473276712089993,
+   "payload": 1.5409011142355753,
+   "shared": 1.570723301689325,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m-n2",
+   "task": "t2",
+   "bits": 1.4639803303452694,
+   "payload": 1.5571600735776054,
+   "shared": 1.586982261031355,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m-n3",
+   "task": "t2",
+   "bits": 1.4524430071769763,
+   "payload": 1.546123432775863,
+   "shared": 1.575945620229613,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m-n4",
+   "task": "t2",
+   "bits": 1.4398830498116615,
+   "payload": 1.5332156373554349,
+   "shared": 1.5630378248091845,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p20m-c48m",
+   "task": "t2",
+   "bits": 1.394560431903454,
+   "payload": 1.4882233545468,
+   "shared": 1.5180455420005496,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
    "arm": "codec-scale-code-756752-p5m",
    "task": "t2",
    "bits": 1.4897978464318704,
    "payload": 1.5831342368437744,
    "shared": 1.612956424297524,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p5m-n1",
+   "task": "t2",
+   "bits": 1.509367862921051,
+   "payload": 1.6024800727318858,
+   "shared": 1.6323022601856354,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p5m-n2",
+   "task": "t2",
+   "bits": 1.5056686592362936,
+   "payload": 1.5989809078799924,
+   "shared": 1.628803095333742,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p5m-n3",
+   "task": "t2",
+   "bits": 1.503639522179249,
+   "payload": 1.5969617523310147,
+   "shared": 1.6267839397847643,
    "roundtrip": true,
    "provenance": "pointer-codec",
    "decisions": 0.6764871450620547,
@@ -3000,11 +3117,11 @@
   },
   "r10": {
    "family": "r10",
-   "arm": "codec-scale-code-756752-p10m",
+   "arm": "codec-scale-code-756752-p20m-c48m",
    "task": "t2",
-   "bits": 1.4446701411735052,
-   "payload": 1.5381630970251814,
-   "shared": 1.567985284478931,
+   "bits": 1.394560431903454,
+   "payload": 1.4882233545468,
+   "shared": 1.5180455420005496,
    "roundtrip": true,
    "provenance": "pointer-codec",
    "decisions": 0.6764871450620547,
@@ -3104,7 +3221,7 @@
   {
    "combination": "concept+pack",
    "tests": "t1,t2",
-   "status": "T2 pass: 1.538/1.568 bpb"
+   "status": "T2 pass: 1.488/1.518 bpb"
   },
   {
    "combination": "concept+edit",
@@ -3162,13 +3279,13 @@
    "r2+r3/r4:blend-12-m2-a0.50"
   ],
   "explore_arms": [
-   "R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and \u22641.75",
+   "R3 T2 review: `codec-scale-code-756752-p20m-c48m` 1.488 payload / 1.518 shared bpb, pass on round-trip and \u22641.75",
    "R3 scale: T2 passes; 5M/10M only on the promoted codec combo",
    "concept+copy: T1 target met; tune the blend on held-out seeds",
    "concept+edit: local (-0.012); test `self` end-to-end",
    "concept+spec: neutral; the trunk is the bottleneck",
    "r7 templates: radius 2 is 0.340; add hole composition",
-   "R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote",
+   "R5 decision: scale `codec-scale-code-756752-p20m-c48m` -0.204 payload vs the 5M base; promote",
    "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
    "capability families: r10, r5, r8"
   ]
@@ -3314,7 +3431,7 @@
     "t2"
    ],
    "families": "all",
-   "arms": 316,
+   "arms": 325,
    "frontier": 6,
    "allocation": {
     "frontier": 0.7,
@@ -3346,19 +3463,19 @@
      "r2+r3/r4:blend-12-m2-a0.50"
     ],
     "explore_arms": [
-     "R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and \u22641.75",
+     "R3 T2 review: `codec-scale-code-756752-p20m-c48m` 1.488 payload / 1.518 shared bpb, pass on round-trip and \u22641.75",
      "R3 scale: T2 passes; 5M/10M only on the promoted codec combo",
      "concept+copy: T1 target met; tune the blend on held-out seeds",
      "concept+edit: local (-0.012); test `self` end-to-end",
      "concept+spec: neutral; the trunk is the bottleneck",
      "r7 templates: radius 2 is 0.340; add hole composition",
-     "R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote",
+     "R5 decision: scale `codec-scale-code-756752-p20m-c48m` -0.204 payload vs the 5M base; promote",
      "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
      "capability families: r10, r5, r8"
     ]
    },
-   "seconds": 0.013,
-   "at": "2026-11-26T20:10:59"
+   "seconds": 0.029,
+   "at": "2026-11-27T00:03:39"
   }
  ]
 }

@@ -4,9 +4,90 @@ The concept memory LM: the v11 codebase for the plan in `PLAN.md`.
 The active plan is `../TODO8.md` (multi-byte concepts + RLFP); `../TODO7.md`
 is the codec record and the auditable-codec product.
 
+## The 50% target
+
+The target is concrete: **50% fewer bits per byte than an equal-compute
+byte LM on the pinned 756,752 B code test.** Against the current
+`1.693` byte reference, that is `0.847` shared bpb. It is not a cosmetic
+gain: it is `9.4x` compression on code, or `1.8x` the current codec
+ratio. That would be remarkable, and it is the right ambition.
+
+| milestone | shared bpb | vs 1.693 byte | compression | state |
+|---|---:|---:|---:|---|
+| 20M, 48 MB, pack 256 | 1.518 | -10.3% | 5.3x | **measured** |
+| 20% | 1.354 | -20% | 5.9x | next |
+| 30% | 1.185 | -30% | 6.8x | path |
+| 40% | 1.016 | -40% | 7.9x | path |
+| **50%** | **0.847** | **-50%** | **9.4x** | north star |
+
+The denominator is the current 4.86M byte model (`1.693 / 1.694`). A real
+50% claim needs a 20M byte control at the same train/test/steps; that
+control is the first experiment, not an afterthought.
+
+Yes, 50% would be remarkable. At `0.847` shared bpb the codec would be
+`9.4x` compression, `1.8x` the current ratio, and far enough ahead of a
+byte LM that it stops being a rounding error. That is the result worth
+building toward. The current `1.518` is the first 10%; it is evidence
+the direction is real, not proof the destination is reached.
+
+## Why 50% is plausible
+
+The byte LM pays for every repeated byte. The codec does not:
+
+- The 256-unit pack covers 45% of test bytes. A larger pack or a copy
+  arm can cover more, and the pack charge is only 0.03 bpb at 756 KB.
+- Code is highly repetitive. Exact span copy at near-zero bits is the
+  lever a byte LM does not have.
+- The 20M model is still first-grid: 48 MB train, 256 units, 8k steps.
+  None of the three codec-specific levers is exhausted.
+
+The path is not "more of the same scale." The next gains come from the
+pack, copy, and literals, not another seed.
+
+| path | lever | expected | risk | next test |
+|---|---|---|---|---|
+| **A pack** | 256 -> 1024/2048 at 20M | -0.15 to -0.30 bpb | pack charge | active sweep at 48 MB |
+| **B copy** | copy prior exact spans | -0.10 to -0.25 bpb | leakage | T2 copy arm |
+| **C literals** | better byte head | -0.05 to -0.15 bpb | small | literal ablation |
+| **D capacity** | 40M/100M | -0.05 to -0.15 bpb | baseline scales | equal-compute 40M |
+| **E RLFP** | preference optimization | product win, not bpb | preference data | 2k-pair pilot |
+
+Those are hypotheses, not measured results. They are cheap enough to
+test, and each one attacks a different part of the 50% gap.
+
+## The next three experiments
+
+1. **Equal-compute 20M byte control.** Same 48 MB train, same test, same
+   steps. Without it, the 20M codec number is a capacity result.
+2. **20M pack sweep at 48 MB.** `active` 256, 1024, 2048; add `active`
+   to the run id first. The pack charge grows, but so does coverage.
+3. **T2 copy arm.** Copy a prior exact span; never search for the target
+   span. This is the codec's unique lever and the cheapest route to a
+   large gain.
+
+If the pack/copy arms clear 20-30%, the 50% target is a real program.
+If they do not, the codec still has a measured compression result, a
+strong T1 span capability, and a clear next lever in capacity or RLFP.
+That is a foundation, not a verdict.
+
+## Build before the next run
+
+Three small changes make the next experiments honest:
+
+- `cml scale`: include `active` in the run id and metrics. Today a pack
+  sweep would overwrite the 256-unit run.
+- `cml codec --arm byte-model`: accept `--params/--d/--layers`. The
+  current byte control is fixed at 4.86M; a 20M control is required.
+- `cml scale`: add a `--copy` arm or a T2 copy fallback. The copy lever
+  is the codec's unique advantage and is not yet in T2.
+
+These are small, testable changes. They are the difference between
+another seed and a real attempt at 50%.
+
 ## What works
 
-These are measured wins, not plans. Do not regress them silently.
+These are measured wins and opportunities, not a final verdict. Do not
+regress them silently.
 
 | win | measurement | evidence |
 |---|---|---|
@@ -15,7 +96,9 @@ These are measured wins, not plans. Do not regress them silently.
 | Concept vs byte | **3.1x** exact; **3.0x** fewer decisions; **7.4x** fewer bits/span | `reports/SCREEN.md` |
 | Compression | **1.600** bpb teacher, **1.692** payload, **1.722** shared | `reports/CONCEPT.md` |
 | T2 review | promoted codec: **1.692** payload / **1.722** shared / **1.600** teacher; blend excluded | `reports/PORTFOLIO.md` |
-| T2 scale | 24 MB train: 5M **1.583** / 1.613, 10M **1.538** / 1.568 payload/shared | `reports/SCALE.md` |
+| T2 scale | 24 MB: 10M **1.538** / 1.568 (seeds 0-4 spread 0.024); 48 MB: 20M **1.488** / 1.518 | `reports/SCALE.md` |
+| Equal-params pointer vs byte | 5.21M pointer `1.583 / 1.613` vs 4.86M byte `1.693 / 1.694`; **6.5% payload**, 4.8% shared | `reports/SCALE.md`, `reports/CONCEPT.md` |
+| Equal-data scale | 20M vs 10M at 48 MB: **-0.081 payload**; capacity, not data alone | `reports/SCALE.md` |
 | Exact round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
 | Local deletion | 35 targets removed by construction; 165 survivors ±0.006; **+0.146 bpb** full encode | `reports/EDIT-CURVE.md` |
 | Merge | 256 -> 320 units; **+0.108 bpb**; exact round-trip | `reports/SCREEN.md` |
@@ -25,9 +108,10 @@ These are measured wins, not plans. Do not regress them silently.
 
 Commands that produce them: `cml train --units codec`, `cml screen`,
 `cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`, `cml scale`.
-Scope: 5.21M pointer, 70k held-out bytes, 200 spans; T2 scale uses 24 MB
-train code and the pinned 756,752 B test. Not yet a preference win, a
-wall-clock speedup, or a 20M-scale claim.
+Scope: 5.21M-20.02M pointer; T1 uses 70k held-out bytes and 200 spans;
+T2 uses 24-48 MB train and the pinned 756,752 B test. The 50% target
+needs an equal-compute 20M byte control plus the pack/copy arms; those
+are the next experiments, not blockers.
 
 ## What this covers
 
@@ -40,9 +124,9 @@ gate table. The plan holds the design; this page maps the ideas to files.
 | r1 adapter; equal-charged-bytes; install | B1 | P0 | `Arm.ADAPTER`, `Entry`, `Pack`, `GATES` P0a-h | oracle +0.758; charged −2.224 → P0a fails; the name is the cost |
 | r2 C2LM; hybrid output; copy bypass; charge in loss | B3 | P3 | `Arm.LEDGER`, `GATES` P3a-d | manifest; P3 |
 | r3 PhraseLM; lexicon-agnostic; three heads; safe mode | B1/B2 | P0, P1 | `Arm.ADAPTER`/`CONCEPT`, `GATES` | manifests; P0/P1 |
-| r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | P1 measured; P2 next |
+| r4 Concept-LM; neural prices; joint EM; model-class test | B2 | P1, P2 | `Arm.CONCEPT`, `GATES` P1a-e/P2a-d | P1 measured; T2 codec 1.488 / 1.518; P2 text-class next |
 | r5 LedgerLM; persistence; market; alignment; dual pathway; learning curve; editing | B3 | P3, P4 | `Arm.LEDGER`, `GATES` P3a-d/P4a-f | manifests; P3/P4 |
-| r6 CMT; tied embeddings; pack; provenance; constrained; telemetry; two clocks | B3 | P0, P1, P2, P4 | `Pack`, `GATES` P0/P1/P2/P4 | P0/P1 measured; P2/P4 next |
+| r6 CMT; tied embeddings; pack; provenance; constrained; telemetry; two clocks | B3 | P0, P1, P2, P4 | `Pack`, `GATES` P0/P1/P2/P4 | P0/P1 measured; T2 codec 1.488; P2/P4 next |
 | r7 CoLib; holes; librarian; composition; planning; auditable thought | B4 | P5 | `Arm.LIBRARY`, `GATES` L-G0…L-G5, P5e-g | manifest; P5 |
 
 The four bets, and where they live:
@@ -50,7 +134,7 @@ The four bets, and where they live:
 | bet | experiments | plan | status |
 |---|---|---|---|
 | B1 the adapter | P0 | §4 B1 | P0 measured; the span-name charge kills the flat copy codec |
-| B2 the vocabulary | P1, P2 | §4 B2 | P1 measured (1.920 bpb); P2 next |
+| B2 the vocabulary | P1, P2 | §4 B2 | P1 measured (1.920 bpb); T2 codec 1.488 / 1.518; P2 text-class next |
 | B3 the ledger | P3, P4 | §4 B3 | manifests |
 | B4 the library | P5 | §4 B4 | manifest |
 
@@ -177,6 +261,12 @@ The four bets, and where they live:
 - `cml scale --sizes 5m,10m`: keeps the pinned T2 test and the 256-unit
   pack, adds unique train code up to 24 MB, and trains the requested
   pointers; `reports/SCALE.md`. 5M/10M are targets (5.21M/9.17M actual).
+  A nonzero `--seed` gets its own run id; seed 1 repeats the 5M point at
+  +0.019 payload. `--scale-cap 48000000` extends unique code to 48 MB.
+  Pointer training checkpoints every 500 steps and resumes after a crash.
+- `overnight.py`: one resumable queue task per systemd timer invocation;
+  a stale `running` task is marked interrupted and retried from the
+  checkpoint. It writes `reports/OVERNIGHT.md` and per-task logs.
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,
@@ -187,7 +277,7 @@ The four bets, and where they live:
 P1 is measured: 1.920 bpb at 20.5M params/6000 steps on the held-out 1 MB
 slice (1.912 ± 0.008 over seeds 0-2); 1.962 at 8.9M, 1.926 at 39.9M; the 60M
 fit is 1.919. The same-slice count bigram is 2.667, so the neural margin is
-0.75 bpb. P1a/P1b/P1c pass. The second split (8-9 MB) gives 1.992, so the win
+0.75 bpb. P1a/P1b/P1c pass0.75 bpb. P1a/P1b/P1c pass. The second split (8-9 MB) gives 1.992, so the win
 is not one slice.
 
 ## Fully trained text LM
@@ -242,6 +332,19 @@ model arm appears. No pre-split, no back-compat, no old imports.
 - The architecture is `PLAN.md` §4.
 - The codebase pattern is `PLAN.md` §5.
 - The gates, risks and time are `PLAN.md` §6/§8/§9.
+
+## The case for continuing
+
+- A working exact codec with round-trip and provenance is already rare.
+- The 5.21M pointer beats the 4.86M byte model on both payload and
+  shared bpb: `1.583 / 1.613` vs `1.693 / 1.694`.
+- The 20M point is the first 10%; the pack and copy levers are still
+  untested, and both attack the part of the gap that scale cannot.
+- A 20-30% result would already be a strong outcome. 50% is the
+  category change, and it is specific enough to test.
+
+The project is not out of ideas. It is at the point where the next
+experiment should be chosen for leverage, not for another seed.
 
 ## Run
 

@@ -5,7 +5,7 @@ measured arms, keeps the T1 frontier, and allocates the next round.
 A parked family is not killed: it keeps the exploration reserve.
 
 - families `all`, tasks `t2`, budget `6h` (6.00 h)
-- 316 measured arms, 283 on T1, 6 on the frontier, 7 parked families
+- 325 measured arms, 283 on T1, 6 on the frontier, 7 parked families
 
 ## Pareto frontier (T1)
 
@@ -37,7 +37,7 @@ A parked family is not killed: it keeps the exploration reserve.
 |---|---|---|---|---|
 | r1 | `byte` | t1 | 0.210 exact | screen |
 | r1/r6 | `counts` | t1 | 0.040 exact | screen |
-| r10 | `codec-scale-code-756752-p10m` | t2 | 1.538 bpb payload | scale |
+| r10 | `codec-scale-code-756752-p20m-c48m` | t2 | 1.488 bpb payload | scale |
 | r2 | `copy-6-cinf-t0.00` | t1 | 0.720 exact | breadth |
 | r2+r3/r4 | `conceptcopy-6-cinf-t0.00` | t1 | 0.720 exact | breadth |
 | r3/r4 | `concept-pointer-code-p5m-s8000` | t2 | 1.692 bpb payload | concept |
@@ -51,17 +51,26 @@ A parked family is not killed: it keeps the exploration reserve.
 
 | task | best arm | metric | source |
 |---|---|---|---|
-| t2 | `r10:codec-scale-code-756752-p10m` | 1.538 bpb payload | scale |
+| t2 | `r10:codec-scale-code-756752-p20m-c48m` | 1.488 bpb payload | scale |
 
 ## T2 compression review
 
 | family | arm | payload | shared | teacher | decisions | round-trip | provenance | source |
 |---|---|---:|---:|---:|---:|---|---|---|
+| r10 | `codec-scale-code-756752-p20m-c48m` | 1.488 | 1.518 | 1.395 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p10m-n4` | 1.533 | 1.563 | 1.440 | 0.676 | PASS | pointer-codec | scale |
 | r10 | `codec-scale-code-756752-p10m` | 1.538 | 1.568 | 1.445 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p10m-n1` | 1.541 | 1.571 | 1.447 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p10m-n3` | 1.546 | 1.576 | 1.452 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p10m-n2` | 1.557 | 1.587 | 1.464 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p10m-c48m` | 1.569 | 1.599 | 1.476 | 0.676 | PASS | pointer-codec | scale |
 | r10 | `codec-scale-code-756752-p5m` | 1.583 | 1.613 | 1.490 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p5m-n3` | 1.597 | 1.627 | 1.504 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p5m-n2` | 1.599 | 1.629 | 1.506 | 0.676 | PASS | pointer-codec | scale |
+| r10 | `codec-scale-code-756752-p5m-n1` | 1.602 | 1.632 | 1.509 | 0.676 | PASS | pointer-codec | scale |
 | r3/r4 | `concept-pointer-code-p5m-s8000` | 1.692 | 1.722 | 1.600 | 0.676 | PASS | pointer-codec | concept |
 
-- best T2 arm `codec-scale-code-756752-p10m`: 1.538 payload / 1.568 shared bpb, round-trip.
+- best T2 arm `codec-scale-code-756752-p20m-c48m`: 1.488 payload / 1.518 shared bpb, round-trip.
 - The blend is a span policy, not a codec: do not use a T1 blend as a T2 compression claim.
 
 ## Combination matrix
@@ -69,7 +78,7 @@ A parked family is not killed: it keeps the exploration reserve.
 | combination | tests | status |
 |---|---|---|
 | concept+copy | t1,t4 | inputs measured |
-| concept+pack | t1,t2 | T2 pass: 1.538/1.568 bpb |
+| concept+pack | t1,t2 | T2 pass: 1.488/1.518 bpb |
 | concept+edit | t3 | inputs measured |
 | concept+spec | t4 | inputs measured |
 | pack+install | t5 | inputs measured |
@@ -85,7 +94,7 @@ A parked family is not killed: it keeps the exploration reserve.
 - **parked r3/r4/r6**: 1 T1 config, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r6**: 4 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
 - **parked r7**: 9 T1 configs, none on the frontier. Reopen with a new grid or a combination on T1.
-- **capability r10**: 2 arms on t2, best `codec-scale-code-756752-p10m` (1.538 bpb payload).
+- **capability r10**: 11 arms on t2, best `codec-scale-code-756752-p20m-c48m` (1.488 bpb payload).
 - **capability r5**: 11 arms on t3, best `edit-self` (+0.000 bpb edit).
 - **capability r8**: 15 arms on t4, best `specgate-10-a0.90-t4.0-k16` (4.650 accepted/call).
 
@@ -94,13 +103,13 @@ A parked family is not killed: it keeps the exploration reserve.
 - **70% frontier** (6 arms, 4.20 h): combine the frontier families, do not scale one metric leader.
 - **20% near-frontier** (12 arms, 1.20 h): within 80% of the best exactness.
 - **10% exploration** (0.60 h):
-  - R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and ≤1.75
+  - R3 T2 review: `codec-scale-code-756752-p20m-c48m` 1.488 payload / 1.518 shared bpb, pass on round-trip and ≤1.75
   - R3 scale: T2 passes; 5M/10M only on the promoted codec combo
   - concept+copy: T1 target met; tune the blend on held-out seeds
   - concept+edit: local (-0.012); test `self` end-to-end
   - concept+spec: neutral; the trunk is the bottleneck
   - r7 templates: radius 2 is 0.340; add hole composition
-  - R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote
+  - R5 decision: scale `codec-scale-code-756752-p20m-c48m` -0.204 payload vs the 5M base; promote
   - parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7
   - capability families: r10, r5, r8
 
@@ -113,4 +122,4 @@ Promote a combination only if it keeps round-trip and provenance.
 |---:|---|---:|---:|---|
 | 1 | 2h | 80 | 10 | t1 |
 | 2 | 6h | 316 | 6 | t1,t3,t4 |
-| 3 | 6h | 316 | 6 | t2 |
+| 3 | 6h | 325 | 6 | t2 |

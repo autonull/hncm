@@ -6034,9 +6034,12 @@ def _pointer_for(
         f"pointer-v2-{corpus.train_sha[:12]}-a{active}-{design}{shape}{tag}"
         f"s{steps}-q{seq}-n{seed}.pt"
     )
+    ckpt = path.with_suffix(".ckpt")
     if path.exists():
         try:
-            return pointer.load_model(path), active_lex, pointer.load_losses(path)
+            model = pointer.load_model(path)
+            ckpt.unlink(missing_ok=True)
+            return model, active_lex, pointer.load_losses(path)
         except RuntimeError, KeyError, ValueError, AttributeError:
             pass
     cfg = pointer.PointerConfig(
@@ -6052,12 +6055,15 @@ def _pointer_for(
     if rotate:
         streams = pointer.pack_streams(corpus.train, lex.units, active, rotate)
         model, losses = pointer.train_pointer_streams(
-            streams, cfg, full_every=full_every
+            streams, cfg, full_every=full_every, checkpoint=ckpt
         )
     else:
         els = pointer.elements(corpus.train, active_lex)
-        model, losses = pointer.train_pointer(els, active_lex.units, cfg)
+        model, losses = pointer.train_pointer(
+            els, active_lex.units, cfg, checkpoint=ckpt
+        )
     pointer.save_model(path, model, cfg, losses)
+    ckpt.unlink(missing_ok=True)
     return model, active_lex, losses
 
 
@@ -6116,6 +6122,7 @@ def _run_concept(
         "family": "r10" if arm == "scale" else "r3/r4",
         "corpus": corpus_name,
         "split": split,
+        "seed": seed,
         "bytes": nbytes,
         "n": len(data),
         "payload_bytes": len(payload),
@@ -6321,13 +6328,15 @@ def run_scale(
     proof: int = 50_000,
     rotate: int = 8,
     full_every: int = 8,
+    scale_cap: int = SCALE_CAP,
 ) -> int:
     """R3 scale: train 5M/10M pointers on extra train code, same T2 test."""
     base = code_corpus()
-    scale = code_scale_corpus()
+    scale = code_scale_corpus(scale_cap)
     lex = _lexicon_for(base, units, min_count, cap)
     data = base.test[:nbytes]
-    rows = []
+    seed_tag = f"-n{seed}" if seed else ""
+    cap_tag = f"-c{scale_cap // 1_000_000}m" if scale_cap != SCALE_CAP else ""
     for size in [s.strip() for s in sizes.split(",") if s.strip()]:
         target = int(size.removesuffix("m")) * 1_000_000
         t0 = time.perf_counter()
@@ -6345,15 +6354,15 @@ def run_scale(
             corpus_name,
             nbytes,
             "test",
-            suffix=f"-p{size}",
+            suffix=f"-p{size}{seed_tag}{cap_tag}",
             span="ngram",
             head="joint",
             target_params=target,
         )
         metrics["target_params"] = target
+        metrics["scale_cap"] = scale_cap
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
-        rows.append(metrics)
         print(
             f"{metrics['id']}: {metrics['params'] / 1e6:.2f}M params, "
             f"{metrics['payload_bpb']:.3f} / {metrics['shared_bpb']:.3f} bpb, "
@@ -6362,6 +6371,17 @@ def run_scale(
         )
     baseline_path = RUNS / "concept-pointer-code-p5m-s8000/metrics.json"
     baseline = json.loads(baseline_path.read_text()) if baseline_path.exists() else None
+    measured = [
+        json.loads(path.read_text())
+        for path in sorted(RUNS.glob("codec-scale-*/metrics.json"))
+    ]
+    measured.sort(
+        key=lambda m: (
+            m.get("target_params") or 0,
+            m.get("seed", 0),
+            m["id"],
+        )
+    )
     lines = [
         "# R3 scale (T2)",
         "",
@@ -6369,28 +6389,41 @@ def run_scale(
         "grow.  The 256-unit pack is the promoted codec combination.  `5m` and",
         "`10m` are parameter targets, not exact counts.",
         "",
-        f"- train code: {len(scale.train):,} B (base {len(base.train):,} B), "
+        f"- train code: base {len(base.train):,} B; caps "
+        f"{sorted({round(m.get('train_bytes', 0) / 1e6, 1) for m in measured})} MB, "
         f"test {nbytes:,} B",
         f"- pack: {len(lex.units[:active])} units / "
         f"{len(codec_mod.Lexicon(lex.units[:active]).blob()):,} B",
-        f"- steps {steps}, seed {seed}, ngram+joint",
+        f"- steps {steps}, ngram+joint; seeds "
+        f"{sorted({m.get('seed', 0) for m in measured})}",
         "- `seconds` is the encode+eval wall time after a model-cache hit;",
         "  the first 8k-step train pass is in the run log.",
         "",
-        "| arm | params | payload | shared | teacher | round-trip |"
-        " provenance | seconds |",
-        "|---|---:|---:|---:|---:|---|---|---:|",
+        "| arm | seed | target | train MB | params | payload | shared | teacher |"
+        " round-trip | provenance | seconds |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|",
     ]
-    for m in [*([baseline] if baseline else []), *rows]:
+    if baseline is not None:
         lines.append(
-            f"| `{m['id']}` | {m['params'] / 1e6:.2f}M | "
-            f"{m['payload_bpb']:.3f} | {m['shared_bpb']:.3f} | "
-            f"{m['bits_per_byte']:.3f} | "
+            f"| `{baseline['id']}` | {baseline.get('seed', 0)} | 5m | "
+            f"{baseline.get('train_bytes', len(base.train)) / 1e6:.1f} | "
+            f"{baseline['params'] / 1e6:.2f}M | {baseline['payload_bpb']:.3f} | "
+            f"{baseline['shared_bpb']:.3f} | {baseline['bits_per_byte']:.3f} | OK | "
+            f"{baseline.get('roundtrip_kind', 'pointer-codec')} | "
+            f"{baseline.get('seconds') or baseline.get('encode_seconds') or 0:.1f} |"
+        )
+    for m in measured:
+        lines.append(
+            f"| `{m['id']}` | {m.get('seed', 0)} | "
+            f"{(m.get('target_params') or 0) // 1_000_000}m | "
+            f"{m.get('train_bytes', len(scale.train)) / 1e6:.1f} | "
+            f"{m['params'] / 1e6:.2f}M | {m['payload_bpb']:.3f} | "
+            f"{m['shared_bpb']:.3f} | {m['bits_per_byte']:.3f} | "
             f"{'OK' if m['roundtrip'] else 'FAIL'} | "
             f"{m.get('roundtrip_kind', 'pointer-codec')} | "
             f"{m.get('seconds') or m.get('encode_seconds') or 0:.1f} |"
         )
-    best = min(rows, key=lambda m: m["payload_bpb"]) if rows else None
+    best = min(measured, key=lambda m: m["payload_bpb"]) if measured else None
     lines += ["", "## Verdict", ""]
     if best is None:
         lines.append("No scale arm ran.")
@@ -6413,6 +6446,39 @@ def run_scale(
         lines.append(
             f"- T2 gate (≤1.75 payload and shared, round-trip): "
             f"{'PASS' if gate else 'FAIL'}."
+        )
+    by_cell: dict[tuple[int, int], list[dict]] = {}
+    for m in measured:
+        cap = m.get("scale_cap") or SCALE_CAP
+        by_cell.setdefault((cap, m.get("target_params") or 0), []).append(m)
+    repeated = {k: rs for k, rs in by_cell.items() if len(rs) > 1}
+    for (cap, target), rs in sorted(repeated.items()):
+        values = [m["payload_bpb"] for m in rs]
+        best_m = min(rs, key=lambda m: m["payload_bpb"])
+        lines.append(
+            f"- {target // 1_000_000}m @ {cap / 1e6:.0f} MB seed spread: "
+            f"{max(values) - min(values):.3f} payload over seeds "
+            f"{sorted(m.get('seed', 0) for m in rs)}; best "
+            f"`{best_m['id']}` {best_m['payload_bpb']:.3f}."
+        )
+    ten = by_cell.get((SCALE_CAP, 10_000_000), [])
+    if len(ten) > 1 and baseline is not None:
+        both_beat = all(m["payload_bpb"] < baseline["payload_bpb"] for m in ten)
+        lines.append(
+            f"- 10m @ {SCALE_CAP / 1e6:.0f} MB: all seeds beat the 5M base: "
+            f"{both_beat}."
+        )
+    for cap in sorted({m.get("scale_cap") or SCALE_CAP for m in measured}):
+        ten_cap = by_cell.get((cap, 10_000_000), [])
+        twenty_cap = by_cell.get((cap, 20_000_000), [])
+        if not ten_cap or not twenty_cap:
+            continue
+        best_ten = min(ten_cap, key=lambda m: m["payload_bpb"])
+        best_twenty = min(twenty_cap, key=lambda m: m["payload_bpb"])
+        delta = best_twenty["payload_bpb"] - best_ten["payload_bpb"]
+        lines.append(
+            f"- 20m versus 10m @ {cap / 1e6:.0f} MB: {delta:+.3f} payload; "
+            f"{'promote 20m' if delta < 0 else 'do not promote 20m'}."
         )
     report = REPORTS / "SCALE.md"
     tmp = report.with_suffix(".tmp")
@@ -7570,6 +7636,7 @@ def main(argv: list[str] | None = None) -> int:
     sl.add_argument("--proof", type=int, default=50_000)
     sl.add_argument("--rotate", type=int, default=8)
     sl.add_argument("--full-every", type=int, default=8)
+    sl.add_argument("--scale-cap", type=int, default=SCALE_CAP)
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -7723,6 +7790,7 @@ def main(argv: list[str] | None = None) -> int:
             a.proof,
             a.rotate,
             a.full_every,
+            a.scale_cap,
         )
     if a.cmd == "train":
         if a.units == "codec":

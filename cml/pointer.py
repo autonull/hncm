@@ -14,6 +14,7 @@ has a uniform prior.
 from __future__ import annotations
 
 import math
+import os
 import random
 import struct
 import time
@@ -205,11 +206,68 @@ def _loss(model: PointerLM, x: torch.Tensor, y: torch.Tensor, units: tuple[bytes
     return loss
 
 
+def _checkpoint_key(cfg: PointerConfig) -> tuple:
+    return (
+        cfg.d,
+        cfg.layers,
+        cfg.heads,
+        cfg.seq,
+        cfg.active,
+        cfg.span,
+        cfg.head,
+        cfg.buckets,
+    )
+
+
+def _save_train(
+    path: Path,
+    step: int,
+    model: PointerLM,
+    opt: torch.optim.Optimizer,
+    rng: np.random.Generator,
+    losses: list[float],
+    cfg: PointerConfig,
+    seconds: float,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {
+        "step": step,
+        "model": model.state_dict(),
+        "opt": opt.state_dict(),
+        "rng": rng.bit_generator.state,
+        "losses": losses,
+        "cfg": cfg,
+        "seconds": seconds,
+    }
+    tmp = path.with_suffix(".tmp")
+    torch.save(data, tmp)
+    os.replace(tmp, path)
+
+
+def _load_train(
+    path: Path | None,
+    cfg: PointerConfig,
+    device: str,
+) -> dict | None:
+    if path is None or not path.exists():
+        return None
+    try:
+        data = torch.load(path, map_location=device, weights_only=False)
+        old = data["cfg"]
+        if _checkpoint_key(old) != _checkpoint_key(cfg):
+            return None
+        return data
+    except RuntimeError, KeyError, ValueError, EOFError:
+        return None
+
+
 def train_pointer(
     elements: np.ndarray,
     units: tuple[bytes, ...],
     cfg: PointerConfig,
     device: str = "cuda",
+    checkpoint: Path | None = None,
+    every: int = 500,
 ) -> tuple[PointerLM, list[float]]:
     torch.manual_seed(cfg.seed)
     random.seed(cfg.seed)
@@ -217,8 +275,19 @@ def train_pointer(
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.1)
     rng = np.random.default_rng(cfg.seed)
     losses: list[float] = []
-    t0 = time.perf_counter()
-    for step in range(cfg.steps):
+    start = 0
+    elapsed = 0.0
+    state = _load_train(checkpoint, cfg, device)
+    if state is not None:
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["opt"])
+        rng.bit_generator.state = state["rng"]
+        losses = list(state["losses"])
+        start = int(state["step"]) + 1
+        elapsed = float(state.get("seconds", 0.0))
+        print(f"  pointer resume {start}/{cfg.steps}", flush=True)
+    t0 = time.perf_counter() - elapsed
+    for step in range(start, cfg.steps):
         x, y = _windows(elements, cfg.seq, cfg.batch, rng)
         loss = _loss(model, x.to(device), y.to(device), units)
         opt.zero_grad()
@@ -231,6 +300,19 @@ def train_pointer(
                 f"  pointer step {step:4d} loss {float(loss.detach()):.3f} "
                 f"({time.perf_counter() - t0:.1f}s)",
                 flush=True,
+            )
+        if checkpoint is not None and (
+            (step + 1) % every == 0 or step == cfg.steps - 1
+        ):
+            _save_train(
+                checkpoint,
+                step,
+                model,
+                opt,
+                rng,
+                losses,
+                cfg,
+                time.perf_counter() - t0,
             )
     return model, losses
 
@@ -260,6 +342,8 @@ def train_pointer_streams(
     cfg: PointerConfig,
     device: str = "cuda",
     full_every: int = 2,
+    checkpoint: Path | None = None,
+    every: int = 500,
 ) -> tuple[PointerLM, list[float]]:
     """Rotate parses; the full pack keeps half the steps, chunks take the rest."""
     torch.manual_seed(cfg.seed)
@@ -268,9 +352,20 @@ def train_pointer_streams(
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=0.1)
     rng = np.random.default_rng(cfg.seed)
     losses: list[float] = []
-    t0 = time.perf_counter()
+    start = 0
+    elapsed = 0.0
+    state = _load_train(checkpoint, cfg, device)
+    if state is not None:
+        model.load_state_dict(state["model"])
+        opt.load_state_dict(state["opt"])
+        rng.bit_generator.state = state["rng"]
+        losses = list(state["losses"])
+        start = int(state["step"]) + 1
+        elapsed = float(state.get("seconds", 0.0))
+        print(f"  pointer resume {start}/{cfg.steps}", flush=True)
+    t0 = time.perf_counter() - elapsed
     n = len(streams)
-    for step in range(cfg.steps):
+    for step in range(start, cfg.steps):
         if n > 1 and full_every and step % full_every == 0:
             idx = 0
         elif full_every:
@@ -290,6 +385,19 @@ def train_pointer_streams(
                 f"  pointer step {step:4d} pack {idx} loss "
                 f"{float(loss.detach()):.3f} ({time.perf_counter() - t0:.1f}s)",
                 flush=True,
+            )
+        if checkpoint is not None and (
+            (step + 1) % every == 0 or step == cfg.steps - 1
+        ):
+            _save_train(
+                checkpoint,
+                step,
+                model,
+                opt,
+                rng,
+                losses,
+                cfg,
+                time.perf_counter() - t0,
             )
     return model, losses
 

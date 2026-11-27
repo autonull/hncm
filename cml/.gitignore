@@ -3,3 +3,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 runs/
+reports/overnight/
+reports/overnight.json
+reports/.overnight.lock

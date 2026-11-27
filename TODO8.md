@@ -1,324 +1,308 @@
-# TODO8 — a portfolio system for concept-native LMs
+# TODO8 — the 50% concept codec plan
 
-The codec's multi-byte units are not only a compression alphabet. They are a
-candidate action space for an exact, editable code LM. This file is a **portfolio
-plan**, not a single-bet plan: every relevant family gets a fair grid, a shared
-task, and a budget. The system keeps a Pareto frontier and invests more only
-where a family earns it. A family is never killed by one configuration.
+Status: 2026-11-27. R3 is complete. The 20M codec is at `1.488` payload /
+`1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
+shared bpb against a 20M byte control. RLFP is untested. The next move is
+a cheap, ordered experiment ladder, not another scale seed.
 
-`TODO7.md` remains the codec record and the auditable-codec product. `cml/PLAN.md`
-holds the older design; this file is the active experiment system.
+## 0. One claim, one target
 
-## 1. The system
+**Claim.** An exact, editable codec beats a byte LM at equal compute on
+held-out code, with exact round-trip and provenance.
 
-The unit of work is an **arm**:
+**Target.** 50% fewer bits per byte than a 20M byte LM on the pinned
+756,752 B code test:
 
-```
-arm = (family, mechanism, hyperparameters, data, seed, compute)
-```
+| milestone | shared bpb | vs 1.693 byte | compression | state |
+|---|---:|---:|---:|---|
+| 20M, 48 MB, pack 256 | 1.518 | -10.3% | 5.3x | **measured** |
+| 20% | 1.354 | -20% | 5.9x | next |
+| 30% | 1.185 | -30% | 6.8x | path |
+| 40% | 1.016 | -40% | 7.9x | path |
+| **50%** | **0.847** | **-50%** | **9.4x** | north star |
 
-Each arm runs the same task suite and writes one capability vector:
+The denominator must be a 20M byte control on the same train/test/steps.
+The current 4.86M byte model (`1.693 / 1.694`) is a reference, not the
+equal-compute control. A 20M-vs-4.86M win is capacity, not architecture.
 
-```
-exact_span, bits_per_span, decisions_per_span,
-copy_hit, target_calls, edit_delta, roundtrip,
-payload_bpb, shared_bpb, pack_bytes, seconds
-```
-
-The system does five things:
-
-1. **Baseline** every family on a fast shared task.
-2. **Grid** each family over its own hyperparameters.
-3. **Pareto-rank** the arms; no single metric decides.
-4. **Combine** promoted mechanisms (concept + copy, edit + spec, pack + library).
-5. **Scale** only combinations that survive the frontier.
-
-The goal is not one metric. The goal is to find the most useful, unique
-end-to-end combinations and keep the evidence for every family.
-
-## 2. Shared tasks
-
-| task | input | output | cost | use |
-|---|---|---|---|---|
-| **T1 span repair** | 70k held-out bytes, 200 matched spans | exact span, bits/span, decisions/span | seconds-minutes | fast capability |
-| **T2 compression** | 756,752 B held-out code | payload/shared bpb, round-trip, provenance | minutes | codec claim |
-| **T3 edit** | T1 plus a deleted/merged prefix | survivor exact, removed count, bpb delta, round-trip | minutes | causal editability |
-| **T4 draft** | T1 contexts | accepted concepts per target call, K | minutes | speculative value |
-| **T5 install** | held-out package/half | bpb delta, provenance | minutes | transferable vocabulary |
-| **T6 library** | T1 contexts plus train templates | exact, fill accuracy | hours | composition |
-| **T7 preference** | 10k repair pairs | pairwise accuracy, win rate, KL | hours-days | RLFP, optional |
-
-T1 is the common screen. T2 is the honest compression check. T3-T6 test the
-properties that make the architecture different from a byte LM. T7 is not the
-first gate; it runs only when a combination earns it.
-
-### 2.1 Round 1-3 progress (2026-11-26)
-
-| item | state | evidence |
-|---|---|---|
-| shared suite + portfolio schema | **done** | `cml portfolio --round 1 ...` writes `PORTFOLIO.md`, `portfolio.json`, per-arm `runs/portfolio/` |
-| copy key 4-12, confidence/cap/pointer | **done** | no cap: 0.720 exact / 4.871 bits; key 7 cap 256 / τ 0.10: 0.665 / 2.146 |
-| edits, survivor exact | **done** | `self` is free (40 B, 0.000 exact); newline costs 0.072 exact |
-| spec K 4/8/12 | **done** | K=8: 1.560; K=12: 1.505 accepted/call |
-| library template/hole | **done, below target** | radius 2: 0.340 exact / 4.937 bits (target 0.40) |
-| pack size 128-1024 | **done** | 256 wins all axes: 0.415 / 3.133 / 1.00; 128, 512, 1024 dominated |
-| concept+copy on T1 | **done, target met** | blend key 10 α0.90: 0.705 / 2.362; key 6 α0.50: 0.680 / 1.698; no cap 0.720 / 4.782 |
-| concept+edit on T3 | **done, local** | survivors 0.733 vs base 0.745 (−0.012); `self` free |
-| concept+spec on T4 | **done, calibration was the limit** | τ4 K16 blend 4.650 accepted/call; τ1 1.480; pointer τ4 4.450 |
-| R3 T2 review | **done, pass** | 5.21M pointer: 1.692 payload / 1.722 shared / 1.600 teacher; 50k proof / 81,531 B; blend is not a codec |
-| R3 scale 5M/10M | **done, promoted** | 24 MB train, same 756,752 B test: 5M 1.583 / 1.613; 10M (9.17M actual) 1.538 / 1.568; −0.154 payload vs base |
-| R4 RLFP | **blocked** | needs a T1-T4 survivor |
-
-Round 2 frontier: 6 arms, all `r2+r3/r4`. The blend dominates the
-concept-only point (0.650 / 1.720): key 6 α0.50 gives 0.680 at 1.698;
-key 10 α0.90 gives 0.705 at 2.362, so the T1 target **is met**. Pack
-size is settled at 256. T3 is local (−0.012 on survivors). T4 was a
-draft-calibration limit, not a trunk limit: τ1 gives 1.480 accepted/call,
-τ4 K16 gives 4.650. R2 is complete. R3 confirms the promoted codec:
-T2 passes, and more unique train code improves the 5M point from 1.692
-to 1.583 payload; the 10M point reaches **1.538 / 1.568**. The T2 result
-is a codec result, not a T1 blend result.
-
-## 3. Families and first grids
-
-| family | mechanism | current evidence | first grid | task |
-|---|---|---|---|---|
-| **r1** adapter/install | charged copy / equal bytes | oracle +0.758; charged −2.224; P0a fails | dict size, charge, no-pack, transfer | T5 |
-| **r2** copy/hybrid | copy a prior context | key 1→12; blend 0.705 / 2.362 (target), 0.680 / 1.698; no cap 0.720 / 4.782 | key 4-12, blend α, margin, stack, concept fallback | T1, T4 |
-| **r3** PhraseLM | lexicon-agnostic heads | concept-only 0.650; unconstrained 0.415 | gate/joint, concept-only, temperature, three heads | T1, T2 |
-| **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared; scale 10M 1.445 / 1.538 / 1.568 | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
-| **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb / 0.000 exact; newline +0.228 / −0.072 exact; blend survivors −0.012 | prefix choice, merge size, held-out win rate | T3 |
-| **r6** CMT/pack | tied entries, provenance | 256 wins T1: 0.415 / 3.133 / 1.00; 128, 512, 1024 dominated | active 128-1024, install/transfer, pack bytes | T1, T2, T5 |
-| **r7** CoLib/library | holes, templates, composition | order 1→5: exact 0.030→0.205; template radius 2: 0.340 | order 5, template/hole, retrieval, anti-unification | T6 |
-| **r8** speculative | pointer drafts, trunk verifies | τ4 K16: 4.650 accepted/call; τ1 K8: 1.480; draft temperature is the lever | K 2-16, draft temp, verifier calls | T4 |
-| **r9** RLFP/DPO | preference projection | untested; decision gate is span-policy | pairs 2k-10k, SFT, DPO, KL | T7 |
-| **r10** scale | larger model/data | 24 MB train: 5M 1.583 / 1.613, 10M 9.17M 1.538 / 1.568 payload/shared; 10M promotes | 5M/10M/20M, more unique code | T2 |
-
-The family list is not a kill list. It is the current search space. A family
-with a weak first grid gets another config before it is parked.
-
-## 4. What is established
+## 1. Current evidence
 
 | result | number | evidence |
 |---|---|---|
-| concept-only T1 | **0.650 exact / 1.720 bits / 1.00 decision** (dominated by blend) | `reports/SCREEN.md` |
-| trunk T1 | 0.480 exact / 2.590 bits / 1.00 decision | `reports/SCREEN.md` |
-| byte T1 | 0.210 exact / 12.711 bits / 3.04 decisions | `reports/SCREEN.md` |
-| concept vs byte | 3.1x exact, 3.0x fewer decisions, 7.4x fewer bits | `reports/SCREEN.md` |
-| compression | 1.600 teacher / 1.692 payload / 1.722 shared | `reports/CONCEPT.md` |
-| round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
-| T2 review (promoted codec) | 1.692 payload / 1.722 shared / 1.600 teacher; round-trip OK; blend excluded | `reports/PORTFOLIO.md` |
-| T2 scale 5M, 24 MB train | 1.583 payload / 1.613 shared / 1.490 teacher | `reports/SCALE.md` |
-| T2 scale 10M, 24 MB train | **1.538 payload / 1.568 shared / 1.445 teacher**, 9.17M actual | `reports/SCALE.md` |
-| local deletion | 35 removed; 165 survivors ±0.006; +0.146 bpb | `reports/EDIT-CURVE.md` |
-| merge | 256→320; +0.108 bpb; exact | `reports/SCREEN.md` |
-| copy key 6, no cap | **0.720 exact**, 0.340 hit, 4.871 bits | `reports/BREADTH.md` |
-| copy key 7, cap 256, τ 0.10 | 0.665 exact, 2.146 bits (new near-concept point) | `reports/BREADTH.md` |
-| concept+copy key 6, no cap | 0.720 exact, 4.782 bits | `reports/BREADTH.md` |
-| concept+copy dist key 10, min 1 | 0.710 exact, 2.767 bits | `reports/BREADTH.md` |
-| concept+copy dist key 6, min 2 | 0.690 exact, 2.404 bits | `reports/BREADTH.md` |
-| concept+copy blend key 10, α 0.90 | **0.705 exact, 2.362 bits (target met)** | `reports/BREADTH.md` |
-| concept+copy blend key 6, α 0.50 | 0.680 exact, 1.698 bits (dominates concept) | `reports/BREADTH.md` |
-| concept+blend edit, `space` delete | survivors 0.733 vs 0.745; −0.012 exact | `reports/EDIT-CURVE.md` |
-| concept+blend draft, τ1 K8 | 1.480 accepted/call (overconfident) | `reports/EDIT-CURVE.md` |
-| concept+blend draft, τ4 K16 | **4.650 accepted/call**; pointer 4.450 | `reports/EDIT-CURVE.md` |
-| pack 256, fixed spans | 0.415 exact, 3.133 bits, 1.00 decision | `reports/PACKS.md` |
-| pack 128/512/1024 | 0.375/0.395/0.300 exact; all dominated by 256 | `reports/PACKS.md` |
-| template radius 2 | 0.340 exact, 4.937 bits (was library 0.205) | `reports/BREADTH.md` |
-| library order 5 | 0.205 exact, 5.970 bits | `reports/BREADTH.md` |
-| edit prefixes | `self` −0.000 bpb, 0.000 exact; newline +0.228 bpb, −0.072 exact | `reports/BREADTH.md` |
-| spec K=8 | 1.560 accepted concepts per trunk call | `reports/BREADTH.md` |
+| T1 concept | 0.650 exact / 1.720 bits / 1.00 decision | `reports/SCREEN.md` |
+| T1 blend | **0.680 exact / 1.698 bits** | `reports/BREADTH.md` |
+| T1 trunk | 0.480 / 2.590 / 1.00 | `reports/SCREEN.md` |
+| T1 byte | 0.210 / 12.711 / 3.04 | `reports/SCREEN.md` |
+| T2 5M, 24 MB | 1.583 / 1.613 / 1.490 teacher | `reports/SCALE.md` |
+| T2 10M, 24 MB | 1.538 / 1.568 / 1.445 | `reports/SCALE.md` |
+| T2 10M, 48 MB | 1.569 / 1.599 / 1.476; data alone hurts | `reports/SCALE.md` |
+| T2 20M, 48 MB | **1.488 / 1.518 / 1.395** | `reports/SCALE.md` |
+| T2 5M seed spread | 0.019 over seeds 0-3 | `reports/SCALE.md` |
+| T2 10M seed spread | 0.024 over seeds 0-4 | `reports/SCALE.md` |
+| Equal-params 5.21M vs 4.86M byte | 1.583 / 1.613 vs 1.693 / 1.694 | `reports/SCALE.md` |
+| Equal-data 20M vs 10M, 48 MB | -0.081 payload | `reports/SCALE.md` |
+| T3 edit | survivors 0.733 vs 0.745; -0.012 | `reports/EDIT-CURVE.md` |
+| T4 spec | 4.650 accepted/call; pointer 4.450 | `reports/EDIT-CURVE.md` |
+| Round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
 
-The concept-only point (0.650 / 1.720) is now dominated by the blend
-(0.680 / 1.698). The T1 frontier is six `r2+r3/r4` arms from 0.675 / 1.667
-to 0.720 / 4.782, and the target 0.705 / 2.362 is met. Pack size is
-settled at 256. The concept head lives inside the blend as the fallback.
-The trunk wins teacher-forced compression but not the action space. On T2,
-the promoted codec passes and improves with more unique train code:
-1.692 → 1.583 (5M) → 1.538 (10M) payload. That is a codec result, not a
-T1 blend result.
+**Established:** the codec works, round-trips, scales, and beats a
+smaller byte model on payload and shared bpb by about 6%.
+**Not established:** an equal-compute 20M win, a per-file product win,
+an RLFP win, or a T1-T4 combined survivor.
 
-### 4.1 Hypotheses
+## 2. Progress map
 
-| id | claim | status |
-|---|---|---|
-| H1 | the 5M concept LM reads the codec pack | **pass on bpb/round-trip**; span-policy 3.498 B/decision; the T1 concept point (0.650/1.720) is dominated by the blend |
-| H2 | copy, edit, and draft add capability | **pass on copy, local on edit, calibrated on draft**; blend 0.705 at 2.362 bits, 0.680 at 1.698; blend edit −0.012; T4 τ4 K16 4.650 |
-| H3 | concept DPO beats byte DPO | **untested**; only after a combination reaches the T1-T4 frontier |
-| H4 | pack edits change behavior without gradients | **local**; removed targets are lost, survivors unchanged |
-| H5 | the combination scales | **pass on T2**; 24 MB train: 5M 1.583 / 1.613, 10M 1.538 / 1.568 payload/shared; 20M remains untested |
+| area | current | next | gate |
+|---|---|---|---|
+| **Compression** | 1.488 / 1.518 at 20M | pack, copy, literal | 20/30/50% |
+| **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
+| **T3 edit** | local, -0.012 | delta codec | survivors |
+| **T4 spec** | 4.650 accepted/call | hold | no regression |
+| **Combination** | T1/T3/T4 separate | one T1-T4 arm | holds each gate |
+| **RLFP** | untested | 2k-pair pilot | +5 points |
+| **Scale** | 20M / 48 MB | 40M only after pack/copy | equal compute |
+| **Evaluation** | 756 KB in-domain | out-of-domain, per-file | honest claim |
+| **Product** | exact round-trip | per-file/adaptive pack | shared bpb |
+| **Infrastructure** | checkpoint/resume | caches, no timer | no OOM |
 
-## 5. Fair allocation
+## 3. The minimum-resource ladder
 
-The system must not spend all energy on the current leader. Use a fixed budget
-per round.
+Shrink for **search**, not for the final claim. A tiny model can rank
+levers; only a 20M point can prove the 50% target.
 
-### Round 0: baseline grid
-- Every family gets **3-6 configs** and a **2 h** cap.
-- Fast task T1 first; T2 only for families that compress.
-- Record best, median, and worst, not only the winner.
-- No family is dropped after Round 0.
+| stage | model | train/test | pack | steps | cost | purpose |
+|---|---|---|---|---|---|---|
+| **0 analysis** | none | 756 KB | 256-2048 | 0 | <5 min CPU | coverage, copy, per-file |
+| **1 tiny screen** | `d64 l2 h4 seq64`, ~0.2-0.4M | 1 MB / 512 KB | 64/128/256 | 300, batch 8 | 10 min, <1 GB | rank pack/copy/literal |
+| **2 5M confirm** | `d256 l6 h8 seq128`, 5.2M | 8 MB / 512 KB | 256 | 1000, batch 16 | 15 min, <2 GB | confirm top two |
+| **3 20M verify** | `d448 l8 h8 seq256`, 20.0M | 48 MB / 756 KB | 256/1024 | 8000, batch 32 | 60-90 min, <3 GB | 20/50% claim |
+| **4 RLFP pilot** | frozen 5M trunk + head | 2k pairs | 256 | 500-1000 | 2 min, <1 GB | DPO vs SFT |
 
-### Round 1: frontier + exploration
-- **50%** of time to Pareto-frontier arms.
-- **30%** to near-frontier arms (within 20% on one axis).
-- **20%** exploration reserve for parked families and new combinations.
-- Promote combinations, not just single families.
+One full cycle is **about 2 GPU-hours and under 3 GB**. Run one task at
+a time. Checkpoint every 500 pointer steps. Never use a timer that can
+kill an active task.
 
-### Round 2: combinations and scale
-- **70%** to the best combinations.
-- **20%** to near-frontier alternatives.
-- **10%** to a deliberate wildcard.
-- Scale only combinations that keep round-trip and provenance.
+**Rules that save the most:**
 
-Hard caps:
-- 5M parameters and 70k bytes for the fast loop.
-- 2 h per arm; no 20k-step run.
-- 756k/T2 only for promoted arms.
-- Checkpoint every arm; a host restart must not lose a run.
+1. **Freeze the trunk.** Train one 5M trunk; freeze the blocks; sweep only
+   the token embedding, span encoder, and head for pack/copy variants.
+2. **Nested packs.** Build a 2048-unit pack once; evaluate prefixes
+   256/512/1024/2048. Do not build each pack independently.
+3. **Cache parses.** Store `(pack_sha, data_sha) -> int32` arrays; cast to
+   long per batch. Halve memory versus int64.
+4. **Use 512 KB test at tiny scale.** At 64 KB the 2.7 KB pack costs
+   `0.338` bpb and hides the lever. At 512 KB it costs `0.043`.
+5. **One seed screens; three seeds confirm.** Seeds are for claims, not
+   for ranking levers.
+6. **No corpus rebuild per arm.** Reuse the 1 MB, 8 MB, and 48 MB slices.
 
-## 6. Promotion and parking
+## 4. Stage 0: CPU analysis, before any GPU
 
-An arm is **promoted** when it is on the Pareto frontier or gives a clear
-tradeoff:
+This stage is free and can kill a bad lever before training.
 
-- exact +10% with bits +10% or less,
-- bits −10% with exact −5% or less,
-- decisions −20% with exact −5% or less,
-- target calls −20% with exact unchanged,
-- a new capability (edit, transfer, library) with exact ≥0.40.
+1. **Per-file overhead.** For 1/4/10/100 KB files, compute
+   `payload + 8 * pack_bytes / n` with the 2.7 KB and 0.7 KB packs.
+   If the codec loses at 10 KB, the product needs an adaptive pack.
+2. **Pack coverage.** Parse the 756 KB test with 256/512/1024/2048-unit
+   packs. Report coverage, literal fraction, mean unit, pack bytes, and
+   the theoretical payload floor. If coverage does not rise by >0.10, the
+   pack is not the lever.
+3. **Copy preprocessor.** Run LZ77 with a 4 KB window over the 756 KB
+   test; encode matches as (offset, length), literals to the existing
+   codec. Charge offset/length bits. If it saves <5%, copy at this
+   granularity is not the lever.
+4. **Literal fraction.** Measure the share of escaped bytes and their
+   cost. A literal head can only recover that share.
 
-An arm is **parked** when its whole grid is dominated. Parking is not a kill:
-record the grid, the best/worst, and the condition that would reopen it. The
-exploration reserve can reopen any parked family when a new combination or task
-makes it relevant.
+**Decision.** Keep the two levers with >`0.10` bpb potential. If none has
+it, stop compression and pivot to delta/adaptive pack, not another seed.
 
-Do not:
-- call one config a verdict,
-- compare across different tasks,
-- promote a bpb win that loses round-trip or provenance,
-- start RLFP before a combination survives T1-T4,
-- train 20M on 7.2 MB.
+## 5. Stage 1: tiny screen
 
-## 7. Combination matrix
+Six arms, one shared data slice:
 
-The unique result is likely a combination, not a single family.
+| arm | pack | copy | literal |
+|---|---|---|---|
+| A | 64 | no | no |
+| B | 128 | no | no |
+| C | 256 | no | no |
+| D | 256 | LZ preprocessor | no |
+| E | 256 | no | byte head |
+| F | 128 | LZ preprocessor | byte head |
 
-| combination | tests | why |
-|---|---|---|
-| concept + long-key copy | T1, T4 | copy for repeats, concept for novel spans |
-| concept + pack size | T1, T2 | more concepts may raise exactness or reduce decisions |
-| concept + edit | T3 | delete/merge a concept and measure survivors |
-| concept + spec K=8 | T4 | fewer target calls at the same exactness |
-| pack + install | T5 | transfer a pack without a gradient |
-| library + concept | T1, T6 | template composition for holes |
-| all + RLFP | T7 | only after T1-T6 produce a frontier |
+Model `d64 l2 h4 seq64`, 1 MB train / 512 KB test, 300 steps, batch 8.
+Report payload, shared, coverage, literal fraction, round-trip, seconds.
+Promote only arms that beat arm C by >`0.05` payload. Keep at most two.
 
-Each combination is an arm with its own budget. Do not assume the best single
-family is the best combination.
+## 6. Stage 2: 5M confirm
 
-## 8. Metrics and artifacts
+Two arms plus controls:
 
-Every run records:
-- config, seed, git, corpus/pack SHA,
-- exact, bits/span, decisions/span,
-- copy hit and offset cost,
-- target calls and draft length,
-- edit delta, removed/survivor counts,
-- payload/shared bpb and round-trip,
-- seconds and GPU-hours.
+- the best pack/copy arm from Stage 1;
+- the 256-unit baseline;
+- a 5.2M byte control on the same 8 MB train / 512 KB test.
 
-Artifacts:
-- `reports/SCREEN.md`, `reports/BREADTH.md`, `reports/EDIT-CURVE.md`,
-- `reports/PACKS.md`,
-- `reports/PORTFOLIO.md` and `portfolio.json` (new),
-- per-arm `runs/<id>/metrics.json`.
+Model `d256 l6 h8 seq128`, 1000 steps, batch 16. Freeze the trunk after
+the baseline; train only the embedding/encoder/head for the variant.
+Promote only a `>0.10` payload gain over the 5M baseline. Keep one arm.
 
-`PORTFOLIO.md` must show the frontier, the best config per family, the
-exploration reserve, and the next round's allocation.
+## 7. Stage 3: 20M verify
 
-## 9. Milestones
+The only stage that can support the 50% target:
 
-| M | ships | acceptance | cost | status |
-|---|---|---|---|---|
-| R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d | **done** |
-| R1 | Round 1: all families | best/median/worst; frontier | 1 d | **done** |
-| R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d | **done** |
-| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d | **done** |
-| R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d | blocked |
-| R5 | decision | scale the Pareto winner or record the negative | 0.5 d | **partial: T2 scale promoted; RLFP blocked** |
+- 20M byte control: 48 MB train, 756 KB test, 8000 steps;
+- 20M pack 256: existing `1.488 / 1.518`;
+- 20M pack 1024: freeze the 20M blocks; train embedding/encoder/head
+  2000 steps, not 8000;
+- 20M copy: LZ preprocessor proxy on the existing 20M model; no new
+  training; if it saves >5%, build the full copy arm;
+- two seeds for the winner only if it needed a full train.
 
-M1 is already printed. R0-R3 are printed. T2 passes on the promoted codec
-(1.692 → 1.583 → 1.538 payload), and the 10M scale point promotes. R4 is
-still not the first gate: no combination has survived T1-T4 yet.
+Model `d448 l8 h8 seq256`, 8000 steps, batch 32, 48 MB train /
+756 KB test. Report payload, shared, teacher, round-trip, provenance.
+**Gate:** the winner must beat the measured 20M byte control by >20%
+shared bpb. At the current `1.693` reference that is `1.354`; 50%
+(`0.847`) is the stretch.
 
-## 10. Interfaces
+## 8. Stage 4: RLFP pilot
 
-Existing:
+RLFP is the unique capability lever and does not need a T1-T4 survivor.
+It does not directly lower T2 bpb; it improves the span policy.
+
+- **Data:** 2,000 pairs, 80/20 train/held-out.
+- **Chosen:** the exact target span from a T1 context.
+- **Rejected:** the policy's top wrong span, or a deleted/merged span.
+- **Policy:** softmax over frozen candidate logits; no full LM training.
+- **Reference:** the SFT policy before DPO.
+- **Loss:** DPO on candidate logits.
+- **Metrics:** pairwise accuracy, win rate, KL, exact span accuracy,
+  accepted/call.
+- **Promote:** +5 points pairwise over SFT on held-out pairs.
+- **Label:** synthetic-preference pilot, not human RLHF.
+
+Cost: 2 minutes, under 1 GB. Run it in parallel with Stage 0/1; it does
+not compete for the GPU.
+
+**Combination check.** Only after T1, T3, and T4 each hold separately.
+One arm, 2 h cap, all three tasks. Do not sweep combinations before the
+individual levers are measured.
+
+## 9. Levers and expected gains
+
+| lever | expected | cost | risk | test |
+|---|---:|---|---|---|
+| pack 256 -> 1024/2048 at 20M | -0.15 to -0.30 | 2 runs | pack charge | Stage 3 |
+| T2 copy / LZ preprocessor | -0.10 to -0.25 | CPU + 1 run | leakage | Stage 0/3 |
+| better literal head | -0.05 to -0.15 | 1 head | small | Stage 1 |
+| 40M capacity | -0.05 to -0.15 | 1 run | byte scales | after Stage 3 |
+| RLFP | product/capability | 2 min | synthetic | Stage 4 |
+
+These are hypotheses, not measured results. Pack and copy are the big
+levers. If they reach `-0.40`, the codec is at ~`1.12`; capacity and
+literals can plausibly reach `0.9`. That is the 50% zone.
+
+## 10. Out-of-the-box alternatives, only if stuck
+
+Try one at a time, after a plateau, with a stop rule.
+
+| alternative | idea | cost | when |
+|---|---|---|---|
+| **adaptive per-file pack** | build a small pack per file/repo; charge once | CPU | per-file test fails above 100 KB |
+| **retrieval pack** | retrieve exact spans from an index at encode/decode | CPU index + 5M | static pack plateaus |
+| **delta T2** | encode version-to-version diffs; copy the old version | CPU + 1 run | full-file T2 plateaus |
+| **hierarchical pack** | 256 phrase + 2K phrase + byte fallback | 1 model | pack coverage plateaus |
+| **grammar/AST pack** | identifiers/indent/keywords as units | CPU | substring pack plateaus |
+| **learned literal model** | small byte LM for escapes | 1 head | literal fraction high |
+| **domain routing** | two packs by language/package | 2 models | transfer fails |
+| **speculative span decode** | draft spans; trunk verifies | 1 run | latency, not bpb |
+| **RLFP on edits** | original vs mutated code pairs | 2 min | T1 pairs saturate |
+
+A retrieval pack must charge its index or be installed once; otherwise
+it is not a compression claim. An adaptive pack only helps if its pack
+charge is <`0.2` bpb, which means <`256` B at 10 KB; measure that floor
+before building one. **Delta T2 is the strongest product alternative**:
+versioned code can copy the old file and pay only the diff. None of these
+fixes 1-10 KB files unless the pack charge falls below `0.2` bpb.
+
+## 11. Gates and kill/park rules
+
+| gate | rule |
+|---|---|
+| G0 | exact round-trip and provenance |
+| G1 | equal-compute 20M byte control exists |
+| G2 | 20% shared bpb (`1.354`) |
+| G3 | 30% (`1.185`) |
+| G4 | 50% (`0.847`) |
+| G5 | per-file shared bpb beats byte at 10 KB |
+| G6 | RLFP +5 points pairwise on held-out |
+
+- If Stage 0 finds no lever >`0.10`, pivot to adaptive/delta; do not train.
+- If Stage 1 finds no arm >`0.05`, stop the pack/copy branch.
+- If Stage 2 finds no arm >`0.10`, stop before 20M.
+- If Stage 3 misses 20%, record the result and keep T1/T3/RLFP.
+- If per-file fails, the codec is a large-stream result, not a product.
+- If RLFP misses +5 points, record the negative and park RLFP.
+- Do not run 40M before Stage 3. Do not run 20M seed sweeps.
+
+## 12. Implementation
+
+Small changes, in this order:
+
+1. `cml coverage`: CPU parse/coverage for 256/512/1024/2048; cache int32.
+2. `cml copyprobe`: LZ77 preprocessor; payload and round-trip.
+3. `cml perfile`: 1/4/10/100 KB shared bpb table.
+4. `cml scale`: `active` in run id and metrics; `--preset tiny|5m|20m`;
+   `--freeze-trunk`; `--copy`.
+5. `cml codec --arm byte-model --params/--d/--layers`: 20M control.
+6. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
+7. Reports: `reports/COVERAGE.md`, `reports/COPY.md`,
+   `reports/PER-FILE.md`, `reports/T2.md`, `reports/RLFP.md`.
+
+Commands after the build:
+
 ```bash
-uv run cml train --corpus code --units codec --model pointer --params 5000000 --steps 8000
-uv run cml screen --spans 200
-uv run cml breadth --spans 200
-uv run cml editcurve --spans 200
-uv run cml packs --sizes 128,256,512,1024
+uv run cml coverage --sizes 256,512,1024,2048 --bytes 756752
+uv run cml copyprobe --window 4096 --bytes 756752
+uv run cml perfile --sizes 1024,4096,10240,102400
+uv run cml scale --sizes 20m --active 1024 --steps 8000 --seed 0
+uv run cml codec --arm byte-model --params 20000000 --steps 8000
+uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
-New interfaces:
-```bash
-uv run cml portfolio --round 1 --families all --task t1 --budget 2h
-uv run cml portfolio --round 2 --families r2,r3/r4 --task t1,t4 --budget 6h
-uv run cml portfolio --round 3 --families all --task t2 --budget 6h
-uv run cml scale --sizes 5m,10m --steps 8000 --seed 0
-```
-`cml portfolio` does not train; it aggregates every measured grid, scores the
-T1 frontier, writes `PORTFOLIO.md` and `portfolio.json`, and returns the next
-allocation. Rounds are stored in `portfolio.json`, so a rerun replaces only
-that round and keeps the history.
+Tests: the `active` run id, byte-model params, copy round-trip, RLFP
+held-out split, and exact codec round-trip. No coverage target for the
+rest.
 
-`cml scale` keeps the pinned 756,752 B T2 test and the 256-unit pack, adds
-unique train code up to 24 MB, and trains the requested 5M/10M pointers. It
-writes `reports/SCALE.md` and per-arm `runs/codec-scale-*/metrics.json`.
-5M and 10M are parameter targets, not exact counts (5.21M and 9.17M).
+## 13. Risks
 
-## 11. Risks
+- **Capacity confound.** A 20M pointer vs a 4.86M byte model is not
+  equal compute. G1 is mandatory.
+- **Pack charge.** 2.7 KB is 0.338 bpb at 64 KB and 0.029 at 756 KB.
+- **Copy leakage.** Copy only prior context; never search for the target.
+- **Per-file illusion.** A 756 KB stream hides the pack charge; G5 is
+  mandatory for a product claim.
+- **Synthetic RLFP.** T1 preference pairs test the mechanism, not human
+  alignment. Label it correctly.
+- **Host OOM.** Checkpoint; cap memory; one task; no timer that kills.
+- **Portfolio sprawl.** Enforce 3-5 arms per stage and a 2 h cap.
 
-- **Portfolio sprawl.** Too many arms; enforce 2 h and 3-6 configs per family.
-- **Metric tunnel vision.** Pareto, not one number.
-- **Copy leakage.** Never search for the target span in the context; use only
-  prior context. The first copy probe was invalid and was replaced.
-- **Edit tautology.** Removed targets are lost by construction; report
-  survivors separately.
-- **DPO overfit.** Held-out prompts, KL, and both decision definitions.
-- **Scale illusion.** 20M is untested; 24 MB is still finite. Extend unique
-  code before parameters.
-- **Host instability.** Checkpoint every arm; no 20k runs.
+## 14. Next actions
 
-## 12. Next round (R5)
-
-Done in R3: T2 review on the promoted codec, the 5M/10M scale, and the
-10M promotion. Still open: RLFP, a combined T1-T4 survivor, and 20M.
-
-1. **R5 decision.** Promote the T2 10M codec (1.538 payload / 1.568
-   shared) as the codec winner. Keep the T1 blend (0.680 / 1.698) as the
-   span-policy winner. Do not merge the two numbers or average them.
-2. **R4 RLFP.** Still blocked: no combination survives T1-T4. If one does,
-   start with 2k-10k pairs, SFT, and both decision definitions.
-3. **20M only with more unique code.** Do not train 20M on 7.2 MB; the
-   24 MB scale corpus is the current limit. Extend unique code first.
-4. **Seed repeat.** Repeat the 10M T2 point at seed 1 before treating
-   the 0.154 payload gain as a stable claim.
-
-The exploration reserve reopens parked `r1`, `r1/r6`, `r2`, `r3/r4`,
-`r3/r4/r6`, `r6`, and `r7` only with a new grid or a new combination.
-r6 keeps 256 as the pack; r5 and r8 stay active through their T3/T4
-capability rows; r10 stays active through its T2 scale row.
+0. Do not restart the 5-minute timer. Use one explicit task per stage.
+1. Run Stage 0: coverage, copy, per-file. No GPU.
+2. Run Stage 1: six tiny arms. 10 minutes.
+3. Run the RLFP pilot in parallel. 2 minutes.
+4. Promote at most two arms to Stage 2.
+5. Add the 20M byte control before Stage 3.
+6. Run Stage 3 on one or two arms, two seeds.
+7. Decide: 20% claim, 50% program, or park compression.
+8. Only then consider 40M or an out-of-the-box alternative.
 
 ## References
 
-- `TODO7.md`: the codec, install negative, and auditable product.
-- `cml/PLAN.md` §11: name/charge accounting.
-- `cml/pointer.py`: content-addressed pack reader.
-- `cml/codec.py`: `Lexicon`, `greedy_parse`, `build_lexicon`, arms.
-- `cml/cml.py`: `Trunk`, `train_text`, `p1_sample`, `cml train/sample/stats`,
-  `cml screen/breadth/editcurve/packs/portfolio/scale`, pack ops.
-- `cml/reports/SCALE.md`: the R3 5M/10M T2 scale grid and verdict.
+- `TODO7.md`: codec record and auditable product.
+- `cml/README.md`: the 50% target and progress map.
+- `cml/PLAN.md`: design and charge arithmetic.
+- `reports/SCALE.md`, `reports/PORTFOLIO.md`, `reports/CONCEPT.md`,
+  `reports/EDIT-CURVE.md`.
+- `cml/cml.py`, `cml/pointer.py`, `cml/codec.py`.
