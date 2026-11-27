@@ -6431,16 +6431,18 @@ def run_cortex(
     batch: int,
     seed: int,
     depths: tuple[int, ...] = (),
+    tag: str = "",
 ) -> int:
     """P5d/P5f pilot: term stream versus a matched byte model, one or many depths."""
     import cortex
 
     if depths:
+        suffix = f"-{tag}" if tag else ""
         report = cortex.sweep(depths, pairs, steps, d, layers, heads, seq, batch, seed)
-        report |= {"git": git_sha()}
-        write_json(REPORTS / "cortex-depth.json", report)
+        report |= {"git": git_sha(), "tag": tag}
+        write_json(REPORTS / f"cortex-depth{suffix}.json", report)
         text = cortex.render_sweep(report)
-        write_text(REPORTS / "CORTEX-DEPTH.md", text)
+        write_text(REPORTS / f"CORTEX-DEPTH{suffix}.md", text)
         print(text)
         return 0
     report = cortex.pilot(pairs, depth, steps, d, layers, heads, seq, batch, seed)
@@ -7792,6 +7794,7 @@ def main(argv: list[str] | None = None) -> int:
     cx.add_argument("--batch", type=int, default=32)
     cx.add_argument("--seed", type=int, default=0)
     cx.add_argument("--depths", default="")
+    cx.add_argument("--tag", default="")
     ce = sub.add_parser("composition")
     ce.add_argument("--pairs", type=int, default=1000)
     ce.add_argument("--depth", type=int, default=3)
@@ -7983,6 +7986,7 @@ def main(argv: list[str] | None = None) -> int:
             a.batch,
             a.seed,
             tuple(int(s) for s in a.depths.split(",") if s.strip()),
+            a.tag,
         )
     if a.cmd == "scale":
         return run_scale(

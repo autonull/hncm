@@ -1,0 +1,107 @@
+{
+ "runs": [
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 457473,
+     "bytes": 1821024,
+     "cortex_bpb": 0.973400867705381,
+     "byte_bpb": 0.9748182829373391
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 760701,
+     "bytes": 3044576,
+     "cortex_bpb": 0.9721467539985279,
+     "byte_bpb": 0.959546101583459
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 760701,
+     "bytes": 3044576,
+     "cortex_bpb": 0.9602981046017631,
+     "byte_bpb": 0.956589625464112
+    }
+   ],
+   "pairs": 20000,
+   "depth": 6,
+   "steps": 2500,
+   "seq": 256,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 826880,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 59.5
+  },
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 593041,
+     "bytes": 2373050,
+     "cortex_bpb": 0.9802406276871063,
+     "byte_bpb": 0.9796089065662301
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 1080135,
+     "bytes": 4343236,
+     "cortex_bpb": 0.977848267805432,
+     "byte_bpb": 0.9664185097087677
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 1080135,
+     "bytes": 4343236,
+     "cortex_bpb": 0.9684581163055748,
+     "byte_bpb": 0.9645400549249049
+    }
+   ],
+   "pairs": 20000,
+   "depth": 7,
+   "steps": 2500,
+   "seq": 256,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 826880,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 62.7
+  }
+ ],
+ "depths": [
+  6,
+  7
+ ],
+ "pairs": 20000,
+ "steps": 2500,
+ "seq": 256,
+ "batch": 32,
+ "seed": 0,
+ "cfg": {
+  "d": 128,
+  "layers": 4,
+  "heads": 4
+ },
+ "params": 826880,
+ "seconds": 122.2,
+ "git": "90a75a5c68026892ffc8c0859b5c176db7c56587"
+}

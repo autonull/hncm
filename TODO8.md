@@ -8,8 +8,10 @@ unseen compositions (a pilot, not reasoning). The cortex pilot is a
 negative at this grain: the term model leads on seen (`-0.022` bpb) and
 loses the unseen edge (`+0.004`). The depth sweep shows the cortex
 winning unseen from depth 5 (`-0.021` at depth 6) while its novel-edge
-pay falls to `+0.012` against `+0.003` for bytes; the gap is still
-positive, so bytes still pay less for a novel composition. The 20M codec is at `1.488` payload /
+pay falls to `+0.012` against `+0.003` for bytes. The window check
+(§1.5) shows that trend was partly truncation: at `seq 256` the gap
+stops closing at `+0.008`, so bytes match the term model once a term
+fits the context. The 20M codec is at `1.488` payload /
 `1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
 shared bpb against a 20M byte control. RLFP is untested. The next move is
 a composition task that a byte context cannot recompute, plus the Stage 3
@@ -162,17 +164,38 @@ per split, 2,500 steps, batch 32, `d128 l4 h4 seq128`, 810,496 params,
 from depth 5 (`-0.021` at depth 6). Its novel-edge pay falls with depth
 (`+0.038` to `+0.012`) while the byte arm stays near `+0.003`; the gap
 closes about `0.005` bpb per depth. The runs reproduce across seeds
-(depth 3-5 moved by at most `0.003`). A linear extrapolation would reach
-zero near depth 8, but that is not evidence: depth 6 terms approach the
-128-symbol context, so the next point needs `seq 256` and argument
-dependence, where a local byte context cannot recompute the structure.
+(depth 3-5 moved by at most `0.003`). Depth 6 terms approach the
+128-symbol context, so the trend needs a window check before it means
+anything: `§1.5` shows it was partly truncation.
+
+## 1.5 Cortex context check: measured 2026-11-27
+
+`cml cortex --depths 6,7 --seq 256 --tag seq256`: the same matched pair
+at a 256-symbol context, where a term fits. 20,000 terms per split,
+2,500 steps, 810,496 params, 122 s on one GPU. Reports:
+`CORTEX-DEPTH-seq128.md` and `CORTEX-DEPTH-seq256.md`.
+
+| window | depth | seen delta | unseen delta | cortex edge pay | byte edge pay | gap |
+|---|---:|---:|---:|---:|---:|---:|
+| 128 | 6 | -0.032 | -0.021 | +0.012 | +0.003 | +0.009 |
+| 256 | 6 | -0.001 | +0.013 | +0.012 | +0.003 | +0.009 |
+| 256 | 7 | +0.001 | +0.011 | +0.009 | +0.002 | +0.008 |
+
+**Read.** At the 256-symbol window the gap **stops closing**: `+0.009` to
+`+0.008` from depth 6 to 7, and the seen delta is parity. The `seq 128`
+trend was partly context truncation, not structure. So at this grain the
+concept-prediction hypothesis is negative: a byte model with enough
+context matches the term model on the novel composition, and it is
+slightly better on the unseen split. The next test is not more depth; it
+is argument dependence, where the byte context cannot recognize the type
+at all. `TODO8.compression.md` is the live fallback until that runs.
 
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
 | **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
-| **Concepts** | typed holes, exact realize; depth 6 cortex wins unseen, edge gap +0.009 | seq 256 plus argument dependence | P5d |
+| **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
@@ -417,6 +440,7 @@ uv run cml perfile --sizes 1024,4096,10240,102400
 uv run cml composition --pairs 1000 --depth 3 --seed 0
 uv run cml cortex --pairs 30000 --depth 4 --steps 3000
 uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
+uv run cml cortex --depths 6,7 --seq 256 --tag seq256
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
@@ -450,12 +474,13 @@ Two tracks share one baseline; keep both.
    MDL library gate, and the unseen-composition pilot (`§1.2`).
 2. **Done, negative at depth 4.** The matched Cortex pilot (`§1.3`): the
    term model leads on seen, the byte arm wins the novel edge.
-3. **Done, direction only.** The depth sweep (`§1.4`): the cortex wins
-   unseen from depth 5 and the edge gap falls to `+0.009` at depth 6,
-   but the byte arm still pays less for a novel composition.
-4. Next: depth 6 at `seq 256` and an argument-dependent task, where a
-   local byte context cannot recompute the structure. Rerun the matched
-   pair before any Cortex claim or scale-up.
+3. **Done, negative.** The depth sweep (`§1.4`) and its window check
+   (`§1.5`): the apparent closure was context truncation. At `seq 256`
+   the edge gap saturates at `+0.008`, so bytes match the term model
+   once a term fits the context.
+4. Next: argument dependence, where a byte context cannot infer the type
+   of a hole from its bytes. Design the grammar so the type is not
+   written, rerun the matched pair, and score exact type recovery.
 5. Only then scale the Cortex and compare against a matched byte
    Transformer at 5M and 20M params.
 
