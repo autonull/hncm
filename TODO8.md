@@ -31,17 +31,21 @@ held-out code, with exact round-trip and provenance.
 **Target.** 50% fewer bits per byte than a 20M byte LM on the pinned
 756,752 B code test:
 
-| milestone | shared bpb | vs 1.693 byte | compression | state |
+| milestone | shared bpb | vs 1.265 byte | compression | state |
 |---|---:|---:|---:|---|
-| 20M, 48 MB, pack 256 | 1.518 | -10.3% | 5.3x | **measured** |
-| 20% | 1.354 | -20% | 5.9x | next |
-| 30% | 1.185 | -30% | 6.8x | path |
-| 40% | 1.016 | -40% | 7.9x | path |
-| **50%** | **0.847** | **-50%** | **9.4x** | north star |
+| 20M byte control, 48 MB | **1.266** | 0% | 6.3x | **measured** |
+| 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured, loses |
+| copy + 4.86M byte | 1.393 | +10.0% | 5.8x | measured |
+| 20% | 1.012 | -20% | 7.9x | next |
+| 30% | 0.886 | -30% | 9.0x | path |
+| 40% | 0.759 | -40% | 10.5x | path |
+| **50%** | **0.633** | **-50%** | **12.6x** | north star |
 
-The denominator must be a 20M byte control on the same train/test/steps.
-The current 4.86M byte model (`1.693 / 1.694`) is a reference, not the
-equal-compute control. A 20M-vs-4.86M win is capacity, not architecture.
+The denominator is the 20M byte control on the same train/test/steps:
+**1.265 / 1.266** (§1.8). The 4.86M byte model (`1.693 / 1.694`) and the
+v9 model are references. The 20M concept codec (`1.488 / 1.518`) **loses**
+to the byte control at equal params, data and steps: its earlier win over a
+4.86M byte model was capacity, not architecture.
 
 ## 1. Current evidence
 
@@ -210,11 +214,59 @@ for one encode pass, so the product path needs a faster literal step
 (batched windows or a smaller trunk), not a bigger window. This is
 orthogonal to the concept track's negative Cortex result.
 
+## 1.7 Speed and the per-file charge: measured 2026-11-27
+
+`cml perfile-model --run codec-byte-model-code-756752`;
+`reports/PER-FILE-MODEL.md` and `perfile-model.json`.
+
+- **Speed.** `FastByteCodec` computes a 256-byte chunk in one forward: the
+  same 32,768 B slice went from **115.1 s to 0.4 s (290x)** and the payload
+  was **7,957 B, 1.9426 bpb on both arms**. It is a size instrument: rounding
+  can move counts, so `StaticByteCodec` is the codec and proves round-trip on
+  a slice. Every later run is now seconds instead of minutes.
+- **Coding speed.** `StreamCoder` resets every `seq` and carries no rolling
+  position table (that defect gave 6.94 bpb); `CopyCodec` shares one cache
+  for literals and copied bytes.
+- **Per-file charge (G5), model charged once per file:**
+
+| file B | payload bpb | self bpb |
+|---:|---:|---:|
+| 1,024 | 1.698 | 19,001.7 |
+| 4,096 | 1.694 | 4,751.7 |
+| 10,240 | 1.693 | 1,901.7 |
+| 102,400 | 1.696 | 191.7 |
+
+G5 **fails**: the 2.4 MB fp16 model dominates any 1-100 KB file. Install-once
+over the 2.97 MB coded costs `8.236` bpb, so the codec is a shared
+installation (`shared` in the plan), not a per-file pack. The product path is a
+smaller trunk or a larger shared corpus, and then the copy arm's `1.393`.
+
+## 1.8 G1: the 20M byte control, measured 2026-11-27
+
+`cml codec --arm byte-model --d 448 --layers 8 --steps 8000 --scale-cap
+48000000 --bytes 756752 --proof 4096`: 19,530,112 params, 48 MB train,
+8,000 steps, 390 s on one GPU. Run `codec-byte-model-code-756752-d448-l8`.
+
+| arm | params | train | payload | shared |
+|---|---:|---:|---:|---:|
+| 20M byte control | 19.53M | 48 MB | **1.265** | **1.266** |
+| 20M concept, pack 256 | 20M | 48 MB | 1.488 | 1.518 |
+| 4.86M byte | 4.86M | 8 MB | 1.693 | 1.694 |
+
+**Read.** At equal params, data and steps the byte model **wins by 16.6%
+shared** (`1.266` vs `1.518`): the concept codec's earlier advantage over a
+4.86M byte model was capacity. G2's denominator is now 1.265, so the 20%
+target is `1.012` (not `1.354`) and 50% is `0.633`. The copy arm on the
+4.86M model (`1.393`) is now *behind* the control; the next lever is the
+copy arm on the 20M byte model, which needs the fast literal coder. The
+concept track's remaining claim is capability (editable library, reasoning),
+not bpb.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 1.393 copy + 4.86M byte; 1.488 / 1.518 at 20M | faster copy literals | 20/30/50% |
+| **Compression** | 20M byte 1.266; concept 1.518 loses; copy 1.393 on 4.86M | copy on the 20M byte control | 20/30/50% |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
@@ -402,9 +454,9 @@ fixes 1-10 KB files unless the pack charge falls below `0.2` bpb.
 |---|---|
 | G0 | exact round-trip and provenance |
 | G1 | equal-compute 20M byte control exists |
-| G2 | 20% shared bpb (`1.354`) |
-| G3 | 30% (`1.185`) |
-| G4 | 50% (`0.847`) |
+| G2 | 20% shared bpb vs 1.265 (`1.012`) |
+| G3 | 30% (`0.886`) |
+| G4 | 50% (`0.633`) |
 | G5 | per-file shared bpb beats byte at 10 KB |
 | G6 | RLFP +5 points pairwise on held-out |
 
@@ -463,7 +515,8 @@ uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
 uv run cml cortex --depths 6,7 --seq 256 --tag seq256
 uv run cml copycodec --run codec-byte-model-code-756752 --bytes 756752
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
-uv run cml codec --arm byte-model --params 20000000 --steps 8000
+uv run cml codec --arm byte-model --d 448 --layers 8 --scale-cap 48000000
+uv run cml perfile-model --run codec-byte-model-code-756752-d448-l8
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 

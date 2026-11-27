@@ -1,0 +1,43 @@
+{
+ "run": "codec-byte-model-code-756752",
+ "corpus": "code",
+ "sha": "1ccd9ffc7f68052ed14e4a2c26bde6dc050a98cb0e5c3c89d4c56c3c800ceab2",
+ "model_bytes": 2432000,
+ "params": 4864000,
+ "install_bpb": 8.235776140275387,
+ "rows": [
+  {
+   "size": 1024,
+   "files": 739,
+   "bytes": 756736,
+   "payload_bytes": 160591,
+   "payload_bpb": 1.697722851826793,
+   "shared_bpb": 19001.697722851826
+  },
+  {
+   "size": 4096,
+   "files": 184,
+   "bytes": 753664,
+   "payload_bytes": 159615,
+   "payload_bpb": 1.694282863451087,
+   "shared_bpb": 4751.694282863451
+  },
+  {
+   "size": 10240,
+   "files": 73,
+   "bytes": 747520,
+   "payload_bytes": 158219,
+   "payload_bpb": 1.6932684075342466,
+   "shared_bpb": 1901.693268407534
+  },
+  {
+   "size": 102400,
+   "files": 7,
+   "bytes": 716800,
+   "payload_bytes": 151966,
+   "payload_bpb": 1.6960491071428572,
+   "shared_bpb": 191.69604910714287
+  }
+ ],
+ "git": "7d18f8afaee144013778c214d32d7f7a8f782ff0"
+}

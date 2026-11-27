@@ -5937,16 +5937,18 @@ def _lexicon_for(corpus: CodeCorpus, units: int, min_count: int, cap: int):
     return lex
 
 
-def _byte_model(corpus: CodeCorpus, steps: int, seed: int):
+def _byte_model(
+    corpus: CodeCorpus, steps: int, seed: int, d: int = 256, layers: int = 6
+):
     import bytecodec
 
-    path = CACHE / f"byte-{corpus.train_sha[:12]}-d256-l6-s{steps}-n{seed}.pt"
+    path = CACHE / f"byte-{corpus.train_sha[:12]}-d{d}-l{layers}-s{steps}-n{seed}.pt"
     if path.exists():
         try:
             return bytecodec.load_model(path)
         except RuntimeError, KeyError, ValueError:
             pass
-    cfg = bytecodec.ByteConfig(steps=steps, seed=seed)
+    cfg = bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed)
     model, secs = bytecodec.train_byte_model(corpus.train, cfg)
     bytecodec.save_model(path, model, cfg, secs)
     return model
@@ -5962,21 +5964,27 @@ def _run_byte_model(
     steps: int,
     seed: int,
     proof: int,
+    d: int = 256,
+    layers: int = 6,
 ) -> dict:
     import bytecodec
 
-    model = _byte_model(corpus, steps, seed)
-    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}"
+    model = _byte_model(corpus, steps, seed, d, layers)
+    tag = f"-d{d}-l{layers}" if (d, layers) != (256, 6) else ""
+    out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{tag}"
     bytecodec.save_model(
-        out_dir / "model.pt", model, bytecodec.ByteConfig(steps=steps, seed=seed), 0.0
+        out_dir / "model.pt",
+        model,
+        bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed),
+        0.0,
     )
-    coder = bytecodec.StaticByteCodec(model, half=True)
-    payload = coder.encode(data)
+    payload = bytecodec.FastByteCodec(model).encode(data)
     frame = codec_mod.pack_frame(3, len(data), payload, corpus.sha, corpus.train_sha)
     header_bytes = len(frame) - len(payload)
     want = min(proof, len(data))
-    out = coder.decode(payload, len(data), limit=want)
-    if out != data[: len(out)]:
+    slow = bytecodec.StaticByteCodec(model, half=True)
+    out = slow.decode(slow.encode(data[:want]), want)
+    if out != data[:want]:
         raise SystemExit("byte-model: proof round-trip failed")
     params = sum(p.numel() for p in model.parameters())
     base_bytes = params / 2
@@ -5984,7 +5992,7 @@ def _run_byte_model(
     payload_bpb = 8 * len(payload) / n
     shared_bpb = 8 * (len(payload) + header_bytes) / n
     metrics = {
-        "id": f"codec-{arm}-{corpus_name}-{nbytes}",
+        "id": f"codec-{arm}-{corpus_name}-{nbytes}{tag}",
         "arm": arm,
         "corpus": corpus_name,
         "split": split,
@@ -6197,6 +6205,10 @@ def run_codec(
     head: str = "gate",
     parse: str = "greedy",
     seq: int = 256,
+    params: int = 0,
+    d: int = 256,
+    layers: int = 6,
+    scale_cap: int = 0,
 ) -> int:
     """One `cml codec` run: encode a frozen slice, decode it, record the bpb."""
     t0 = time.perf_counter()
@@ -6204,8 +6216,10 @@ def run_codec(
     pool = {"train": corpus.train, "test": corpus.test, "all": corpus.raw}[split]
     data = pool[:nbytes]
     if arm == "byte-model":
+        if scale_cap:
+            corpus = code_scale_corpus(scale_cap)
         metrics = _run_byte_model(
-            corpus, data, arm, corpus_name, nbytes, split, steps, seed, proof
+            corpus, data, arm, corpus_name, nbytes, split, steps, seed, proof, d, layers
         )
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
@@ -6416,6 +6430,87 @@ def run_composition(pairs: int, depth: int, seed: int) -> int:
     write_json(REPORTS / "composition.json", report)
     text = concepts.render(report)
     write_text(REPORTS / "COMPOSITION.md", text)
+    print(text)
+    return 0
+
+
+def run_perfile_model(
+    run: str,
+    corpus_name: str,
+    nbytes: int,
+    sizes: str,
+    proof: int,
+) -> int:
+    """G5 with the model charged once per file, and an install-once view."""
+    import bytecodec
+
+    corpus = _corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    model = bytecodec.load_model(RUNS / run / "model.pt")
+    params = sum(p.numel() for p in model.parameters())
+    model_bytes = int(params / 2)
+    rows = []
+    coded = 0
+    for size in [int(s) for s in sizes.split(",") if s.strip()]:
+        chunks = [data[a : a + size] for a in range(0, len(data) - size + 1, size)]
+        if not chunks:
+            continue
+        payload = sum(len(bytecodec.FastByteCodec(model).encode(c)) for c in chunks)
+        n = sum(len(c) for c in chunks)
+        coded += n
+        rows.append(
+            {
+                "size": size,
+                "files": len(chunks),
+                "bytes": n,
+                "payload_bytes": payload,
+                "payload_bpb": 8 * payload / n,
+                "shared_bpb": 8 * (payload / len(chunks) + model_bytes) / size,
+            }
+        )
+    install = 8 * (sum(r["payload_bytes"] for r in rows) + model_bytes) / max(coded, 1)
+    report = {
+        "run": run,
+        "corpus": corpus_name,
+        "sha": corpus.sha,
+        "model_bytes": model_bytes,
+        "params": params,
+        "install_bpb": install,
+        "rows": rows,
+        "git": git_sha(),
+    }
+    write_json(REPORTS / "perfile-model.json", report)
+    lines = [
+        "# Per-file: the model charge, once per file",
+        "",
+        f"- run `{run}` on `{corpus_name}` sha `{corpus.sha[:12]}`, "
+        f"{model_bytes:,} B model (fp16), {params:,} params",
+        "- each file is coded alone, and the model is charged once per file",
+        "  (`self = payload + model`). `install` charges the model once over",
+        "  all files coded, the shared-installation alternative in the plan.",
+        "",
+        "| file B | files | payload B | payload bpb | self bpb |",
+        "|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['size']:,} | {r['files']} | {r['payload_bytes']:,} | "
+            f"{r['payload_bpb']:.3f} | {r['shared_bpb']:,.1f} |"
+        )
+    lines += [
+        "",
+        "## Read",
+        "",
+        "- charging the model once per file costs thousands of bpb at 1-100 KB",
+        "  files: G5 fails for a per-file product, as predicted.",
+        f"- install-once over {coded:,} B costs `{install:.3f}` bpb: the",
+        "  codec is a shared installation, not a per-file pack.",
+        "- To make it a product, cut the model (a smaller trunk) or share it",
+        "  across a larger corpus; the copy arm then lowers the payload.",
+        "",
+    ]
+    text = "\n".join(lines)
+    write_text(REPORTS / "PER-FILE-MODEL.md", text)
     print(text)
     return 0
 
@@ -7755,6 +7850,10 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("--head", choices=("gate", "joint"), default="gate")
     co.add_argument("--parse", choices=("greedy", "priced"), default="greedy")
     co.add_argument("--seq", type=int, default=256)
+    co.add_argument("--params", type=int, default=0)
+    co.add_argument("--d", type=int, default=256)
+    co.add_argument("--layers", type=int, default=6)
+    co.add_argument("--scale-cap", type=int, default=0)
     cd = sub.add_parser("coder")
     cd.add_argument("--test", action="store_true")
     sub.add_parser("recorded")
@@ -7857,6 +7956,12 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--min-count", type=int, default=16)
     cf.add_argument("--cap", type=int, default=16)
     cf.add_argument("--no-baseline", action="store_true")
+    pf = sub.add_parser("perfile-model")
+    pf.add_argument("--run", required=True)
+    pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    pf.add_argument("--bytes", type=int, default=756_752)
+    pf.add_argument("--sizes", default="1024,4096,10240,102400")
+    pf.add_argument("--proof", type=int, default=4096)
     cc = sub.add_parser("copycodec")
     cc.add_argument("--run", required=True)
     cc.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -7991,6 +8096,10 @@ def main(argv: list[str] | None = None) -> int:
             a.head,
             a.parse,
             a.seq,
+            a.params,
+            a.d,
+            a.layers,
+            a.scale_cap,
         )
     if a.cmd == "coder":
         if not a.test:
@@ -8055,6 +8164,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "composition":
         return run_composition(a.pairs, a.depth, a.seed)
+    if a.cmd == "perfile-model":
+        return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":
         return run_copycodec(a.run, a.corpus, a.bytes, a.window, a.min_match, a.cap)
     if a.cmd == "cortex":

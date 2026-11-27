@@ -526,3 +526,15 @@ def test_stream_and_copy_roundtrip() -> None:
     )
     assert back == data
     assert len(blob) < len(plain)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="fast codec uses cuda")
+def test_fast_byte_size_matches() -> None:
+    import cml
+    import bytecodec
+
+    data = cml.code_corpus().test[:2048]
+    model = bytecodec.load_model(cml.RUNS / "codec-byte-model-code-756752/model.pt")
+    fast = len(bytecodec.FastByteCodec(model).encode(data))
+    slow = len(bytecodec.StaticByteCodec(model).encode(data))
+    assert abs(fast - slow) <= 0.01 * slow

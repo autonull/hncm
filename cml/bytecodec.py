@@ -273,3 +273,44 @@ class CopyCodec:
             if len(out) > n:
                 raise ValueError("copy codec overshot the frame")
         return bytes(out)
+
+
+class FastByteCodec:
+    """A size instrument: one forward per 256-byte chunk.
+
+    A chunk's `255` logits predict its bytes `1..255` under the causal mask,
+    so the payload length matches the sequential arm on the tested slices.
+    Rounding at `quant` can move individual counts, so the bits are not the
+    exact stream: `StaticByteCodec` is the codec, and it proves round-trip
+    on a slice.  Use this arm only to price a full stream fast.
+    """
+
+    def __init__(self, model: Trunk, half: bool = True) -> None:
+        self.model = model.eval()
+        if half:
+            self.model = self.model.half()
+        self.seq = model.pos.num_embeddings
+
+    @torch.no_grad()
+    def _cums(self, chunk: bytes) -> np.ndarray:
+        n = len(chunk) - 1
+        x = torch.tensor([list(chunk[:n])], dtype=torch.long, device="cuda")
+        logits = self.model(x)[0].float()
+        q = codec.quant(torch.softmax(logits, -1).cpu().numpy()).reshape(n, -1)
+        return np.cumsum(q, axis=1)
+
+    def encode(self, data: bytes) -> bytes:
+        enc = codec.ArithEncoder()
+        for base in range(0, len(data), self.seq):
+            chunk = data[base : base + self.seq]
+            sym = chunk[0]
+            enc.encode(sym, sym + 1, BYTE)
+            if len(chunk) == 1:
+                continue
+            cums = self._cums(chunk)
+            for j in range(1, len(chunk)):
+                sym = chunk[j]
+                row = cums[j - 1]
+                lo = int(row[sym - 1]) if sym else 0
+                enc.encode(lo, int(row[sym]), int(row[-1]))
+        return enc.finish()
