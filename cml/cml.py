@@ -29,6 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import codec as codec_mod
+import stage0
 
 ROOT = Path(__file__).resolve().parent
 RUNS = ROOT / "runs"
@@ -776,6 +777,13 @@ def write_json(path: Path, obj: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, indent=1) + "\n")
+    os.replace(tmp, path)
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
     os.replace(tmp, path)
 
 
@@ -6315,6 +6323,92 @@ def run_codec(
     return 0
 
 
+def _corpus(name: str) -> CodeCorpus:
+    return code_corpus() if name == "code" else text_corpus(name)
+
+
+def _packs_for(
+    corpus: CodeCorpus, sizes: list[int], min_count: int, cap: int
+) -> list[tuple[int, codec_mod.Lexicon]]:
+    return [(u, _lexicon_for(corpus, u, min_count, cap)) for u in sizes]
+
+
+def run_coverage(
+    sizes: list[int], corpus_name: str, nbytes: int, min_count: int, cap: int
+) -> int:
+    """Stage 0: the parse alone, priced per pack.  No GPU, no training."""
+    corpus = _corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    rows = stage0.coverage_rows(data, _packs_for(corpus, sizes, min_count, cap))
+    base = len(codec_mod.ByteArm().encode(data))
+    report = {
+        "corpus": corpus_name,
+        "sha": corpus.sha,
+        "split": "test",
+        "n": len(data),
+        "min_count": min_count,
+        "cap": cap,
+        "byte_bytes": base,
+        "byte_bpb": 8 * base / max(len(data), 1),
+        "rows": rows,
+        "git": git_sha(),
+    }
+    write_json(REPORTS / "coverage.json", report)
+    text = stage0.render_coverage(report)
+    write_text(REPORTS / "COVERAGE.md", text)
+    print(text)
+    return 0
+
+
+def run_copyprobe(
+    corpus_name: str,
+    nbytes: int,
+    window: int,
+    min_match: int,
+    cap: int,
+    depth: int,
+) -> int:
+    """Stage 0: the LZ77 preprocessor with its own charge, round-tripped."""
+    corpus = _corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    report = {"corpus": corpus_name, "sha": corpus.sha, "split": "test"}
+    report |= stage0.copy_probe(data, window, min_match, cap, depth)
+    write_json(REPORTS / "copy.json", report)
+    text = stage0.render_copy(report)
+    write_text(REPORTS / "COPY.md", text)
+    print(text)
+    return 0
+
+
+def run_perfile(
+    sizes: list[int],
+    packs: list[int],
+    corpus_name: str,
+    nbytes: int,
+    min_count: int,
+    cap: int,
+    baseline: bool,
+) -> int:
+    """Stage 0: the pack charge once per file, the G5 product gate."""
+    corpus = _corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    report = stage0.perfile_rows(
+        data, _packs_for(corpus, packs, min_count, cap), sizes, baseline
+    )
+    report |= {
+        "corpus": corpus_name,
+        "sha": corpus.sha,
+        "split": "test",
+        "n": len(data),
+        "git": git_sha(),
+    }
+    write_json(REPORTS / "perfile.json", report)
+    text = stage0.render_perfile(report)
+    write_text(REPORTS / "PER-FILE.md", text)
+    print(text)
+    return 0
+
+
 def run_scale(
     sizes: str = "5m,10m",
     corpus_name: str = "code",
@@ -7623,6 +7717,27 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--families", default="all")
     pf.add_argument("--task", default="t1")
     pf.add_argument("--budget", default="2h")
+    cv = sub.add_parser("coverage")
+    cv.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    cv.add_argument("--bytes", type=int, default=756_752)
+    cv.add_argument("--sizes", default="256,512,1024,2048")
+    cv.add_argument("--min-count", type=int, default=16)
+    cv.add_argument("--cap", type=int, default=16)
+    cp = sub.add_parser("copyprobe")
+    cp.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    cp.add_argument("--bytes", type=int, default=756_752)
+    cp.add_argument("--window", type=int, default=4096)
+    cp.add_argument("--min-match", type=int, default=4)
+    cp.add_argument("--cap", type=int, default=32)
+    cp.add_argument("--depth", type=int, default=8)
+    cf = sub.add_parser("perfile")
+    cf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    cf.add_argument("--bytes", type=int, default=756_752)
+    cf.add_argument("--sizes", default="1024,4096,10240,102400")
+    cf.add_argument("--packs", default="64,256")
+    cf.add_argument("--min-count", type=int, default=16)
+    cf.add_argument("--cap", type=int, default=16)
+    cf.add_argument("--no-baseline", action="store_true")
     sl = sub.add_parser("scale")
     sl.add_argument("--sizes", default="5m,10m")
     sl.add_argument("--corpus", choices=("code",), default="code")
@@ -7776,6 +7891,26 @@ def main(argv: list[str] | None = None) -> int:
         return run_packs(a.corpus, a.bytes, a.spans, a.steps, a.sizes, a.seed)
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)
+    if a.cmd == "coverage":
+        return run_coverage(
+            [int(s) for s in a.sizes.split(",") if s.strip()],
+            a.corpus,
+            a.bytes,
+            a.min_count,
+            a.cap,
+        )
+    if a.cmd == "copyprobe":
+        return run_copyprobe(a.corpus, a.bytes, a.window, a.min_match, a.cap, a.depth)
+    if a.cmd == "perfile":
+        return run_perfile(
+            [int(s) for s in a.sizes.split(",") if s.strip()],
+            [int(s) for s in a.packs.split(",") if s.strip()],
+            a.corpus,
+            a.bytes,
+            a.min_count,
+            a.cap,
+            not a.no_baseline,
+        )
     if a.cmd == "scale":
         return run_scale(
             a.sizes,

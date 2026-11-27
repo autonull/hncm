@@ -1,9 +1,11 @@
 # TODO8 — the 50% concept codec plan
 
-Status: 2026-11-27. R3 is complete. The 20M codec is at `1.488` payload /
+Status: 2026-11-27. R3 is complete. Stage 0 is measured: copy saves
+`15.1%` (2.141 vs 2.522 bpb, exact), pack coverage rises `+0.364`, and
+the static pack loses per-file. The 20M codec is at `1.488` payload /
 `1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
 shared bpb against a 20M byte control. RLFP is untested. The next move is
-a cheap, ordered experiment ladder, not another scale seed.
+the Stage 3 copy proxy, not another scale seed.
 
 ## 0. One claim, one target
 
@@ -50,20 +52,42 @@ smaller byte model on payload and shared bpb by about 6%.
 **Not established:** an equal-compute 20M win, a per-file product win,
 an RLFP win, or a T1-T4 combined survivor.
 
+## 1.1 Stage 0: measured 2026-11-27
+
+CPU only, no training. `reports/COVERAGE.md`, `reports/COPY.md`,
+`reports/PER-FILE.md` and their JSON siblings; commands in §12.
+
+| lever | number | gate | verdict |
+|---|---:|---|---|
+| pack coverage, 256 -> 2048 units | 0.453 -> 0.817 (+0.364) | +0.10 | **holds** |
+| pack charge | 2.8 KB -> 22.1 KB on 756 KB | - | small at this size |
+| unit arm (static pack) | 2.773-3.197 vs byte 2.522 | G5 | **loses** |
+| LZ copy, 4 KB window | 2.141 vs 2.522 (-15.1%), 86.5% copied | 5% | **holds** |
+| per-file pack charge | best +0.148 bpb at 100 KB | G5 | **fails** |
+
+**Read.** The pack is a coverage lever, not a codec on its own: the plain
+unit arm loses 0.25-0.68 bpb to the byte arm, while the pointer arm
+already pays (`1.518` shared at 20M). Copy is the big lever: 15.1% with
+an exact round-trip and no training, so a Stage 3 proxy can price it in
+front of the frozen 20M model. The per-file product claim fails for a
+static pack at every size (1/4/10/100 KB); the product needs an adaptive
+or delta pack, not a bigger static one. Stage 1's ranking job is served
+at 756 KB: skip straight to the Stage 3 copy proxy.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 1.488 / 1.518 at 20M | pack, copy, literal | 20/30/50% |
+| **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
 | **Combination** | T1/T3/T4 separate | one T1-T4 arm | holds each gate |
 | **RLFP** | untested | 2k-pair pilot | +5 points |
-| **Scale** | 20M / 48 MB | 40M only after pack/copy | equal compute |
-| **Evaluation** | 756 KB in-domain | out-of-domain, per-file | honest claim |
-| **Product** | exact round-trip | per-file/adaptive pack | shared bpb |
-| **Infrastructure** | checkpoint/resume | caches, no timer | no OOM |
+| **Scale** | 20M / 48 MB | 40M only after copy | equal compute |
+| **Evaluation** | 756 KB in-domain; per-file fails | adaptive/delta pack | honest claim |
+| **Product** | exact round-trip; copy exact | per-file/adaptive pack | shared bpb |
+| **Infrastructure** | checkpoint/resume; CPU probes | caches, no timer | no OOM |
 
 ## 3. The minimum-resource ladder
 
@@ -72,10 +96,10 @@ levers; only a 20M point can prove the 50% target.
 
 | stage | model | train/test | pack | steps | cost | purpose |
 |---|---|---|---|---|---|---|
-| **0 analysis** | none | 756 KB | 256-2048 | 0 | <5 min CPU | coverage, copy, per-file |
-| **1 tiny screen** | `d64 l2 h4 seq64`, ~0.2-0.4M | 1 MB / 512 KB | 64/128/256 | 300, batch 8 | 10 min, <1 GB | rank pack/copy/literal |
-| **2 5M confirm** | `d256 l6 h8 seq128`, 5.2M | 8 MB / 512 KB | 256 | 1000, batch 16 | 15 min, <2 GB | confirm top two |
-| **3 20M verify** | `d448 l8 h8 seq256`, 20.0M | 48 MB / 756 KB | 256/1024 | 8000, batch 32 | 60-90 min, <3 GB | 20/50% claim |
+| **0 analysis** | none | 756 KB | 256-2048 | 0 | **7 min CPU, done** | coverage +0.364, copy -15.1%, per-file fails |
+| **1 tiny screen** | `d64 l2 h4 seq64`, ~0.2-0.4M | 1 MB / 512 KB | 64/128/256 | 300, batch 8 | 10 min, <1 GB | **skipped**: Stage 0 answers its pack/copy arms |
+| **2 5M confirm** | `d256 l6 h8 seq128`, 5.2M | 8 MB / 512 KB | 256 | 1000, batch 16 | 15 min, <2 GB | the literal head only, if needed |
+| **3 20M verify** | `d448 l8 h8 seq256`, 20.0M | 48 MB / 756 KB | 256/1024 | 8000, batch 32 | 60-90 min, <3 GB | 20/50% claim; copy proxy first |
 | **4 RLFP pilot** | frozen 5M trunk + head | 2k pairs | 256 | 500-1000 | 2 min, <1 GB | DPO vs SFT |
 
 One full cycle is **about 2 GPU-hours and under 3 GB**. Run one task at
@@ -117,7 +141,16 @@ This stage is free and can kill a bad lever before training.
 **Decision.** Keep the two levers with >`0.10` bpb potential. If none has
 it, stop compression and pivot to delta/adaptive pack, not another seed.
 
+**Result (2026-11-27).** Both levers hold: coverage `+0.364`, copy
+`-15.1%`. The static unit arm loses to the byte arm, so the pack pays
+only through the pointer. Details in §1.1 and the three reports.
+
 ## 5. Stage 1: tiny screen
+
+**Skipped (2026-11-27).** Stage 0 measured its pack and copy arms at
+756 KB with exact codecs; the only open question is the literal head,
+which Stage 2 covers if the copy proxy plateaus. Keep this section for
+the record.
 
 Six arms, one shared data slice:
 
@@ -246,17 +279,26 @@ fixes 1-10 KB files unless the pack charge falls below `0.2` bpb.
 
 ## 12. Implementation
 
-Small changes, in this order:
+Done in `codec.py` (the `CopyArm` and `lz_parse` primitives) and
+`stage0.py` (the three analyses and their renderers); the CLI is
+`cml.py`. Next changes, in this order:
 
-1. `cml coverage`: CPU parse/coverage for 256/512/1024/2048; cache int32.
-2. `cml copyprobe`: LZ77 preprocessor; payload and round-trip.
-3. `cml perfile`: 1/4/10/100 KB shared bpb table.
-4. `cml scale`: `active` in run id and metrics; `--preset tiny|5m|20m`;
-   `--freeze-trunk`; `--copy`.
-5. `cml codec --arm byte-model --params/--d/--layers`: 20M control.
+1. **done** `cml coverage`: parse + measured unit arm per pack;
+   `--sizes 256,512,1024,2048`; cached lexicons, no GPU.
+2. **done** `cml copyprobe`: LZ77 tokens with a slot/raw/length charge;
+   exact round-trip; `--window/--min-match/--cap/--depth`.
+3. **done** `cml perfile`: 1/4/10/100 KB table, the pack charged once
+   per file, byte baseline on the same chunks.
+4. `cml scale --copy`: put the measured LZ tokens in front of the
+   frozen 20M model; charge only the residual literals; report the
+   proxy saving on `reports/T2.md`. This is the next GPU lever.
+5. `cml codec --arm byte-model --params/--d/--layers`: the 20M control
+   (G1) must be a manifest, not an ad-hoc run.
 6. `cml rlfp --pairs 2000 --run <5M>`: DPO vs SFT; `reports/RLFP.md`.
-7. Reports: `reports/COVERAGE.md`, `reports/COPY.md`,
-   `reports/PER-FILE.md`, `reports/T2.md`, `reports/RLFP.md`.
+7. Product pack: an adaptive or delta pack per file; a static pack is
+   measured as a loss at 1-100 KB and is not the answer.
+8. Reports: `reports/COVERAGE.md` (done), `reports/COPY.md` (done),
+   `reports/PER-FILE.md` (done), `reports/T2.md`, `reports/RLFP.md`.
 
 Commands after the build:
 
@@ -264,14 +306,14 @@ Commands after the build:
 uv run cml coverage --sizes 256,512,1024,2048 --bytes 756752
 uv run cml copyprobe --window 4096 --bytes 756752
 uv run cml perfile --sizes 1024,4096,10240,102400
-uv run cml scale --sizes 20m --active 1024 --steps 8000 --seed 0
+uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
-Tests: the `active` run id, byte-model params, copy round-trip, RLFP
-held-out split, and exact codec round-trip. No coverage target for the
-rest.
+Tests: the `active` run id, byte-model params, copy round-trip and
+determinism, the per-file charge arithmetic, RLFP held-out split, and
+exact codec round-trip. No coverage target for the rest.
 
 ## 13. Risks
 
@@ -289,14 +331,19 @@ rest.
 ## 14. Next actions
 
 0. Do not restart the 5-minute timer. Use one explicit task per stage.
-1. Run Stage 0: coverage, copy, per-file. No GPU.
-2. Run Stage 1: six tiny arms. 10 minutes.
-3. Run the RLFP pilot in parallel. 2 minutes.
-4. Promote at most two arms to Stage 2.
-5. Add the 20M byte control before Stage 3.
-6. Run Stage 3 on one or two arms, two seeds.
+1. **Done.** Stage 0: coverage, copy, per-file. No GPU, 7 minutes.
+2. **Skip Stage 1.** Its pack/copy ranking is answered at 756 KB and
+   its arms cost more than `reports/COVERAGE.md` already shows.
+3. Run the Stage 3 copy proxy: LZ tokens in front of the frozen 20M
+   model, charge the residual literals, no new training. This is the
+   next lever; the honest bar is >5% on the 756 KB test.
+4. Run the RLFP pilot in parallel (CPU, 2 minutes). It is still the
+   only untested capability lever.
+5. If the copy proxy and the pointer plateau, run Stage 2 for the
+   literal head only.
+6. Add the 20M byte control as a manifest before any 20% claim.
 7. Decide: 20% claim, 50% program, or park compression.
-8. Only then consider 40M or an out-of-the-box alternative.
+8. Only then consider 40M or an adaptive/delta pack for the product.
 
 ## References
 

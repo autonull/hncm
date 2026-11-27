@@ -1,0 +1,23 @@
+{
+ "corpus": "code",
+ "sha": "1ccd9ffc7f68052ed14e4a2c26bde6dc050a98cb0e5c3c89d4c56c3c800ceab2",
+ "split": "test",
+ "window": 4096,
+ "min_match": 4,
+ "cap": 32,
+ "depth": 8,
+ "n": 756752,
+ "tokens": 167274,
+ "matches": 65038,
+ "copy_bytes": 654516,
+ "copy_fraction": 0.8649015793813561,
+ "literal_fraction": 0.13509842061864386,
+ "mean_match": 10.06359359143885,
+ "payload_bytes": 202561,
+ "payload_bpb": 2.141372602913504,
+ "base_bytes": 238574,
+ "base_bpb": 2.522083853098505,
+ "saving": 0.15095106759328347,
+ "parse_seconds": 0.609,
+ "seconds": 21.02
+}

@@ -498,6 +498,142 @@ class UnitArm:
         return bytes(out), spans
 
 
+def lz_parse(
+    data: bytes,
+    window: int = 4096,
+    min_match: int = 4,
+    cap: int = 32,
+    depth: int = 8,
+) -> list[tuple[int, int]]:
+    """Greedy LZ77 over a sliding window: `(0, byte)` or `(length, offset)`.
+
+    The hash table keys the last `depth` positions with the same 4-byte prefix,
+    never older than `window`, so the parse is deterministic and linear-ish.
+    """
+    n = len(data)
+    head: dict[int, list[int]] = {}
+    tokens: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        key = (
+            int.from_bytes(data[i : i + min_match], "big")
+            if i + min_match <= n
+            else None
+        )
+        best = 0
+        best_off = 0
+        if key is not None:
+            cand = head.get(key)
+            if cand:
+                lo = i - window
+                seen = 0
+                for p in reversed(cand):
+                    if p < lo or seen >= depth:
+                        break
+                    seen += 1
+                    lim = min(cap, n - i, n - p)
+                    a = int.from_bytes(data[i : i + lim], "big")
+                    b = int.from_bytes(data[p : p + lim], "big")
+                    d = a ^ b
+                    if d == 0:
+                        ell = lim
+                    else:
+                        ell = lim - (d.bit_length() + 7) // 8
+                    if ell > best:
+                        best = ell
+                        best_off = i - p
+                        if ell >= cap:
+                            break
+        if best >= min_match:
+            tokens.append((best, best_off))
+            for q in range(i, i + best):
+                if q + min_match <= n:
+                    head.setdefault(
+                        int.from_bytes(data[q : q + min_match], "big"), []
+                    ).append(q)
+            i += best
+        else:
+            tokens.append((0, data[i]))
+            if key is not None:
+                head.setdefault(key, []).append(i)
+            i += 1
+    return tokens
+
+
+def _put(row: Counts, sym: int, enc: ArithEncoder) -> None:
+    _encode_in(row, sym, enc)
+    row.update(sym)
+
+
+def _get(row: Counts, dec: ArithDecoder) -> int:
+    sym = _decode_in(row, dec)
+    row.update(sym)
+    return sym
+
+
+class CopyArm:
+    """LZ77 tokens with an adaptive charge; literals escape to `ByteArm`.
+
+    A match encodes a token bit, a distance slot (the bit length of `offset-1`),
+    the slot's remaining raw bits, and a length symbol.  The decoder copies
+    from its own output, so the arm round-trips without the parse.
+    """
+
+    __slots__ = ("window", "min_match", "cap", "tok", "slot", "length", "bytes")
+
+    def __init__(self, window: int = 4096, min_match: int = 4, cap: int = 32) -> None:
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        slots = max((window - 1).bit_length(), 1)
+        self.tok = Counts(2, init=np.ones(2, dtype=np.int64))
+        self.slot = Counts(slots + 1, init=np.ones(slots + 1, dtype=np.int64))
+        self.length = Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+        self.bytes = ByteArm()
+
+    def encode(self, data: bytes, tokens: list[tuple[int, int]] | None = None) -> bytes:
+        if tokens is None:
+            tokens = lz_parse(data, self.window, self.min_match, self.cap)
+        enc = ArithEncoder()
+        for length, value in tokens:
+            if length == 0:
+                _put(self.tok, 0, enc)
+                self.bytes.encode_one(value, enc)
+                continue
+            _put(self.tok, 1, enc)
+            v = value - 1
+            slot = v.bit_length()
+            _put(self.slot, slot, enc)
+            for shift in range(slot - 2, -1, -1):
+                bit = (v >> shift) & 1
+                enc.encode(bit, bit + 1, 2)
+            _put(self.length, length - self.min_match, enc)
+        return enc.finish()
+
+    def decode(self, blob: bytes, n: int) -> bytes:
+        dec = ArithDecoder(blob)
+        out = bytearray()
+        while len(out) < n:
+            if _get(self.tok, dec) == 0:
+                out.append(self.bytes.decode_one(dec))
+                continue
+            slot = _get(self.slot, dec)
+            v = 1 if slot else 0
+            for _ in range(slot - 1):
+                bit = dec.target(2)
+                dec.update(bit, bit + 1, 2)
+                v = (v << 1) | bit
+            offset = v + 1
+            length = _get(self.length, dec) + self.min_match
+            for _ in range(length):
+                out.append(out[-offset])
+            if len(out) > n:
+                raise ValueError("copy arm overshot the frame length")
+        return bytes(out)
+
+
 def build_lexicon(
     train: bytes, size: int = 8192, min_count: int = 16, cap: int = 16
 ) -> Lexicon:

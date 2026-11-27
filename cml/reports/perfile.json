@@ -1,0 +1,111 @@
+{
+ "rows": [
+  {
+   "size": 1024,
+   "units": 64,
+   "pack_bytes": 764,
+   "files": 739,
+   "shared_mean": 9.587047530446549,
+   "shared_min": 7.7890625,
+   "shared_max": 10.9453125,
+   "base_mean": 3.660996701623816,
+   "base_min": 1.8203125,
+   "base_max": 4.953125
+  },
+  {
+   "size": 1024,
+   "units": 256,
+   "pack_bytes": 2771,
+   "files": 739,
+   "shared_mean": 25.541684286197565,
+   "shared_min": 23.640625,
+   "shared_max": 26.921875,
+   "base_mean": 3.660996701623816,
+   "base_min": 1.8203125,
+   "base_max": 4.953125
+  },
+  {
+   "size": 4096,
+   "units": 64,
+   "pack_bytes": 764,
+   "files": 184,
+   "shared_mean": 4.532215947690218,
+   "shared_min": 2.873046875,
+   "shared_max": 5.462890625,
+   "base_mean": 3.023129670516304,
+   "base_min": 1.35546875,
+   "base_max": 3.974609375
+  },
+  {
+   "size": 4096,
+   "units": 256,
+   "pack_bytes": 2771,
+   "files": 184,
+   "shared_mean": 8.807797639266305,
+   "shared_min": 7.169921875,
+   "shared_max": 9.630859375,
+   "base_mean": 3.023129670516304,
+   "base_min": 1.35546875,
+   "base_max": 3.974609375
+  },
+  {
+   "size": 10240,
+   "units": 64,
+   "pack_bytes": 764,
+   "files": 73,
+   "shared_mean": 3.367904537671233,
+   "shared_min": 2.37265625,
+   "shared_max": 3.96796875,
+   "base_mean": 2.7245719178082193,
+   "base_min": 1.7515625,
+   "base_max": 3.33671875
+  },
+  {
+   "size": 10240,
+   "units": 256,
+   "pack_bytes": 2771,
+   "files": 73,
+   "shared_mean": 5.330736301369863,
+   "shared_min": 4.3046875,
+   "shared_max": 5.95,
+   "base_mean": 2.7245719178082193,
+   "base_min": 1.7515625,
+   "base_max": 3.33671875
+  },
+  {
+   "size": 102400,
+   "units": 64,
+   "pack_bytes": 764,
+   "files": 7,
+   "shared_mean": 2.6254017857142857,
+   "shared_min": 2.3715625,
+   "shared_max": 2.758203125,
+   "base_mean": 2.4769308035714284,
+   "base_min": 2.223359375,
+   "base_max": 2.6159375
+  },
+  {
+   "size": 102400,
+   "units": 256,
+   "pack_bytes": 2771,
+   "files": 7,
+   "shared_mean": 3.216975446428571,
+   "shared_min": 2.972734375,
+   "shared_max": 3.361640625,
+   "base_mean": 2.4769308035714284,
+   "base_min": 2.223359375,
+   "base_max": 2.6159375
+  }
+ ],
+ "sizes": [
+  1024,
+  4096,
+  10240,
+  102400
+ ],
+ "corpus": "code",
+ "sha": "1ccd9ffc7f68052ed14e4a2c26bde6dc050a98cb0e5c3c89d4c56c3c800ceab2",
+ "split": "test",
+ "n": 756752,
+ "git": "70989ac4a09a3aea79ef07982a0b844e1fa8c331"
+}

@@ -64,6 +64,35 @@ def test_parse_reexpands() -> None:
     assert covered > 0
 
 
+def test_lz_parse_and_copy_roundtrip() -> None:
+    data = (b"alpha = beta + gamma\n" * 200) + bytes(range(256))
+    tokens = codec.lz_parse(data, window=256, min_match=4, cap=16)
+    assert tokens == codec.lz_parse(data, window=256, min_match=4, cap=16)
+    arm = codec.CopyArm(window=256, min_match=4, cap=16)
+    blob = arm.encode(data, tokens)
+    assert (
+        codec.CopyArm(window=256, min_match=4, cap=16).decode(blob, len(data)) == data
+    )
+    assert sum(ell for ell, _ in tokens) > 0
+
+
+def test_stage0_coverage_and_charge() -> None:
+    import stage0
+
+    train = b"def build(data):\n    return data + data\n" * 40
+    test = b"def build(data):\n    return data\n" * 20
+    lex = codec.build_lexicon(train, size=32, min_count=4, cap=8)
+    rows = stage0.coverage_rows(test, [(32, lex)])
+    row = rows[0]
+    assert row["pack_bytes"] > 0
+    assert 0.0 < row["coverage"] <= 1.0
+    assert row["payload_bytes"] > 0
+    assert row["static_bpb"] > row["payload_bpb"] / 2
+    report = stage0.perfile_rows(test, [(32, lex)], [512], baseline=True)
+    assert report["rows"][0]["files"] == 1
+    assert report["rows"][0]["shared_mean"] > report["rows"][0]["base_mean"]
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="pointer codec uses cuda")
 def test_pointer_roundtrip() -> None:
     import pointer
