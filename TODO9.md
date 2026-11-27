@@ -35,9 +35,12 @@ not train D before C1 has a baseline. Do not tune on test.
 window, 1200 steps) scores byte F1 `0.000` against the message-only
 baseline's `0.000` on 500 val files; it emits no spans. Synthetic
 pretraining fits (`loss 0.34`), but real fine-tuning does not transfer and
-collapses to the prior. This is an input problem, not a budget problem:
-the next lever is line-level labels or explicit message-to-file
-cross-attention. E2 must not reuse this locator. C1 is independent.
+collapses to the prior. A 50-file, 5,000-step control also scored `0.000`,
+so this is not a budget problem. A line-level prototype (8-line windows,
+byte pooling) on the same 50 files scored `0.055` with an unstable loss.
+The next lever is the model input/architecture (explicit message-to-file
+cross-attention or a different decoder), not more steps on this trunk. E2
+must not reuse this locator. C1 is independent and should run first.
 
 ## 0. One claim, two formulations
 
@@ -206,8 +209,10 @@ the manifest. Add test execution only when a gate needs it, and keep the
 same split.
 
 GE1 recorded 2026-11-27: byte F1 `0.000` versus the message-only baseline
-`0.000` on 500 val files, fail. The locator emits no spans; see
-`cml/reports/EDIT-LOCATOR.md`. Do not run E2 on this locator.
+`0.000` on 500 val files, fail. A 50-file, 5,000-step control also scored
+`0.000`; line-level pooling scored `0.055` on 50 files. The locator emits
+no usable spans and the loss is unstable; see `cml/reports/EDIT-LOCATOR.md`.
+Do not run E2 on this locator.
 
 If G0 shows retrieval solving the task, harden before training. If GE2 and
 GC1 both fail, stop and ship the delta product. A gate that is not met
@@ -318,12 +323,12 @@ and blob cache; do not re-mine unless the config changes.
 
 Remaining work, in order:
 
-1. E1b locator: change the input, not the budget. Try line-level labels
-   or explicit message-to-file cross-attention; rerun GE1 against the
-   message-only baseline. Keep test untouched.
-2. C1 copy-SFT: teacher-forced `dump_actions(copy_actions(new, old))`
-   targets; gate GC1 against the full-file baseline. This is independent
-   of the locator and can run first if E1b is blocked.
+1. C1 copy-SFT: teacher-forced `dump_actions(copy_actions(new, old))`
+   targets; gate GC1 against the full-file baseline. Run this first: it is
+   independent of the locator, and Track C is the original bet.
+2. E1b locator: change the model input, not the budget. Line-level pooling
+   on the same trunk scored `0.055` on 50 files. Try explicit
+   message-to-file cross-attention or a different decoder; rerun GE1.
 3. Only after a pass: E2 writer (`--arm compiler`), D (DPO), H (holes),
    V (rerank).
 
