@@ -14,16 +14,31 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import math
 import os
+import random
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 import codec
 import editdata
 
 TOKEN = re.compile(r"[A-Za-z0-9_]+")
 G0_MAX_EXACT = 0.20
+ROOT = Path(__file__).resolve().parent
+RUNS = ROOT / "runs"
+REPORTS = ROOT / "reports"
+LOCATOR_D = 256
+LOCATOR_LAYERS = 6
+LOCATOR_HEADS = 8
+LOCATOR_MSG = 192
+LOCATOR_WIN = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,6 +512,639 @@ def render_report(manifest: dict, result: dict, cache: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+class EncBlock(nn.Module):
+    """A bidirectional pre-LN block for byte-span classification."""
+
+    def __init__(self, d: int, heads: int):
+        super().__init__()
+        self.heads = heads
+        self.ln1 = nn.LayerNorm(d)
+        self.qkv = nn.Linear(d, 3 * d, bias=False)
+        self.proj = nn.Linear(d, d, bias=False)
+        self.ln2 = nn.LayerNorm(d)
+        self.fc = nn.Linear(d, 4 * d)
+        self.out = nn.Linear(4 * d, d)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        b, t, d = x.shape
+        h = self.ln1(x)
+        q, k, v = self.qkv(h).chunk(3, dim=-1)
+        shape = (b, t, self.heads, d // self.heads)
+        q, k, v = (z.view(shape).transpose(1, 2) for z in (q, k, v))
+        y = F.scaled_dot_product_attention(q, k, v)
+        y = y.transpose(1, 2).reshape(b, t, d)
+        x = x + self.proj(y)
+        return x + self.out(F.gelu(self.fc(self.ln2(x))))
+
+
+class Locator(nn.Module):
+    """Message + file window -> one changed-byte logit per file byte."""
+
+    def __init__(
+        self,
+        d: int = LOCATOR_D,
+        layers: int = LOCATOR_LAYERS,
+        heads: int = LOCATOR_HEADS,
+        msg: int = LOCATOR_MSG,
+        win: int = LOCATOR_WIN,
+    ):
+        super().__init__()
+        self.msg_tok = nn.Embedding(256, d)
+        self.file_tok = nn.Embedding(256, d)
+        self.pos = nn.Embedding(msg + win, d)
+        self.seg = nn.Embedding(2, d)
+        self.blocks = nn.ModuleList(EncBlock(d, heads) for _ in range(layers))
+        self.ln = nn.LayerNorm(d)
+        self.head = nn.Linear(d, 1)
+        self.msg = msg
+        self.win = win
+        nn.init.normal_(self.msg_tok.weight, std=0.02)
+        nn.init.normal_(self.file_tok.weight, std=0.02)
+        nn.init.normal_(self.pos.weight, std=0.02)
+
+    def forward(
+        self, msg_ids: torch.Tensor, file_ids: torch.Tensor, zero_file: bool = False
+    ) -> torch.Tensor:
+        b = msg_ids.size(0)
+        m = msg_ids.size(1)
+        w = file_ids.size(1)
+        pos = self.pos.weight[: m + w]
+        message = self.msg_tok(msg_ids) + pos[:m] + self.seg.weight[0]
+        if zero_file:
+            files = pos[m : m + w] + self.seg.weight[1]
+            files = files.unsqueeze(0).expand(b, -1, -1)
+        else:
+            files = self.file_tok(file_ids) + pos[m : m + w] + self.seg.weight[1]
+        h = torch.cat([message, files], dim=1)
+        for block in self.blocks:
+            h = block(h)
+        return self.head(self.ln(h[:, m:])).squeeze(-1)
+
+
+def _byte_tensor(data: bytes, size: int) -> torch.Tensor:
+    out = torch.zeros(size, dtype=torch.long)
+    if data:
+        out[: len(data)] = torch.frombuffer(bytearray(data), dtype=torch.uint8).long()
+    return out
+
+
+def _mask_from_spans(old: bytes, spans: list[Span]) -> np.ndarray:
+    mask = np.zeros(len(old), dtype=np.uint8)
+    for span in spans:
+        if span.old_len > 0:
+            mask[span.old_start : span.old_start + span.old_len] = 1
+    return mask
+
+
+def _mask_to_spans(mask: np.ndarray, min_len: int = 2, gap: int = 0) -> list[Span]:
+    runs: list[tuple[int, int]] = []
+    start = None
+    for i, on in enumerate(mask.tolist() + [False]):
+        if on and start is None:
+            start = i
+        elif not on and start is not None:
+            runs.append((start, i))
+            start = None
+    merged: list[tuple[int, int]] = []
+    for start, end in runs:
+        if merged and start - merged[-1][1] <= gap:
+            merged[-1] = (merged[-1][0], end)
+        else:
+            merged.append((start, end))
+    return [Span(s, e - s, b"") for s, e in merged if e - s >= min_len]
+
+
+@dataclass(frozen=True, slots=True)
+class Labeled:
+    record: dict
+    old: bytes
+    spans: list[Span]
+    mask: np.ndarray
+    focus: list[tuple[int, int]]
+
+
+def load_labeled(
+    manifest: dict, cache: Path, split: str, limit: int = 0
+) -> list[Labeled]:
+    """Load files with at least one non-empty changed span in `old`."""
+    out: list[Labeled] = []
+    for rec, old, new in editdata.load_edits(manifest, cache, split):
+        spans = [s for s in spans_from(old, new) if s.old_len > 0]
+        if not spans:
+            continue
+        focus = [(s.old_start, s.old_start + s.old_len) for s in spans]
+        out.append(Labeled(rec, old, spans, _mask_from_spans(old, spans), focus))
+    if limit and len(out) > limit:
+        step = max(1, len(out) // limit)
+        out = out[::step][:limit]
+    return out
+
+
+def _synthetic_example(files: list[bytes], rng: random.Random) -> Labeled | None:
+    old = files[rng.randrange(len(files))]
+    lines = old.splitlines(keepends=True)
+    if len(lines) < 2 or len(old) < 32:
+        return None
+    i = rng.randrange(len(lines))
+    line = lines[i]
+    tokens = TOKEN.findall(line.decode("utf-8", "ignore"))
+    if len(tokens) < 2:
+        return None
+    token = min(tokens, key=lambda t: (old.count(t.encode()), -len(t)))
+    if len(token) < 4 or old.count(token.encode()) > 3:
+        return None
+    at = line.find(token.encode())
+    if at < 0:
+        return None
+    start = sum(len(x) for x in lines[:i]) + at
+    span = Span(start, len(token), b"")
+    mask = _mask_from_spans(old, [span])
+    return Labeled(
+        {"message": f"change {token}"},
+        old,
+        [span],
+        mask,
+        [(start, start + len(token))],
+    )
+
+
+def _sample(
+    example: Labeled,
+    rng: random.Random,
+    win: int,
+    msg_len: int,
+    positive: bool = True,
+) -> tuple[bytes, bytes, np.ndarray, int]:
+    old = example.old
+    if positive and example.focus:
+        a, b = example.focus[rng.randrange(len(example.focus))]
+        lo = max(0, b - win)
+        hi = min(a, max(0, len(old) - win))
+        start = rng.randint(lo, hi) if hi >= lo else max(0, min(a, len(old) - win))
+    else:
+        start = rng.randint(0, max(0, len(old) - win))
+        for _ in range(8):
+            if not example.mask[start : start + win].any():
+                break
+            start = rng.randint(0, max(0, len(old) - win))
+    end = min(len(old), start + win)
+    labels = np.zeros(win, dtype=np.uint8)
+    labels[: end - start] = example.mask[start:end]
+    msg = example.record["message"].encode("utf-8")[:msg_len]
+    return msg, old[start:end], labels, end - start
+
+
+def _batch(
+    examples: list[Labeled],
+    files: list[bytes],
+    rng: random.Random,
+    device: torch.device,
+    synthetic: bool,
+    batch: int,
+    win: int,
+    msg_len: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    msg = torch.zeros(batch, msg_len, dtype=torch.long)
+    file = torch.zeros(batch, win, dtype=torch.long)
+    labels = torch.zeros(batch, win)
+    valid = torch.zeros(batch, win)
+    for k in range(batch):
+        example = (
+            _synthetic_example(files, rng)
+            if synthetic
+            else examples[rng.randrange(len(examples))]
+        )
+        if example is None:
+            continue
+        m, chunk, label, length = _sample(
+            example, rng, win, msg_len, rng.random() < 0.5
+        )
+        if m:
+            msg[k, : len(m)] = torch.frombuffer(bytearray(m), dtype=torch.uint8).long()
+        file[k, :length] = torch.frombuffer(bytearray(chunk), dtype=torch.uint8).long()
+        labels[k, :length] = torch.from_numpy(label[:length].astype(np.float32))
+        valid[k, :length] = 1.0
+    return (
+        msg.to(device, non_blocking=True),
+        file.to(device, non_blocking=True),
+        labels.to(device, non_blocking=True),
+        valid.to(device, non_blocking=True),
+    )
+
+
+def _loss(model: Locator, batch: tuple, zero_file: bool) -> torch.Tensor:
+    msg, file, labels, valid = batch
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=msg.is_cuda):
+        logits = model(msg, file, zero_file)
+    logits = logits.float()
+    bce = F.binary_cross_entropy_with_logits(logits, labels, reduction="none")
+    bce = (bce * valid).sum() / valid.sum().clamp_min(1.0)
+    prob = torch.sigmoid(logits) * valid
+    target = labels * valid
+    num = 2 * (prob * target).sum(dim=1) + 1
+    den = prob.sum(dim=1) + target.sum(dim=1) + 1
+    dice = (1 - num / den).mean()
+    return bce + dice
+
+
+def train_locator(
+    examples: list[Labeled],
+    steps: int,
+    seed: int,
+    pretrain: str,
+    zero_file: bool,
+    device: torch.device,
+    batch: int = 16,
+    model: Locator | None = None,
+) -> tuple[Locator, list[dict]]:
+    """Pretrain on synthetic line edits, then fine-tune on real commits."""
+    torch.manual_seed(seed)
+    rng = random.Random(seed)
+    files = [ex.old for ex in examples]
+    model = model or Locator()
+    model.to(device)
+    log: list[dict] = []
+
+    def run_phase(phase: str, n: int, lr: float, synth: bool) -> None:
+        opt = torch.optim.AdamW(model.parameters(), lr=lr)
+        warm = min(100, max(1, n // 10))
+
+        def factor(step: int) -> float:
+            if step < warm:
+                return (step + 1) / warm
+            progress = (step - warm) / max(1, n - warm)
+            return 0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * progress))
+
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, factor)
+        model.train()
+        for step in range(n):
+            batch_in = _batch(
+                examples, files, rng, device, synth, batch, model.win, model.msg
+            )
+            loss = _loss(model, batch_in, zero_file)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+            sched.step()
+            if step % 100 == 0 or step == n - 1:
+                log.append(
+                    {
+                        "phase": phase,
+                        "step": step,
+                        "loss": round(float(loss.detach()), 4),
+                    }
+                )
+
+    if pretrain == "synthetic":
+        run_phase("synthetic", max(200, steps // 2), 3e-4, True)
+    run_phase("real", steps, 2e-5 if pretrain else 3e-4, False)
+    return model, log
+
+
+def _window_starts(n: int, win: int, stride: int) -> list[int]:
+    if n <= win:
+        return [0]
+    starts = list(range(0, n - win + 1, stride))
+    if starts[-1] != n - win:
+        starts.append(n - win)
+    return starts
+
+
+@torch.no_grad()
+def predict_spans(
+    model: Locator,
+    old: bytes,
+    message: str,
+    device: torch.device,
+    threshold: float = 0.5,
+    min_len: int = 2,
+    zero_file: bool = False,
+    smooth: int = 1,
+    gap: int = 0,
+) -> list[Span]:
+    """Slide windows, average byte probabilities, and group changed runs."""
+    if not old:
+        return []
+    msg = _byte_tensor(message.encode("utf-8")[: model.msg], model.msg)
+    msg = msg.to(device)
+    starts = _window_starts(len(old), model.win, model.win // 2)
+    probs = np.zeros(len(old), dtype=np.float32)
+    counts = np.zeros(len(old), dtype=np.int32)
+    model.eval()
+    for at in range(0, len(starts), 32):
+        chunk = starts[at : at + 32]
+        file = torch.zeros(len(chunk), model.win, dtype=torch.long)
+        for k, start in enumerate(chunk):
+            seg = old[start : start + model.win]
+            file[k, : len(seg)] = torch.frombuffer(
+                bytearray(seg), dtype=torch.uint8
+            ).long()
+        file = file.to(device)
+        msg_batch = msg.unsqueeze(0).expand(len(chunk), -1)
+        with torch.autocast(
+            device_type="cuda", dtype=torch.bfloat16, enabled=file.is_cuda
+        ):
+            logits = model(msg_batch, file, zero_file)
+        probs_win = torch.sigmoid(logits.float()).cpu().numpy()
+        for k, start in enumerate(chunk):
+            length = min(model.win, len(old) - start)
+            probs[start : start + length] += probs_win[k, :length]
+            counts[start : start + length] += 1
+    probs = probs / np.maximum(counts, 1)
+    if smooth > 1:
+        kernel = np.ones(smooth, dtype=np.float32) / smooth
+        probs = np.convolve(probs, kernel, mode="same")
+    return _mask_to_spans(probs >= threshold, min_len, gap)
+
+
+def span_prf(pred: list[Span], target: list[Span], iou: float = 0.5) -> dict:
+    used: set[int] = set()
+    tp = 0
+    for p in pred:
+        best = -1
+        best_iou = 0.0
+        for j, t in enumerate(target):
+            if j in used:
+                continue
+            inter = max(
+                0,
+                min(p.old_start + p.old_len, t.old_start + t.old_len)
+                - max(p.old_start, t.old_start),
+            )
+            union = p.old_len + t.old_len - inter
+            score = inter / union if union else 0.0
+            if score >= iou and score > best_iou:
+                best, best_iou = j, score
+        if best >= 0:
+            used.add(best)
+            tp += 1
+    precision = tp / len(pred) if pred else 0.0
+    recall = tp / len(target) if target else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {"f1": f1, "precision": precision, "recall": recall}
+
+
+def mask_prf(pred: np.ndarray, target: np.ndarray) -> dict:
+    p = pred.astype(bool)
+    t = target.astype(bool)
+    tp = int((p & t).sum())
+    precision = tp / int(p.sum()) if p.any() else 0.0
+    recall = tp / int(t.sum()) if t.any() else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {"f1": f1, "precision": precision, "recall": recall}
+
+
+def evaluate_locator(
+    model: Locator,
+    examples: list[Labeled],
+    device: torch.device,
+    threshold: float = 0.5,
+    zero_file: bool = False,
+    smooth: int = 1,
+    gap: int = 0,
+) -> dict:
+    rows = []
+    for ex in examples:
+        pred = predict_spans(
+            model,
+            ex.old,
+            ex.record["message"],
+            device,
+            threshold=threshold,
+            zero_file=zero_file,
+            smooth=smooth,
+            gap=gap,
+        )
+        span = span_prf(pred, ex.spans)
+        pmask = _mask_from_spans(ex.old, pred)
+        byte = mask_prf(pmask, ex.mask)
+        exact = [(s.old_start, s.old_len) for s in pred] == [
+            (s.old_start, s.old_len) for s in ex.spans
+        ]
+        rows.append(
+            {
+                "id": ex.record["id"],
+                "repo": ex.record["repo"],
+                "path": ex.record["path"],
+                "span_f1": byte["f1"],
+                "span_precision": byte["precision"],
+                "span_recall": byte["recall"],
+                "match_f1": span["f1"],
+                "location_exact": exact,
+                "pred_spans": len(pred),
+                "target_spans": len(ex.spans),
+            }
+        )
+    n = len(rows)
+
+    def mean(key: str) -> float:
+        return sum(r[key] for r in rows) / n if n else 0.0
+
+    return {
+        "n": n,
+        "span_f1": mean("span_f1"),
+        "span_precision": mean("span_precision"),
+        "span_recall": mean("span_recall"),
+        "match_f1": mean("match_f1"),
+        "location_exact": mean("location_exact"),
+        "items": rows,
+    }
+
+
+def render_locator_report(result: dict) -> str:
+    cfg = result["config"]
+    loc = result["locator"]
+    base = result["baseline"]
+    delta = loc["span_f1"] - base["span_f1"]
+    lines = [
+        "# Exact Edit Bench: E1 locator (GE1)",
+        "",
+        f"- arm **E1 locator**; split `{result['split']}`; n = {loc['n']}",
+        f"- seed `{cfg['seed']}`; steps `{cfg['steps']}`; "
+        f"pretrain `{cfg['pretrain'] or 'none'}`",
+        f"- manifest sha256 `{result['manifest']['sha256'][:16]}`",
+        f"- model `d{cfg['d']} l{cfg['layers']} h{cfg['heads']}`; "
+        f"{cfg['params']:,} params; window {cfg['win']} B",
+        "",
+        "## Task",
+        "",
+        "Given `old` and the commit message, predict the changed byte spans",
+        "in `old`. The gate metric is byte-overlap F1 over changed bytes,",
+        "the natural segmentation score. Span-match F1 (IoU ≥ 0.5) is a",
+        "stricter secondary label. Insertions (`old_len == 0`) are excluded",
+        "because a byte classifier cannot localize an empty span; the writer",
+        "and Track C handle them.",
+        "",
+        "## Gate",
+        "",
+        "| test | bar | locator | message-only | delta | result |",
+        "|---|---:|---:|---:|---:|---|",
+        f"| byte F1 | +20 points | {loc['span_f1']:.3f} | "
+        f"{base['span_f1']:.3f} | {delta:+.3f} | "
+        f"{'pass' if delta >= 0.20 else 'fail'} |",
+        "",
+        "## Results",
+        "",
+        "| arm | byte F1 | byte P | byte R | match F1 | location exact |",
+        "|---|---:|---:|---:|---:|---:|",
+        f"| E1 locator | {loc['span_f1']:.3f} | {loc['span_precision']:.3f} | "
+        f"{loc['span_recall']:.3f} | {loc['match_f1']:.3f} | "
+        f"{loc['location_exact']:.3f} |",
+        f"| message-only | {base['span_f1']:.3f} | {base['span_precision']:.3f} | "
+        f"{base['span_recall']:.3f} | {base['match_f1']:.3f} | "
+        f"{base['location_exact']:.3f} |",
+        "",
+        "## Data",
+        "",
+        "| split | repos | files |",
+        "|---|---|---:|",
+    ]
+    for name in ("train", "val", "test"):
+        lines.append(
+            f"| {name} | {', '.join(result['manifest']['splits'][name])} | "
+            f"{result['manifest']['counts'][name]} |"
+        )
+    lines += [
+        "",
+        "The message-only baseline is the same model and schedule with the",
+        "file embedding zeroed; it sees the message and positions but not",
+        "the old bytes. The delta isolates the value of file content.",
+        "",
+        f"Usable files with a non-empty changed span: train {cfg['train_files']}, "
+        f"val/test {cfg['eval_files']}.",
+        "",
+        "## Reading",
+        "",
+    ]
+    if delta >= 0.20:
+        lines += [
+            "GE1 passes: file content adds more than 20 byte-F1 points over",
+            "the message-only baseline. E2 (locator + writer) is next; do",
+            "not touch test until the Track E arm is final.",
+        ]
+    else:
+        lines += [
+            "GE1 fails: file content does not add 20 byte-F1 points. The",
+            "next lever is the locator input, not a longer schedule: try",
+            "message-to-file cross-attention, line-level labels, or a",
+            "retrieval-located prior. Record the failure; do not widen the",
+            "benchmark.",
+        ]
+    lines += ["", "## Next", ""]
+    if delta >= 0.20:
+        lines += [
+            "E2 compiler: reuse this locator, add the writer on the",
+            "predicted spans, and verify exact assembly.",
+        ]
+    else:
+        lines += [
+            "E1b locator: change the input, not the budget. Try line-level",
+            "labels or explicit message-to-file cross-attention; rerun GE1",
+            "before E2. C1 copy-SFT is independent and can run in parallel.",
+        ]
+    lines += [
+        "Val is `pytest-dev/pytest`; test is `tiangolo/fastapi`. Do not",
+        "tune on test.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _param_count(model: torch.nn.Module) -> int:
+    return sum(p.numel() for p in model.parameters())
+
+
+def run_locator(
+    manifest: dict,
+    manifest_path: Path,
+    cache: Path,
+    split: str,
+    limit: int,
+    seed: int,
+    steps: int,
+    pretrain: str,
+    report: Path,
+    out: Path,
+) -> int:
+    if pretrain not in ("", "synthetic"):
+        raise SystemExit("editlm: locator pretrain must be synthetic or empty")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train = load_labeled(manifest, cache, "train")
+    queries = load_labeled(manifest, cache, split, limit)
+    if not train or not queries:
+        raise SystemExit("editlm: locator needs a non-empty train and eval split")
+    steps = steps or 1000
+    threshold, smooth, gap = 0.5, 8, 8
+    model, log = train_locator(train, steps, seed, pretrain, False, device)
+    baseline, log0 = train_locator(train, steps, seed, pretrain, True, device)
+    loc = evaluate_locator(
+        model, queries, device, threshold=threshold, smooth=smooth, gap=gap
+    )
+    base = evaluate_locator(
+        baseline,
+        queries,
+        device,
+        threshold=threshold,
+        zero_file=True,
+        smooth=smooth,
+        gap=gap,
+    )
+    config = {
+        "seed": seed,
+        "steps": steps,
+        "pretrain": pretrain,
+        "split": split,
+        "limit": limit,
+        "win": LOCATOR_WIN,
+        "msg": LOCATOR_MSG,
+        "d": LOCATOR_D,
+        "layers": LOCATOR_LAYERS,
+        "heads": LOCATOR_HEADS,
+        "params": _param_count(model),
+        "threshold": threshold,
+        "smooth": smooth,
+        "gap": gap,
+        "min_span": 2,
+        "train_files": len(train),
+        "eval_files": len(queries),
+    }
+    result = {
+        "arm": "locator",
+        "split": split,
+        "manifest": {
+            "path": str(manifest_path),
+            "sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+            "config": manifest["config"],
+            "heads": manifest["heads"],
+            "counts": manifest["counts"],
+            "splits": manifest["splits"],
+        },
+        "config": config,
+        "locator": loc,
+        "baseline": base,
+        "log": log,
+        "baseline_log": log0,
+    }
+    _write_json(out, result)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(render_locator_report(result))
+    ckpt = RUNS / "edit-locator"
+    ckpt.mkdir(parents=True, exist_ok=True)
+    torch.save({"model": model.state_dict(), "config": config}, ckpt / "model.pt")
+    torch.save(
+        {"model": baseline.state_dict(), "config": config},
+        ckpt / "message-only.pt",
+    )
+    delta = loc["span_f1"] - base["span_f1"]
+    print(
+        f"editlm: E1 locator n={loc['n']} spanF1={loc['span_f1']:.3f} "
+        f"baseline={base['span_f1']:.3f} delta={delta:+.3f} "
+        f"ge1={'pass' if delta >= 0.20 else 'fail'}"
+    )
+    print(f"editlm: {report}")
+    return 0
+
+
 def _write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -510,8 +1158,8 @@ def run(
     cache: Path,
     split: str,
     limit: int,
-    report: Path,
-    out: Path,
+    report: Path | None,
+    out: Path | None,
     seed: int,
     steps: int,
     base: str,
@@ -520,13 +1168,34 @@ def run(
     samples: int,
     mode: str,
 ) -> int:
+    if arm == "locator":
+        if base or pairs or samples or mode:
+            raise SystemExit(
+                "editlm: the locator arm takes --steps, --pretrain, and --seed only"
+            )
+        manifest = editdata.load_manifest(manifest_path)
+        cache = editdata.cache_root(cache)
+        return run_locator(
+            manifest,
+            manifest_path,
+            cache,
+            split,
+            limit,
+            seed,
+            steps,
+            pretrain,
+            report or REPORTS / "EDIT-LOCATOR.md",
+            out or REPORTS / "edit-locator.json",
+        )
     if arm != "retrieval":
         raise SystemExit(
-            f"editlm: arm {arm} is not built; the retrieval arm records G0 "
-            f"first (TODO9.md §8)"
+            f"editlm: arm {arm} is not built; E1 locator and the retrieval "
+            f"G0 baseline come first (TODO9.md §8)"
         )
     if seed or steps or base or pretrain or pairs or samples or mode:
         raise SystemExit("editlm: the retrieval arm takes no training arguments")
+    report = report or REPORTS / "EDIT-LM.md"
+    out = out or REPORTS / "editlm.json"
     manifest = editdata.load_manifest(manifest_path)
     cache = editdata.cache_root(cache)
     result = run_retrieval(manifest, cache, split, limit)

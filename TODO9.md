@@ -13,7 +13,8 @@ funded; the benchmark decides which one wins.
 | 2 editlm core | **done** | `cml/editlm.py`: copy actions, spans, exact assemblers, metrics |
 | 3 CLI | **done** | `cml editdata`, `cml editlm` |
 | 4 retrieval G0 | **done** | `cml/reports/EDIT-LM.md`, `cml/reports/editlm.json` |
-| 5-11 models | **not started** | next session, in §8 order |
+| 5 E1 locator | **attempted; GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
+| 6-11 models | **not started** | next session, in §8 order |
 
 **G0 recorded: pass.** Retrieval on 1,648 held-out `tiangolo/fastapi`
 commits: exact `0.000`, valid decode `0.027`, output `0.991x`, line edit
@@ -26,9 +27,17 @@ Artifacts are local: manifest `cml/runs/edit-manifest.json` (ignored),
 blob cache `~/.cache/hncm/edit` (308 MB). Reports are tracked. Reuse
 them; do not re-mine unless the config changes.
 
-**Next, in order:** E1 locator (synthetic spans, then real commits; gate
-GE1), C1 copy-SFT (teacher-forced actions; gate GC1), then E2 writer or
-DPO. Do not train D before C1 has a baseline. Do not tune on test.
+**Next, in order:** E1b locator (change the input, then rerun GE1), C1
+copy-SFT (teacher-forced actions; gate GC1), then E2 writer or DPO. Do
+not train D before C1 has a baseline. Do not tune on test.
+
+**E1 recorded: GE1 fail.** The 5.2M byte locator (`d256 l6`, 1024 B
+window, 1200 steps) scores byte F1 `0.000` against the message-only
+baseline's `0.000` on 500 val files; it emits no spans. Synthetic
+pretraining fits (`loss 0.34`), but real fine-tuning does not transfer and
+collapses to the prior. This is an input problem, not a budget problem:
+the next lever is line-level labels or explicit message-to-file
+cross-attention. E2 must not reuse this locator. C1 is independent.
 
 ## 0. One claim, two formulations
 
@@ -196,6 +205,10 @@ GE1. Test-pass labels are not mined yet; exact match is the only label in
 the manifest. Add test execution only when a gate needs it, and keep the
 same split.
 
+GE1 recorded 2026-11-27: byte F1 `0.000` versus the message-only baseline
+`0.000` on 500 val files, fail. The locator emits no spans; see
+`cml/reports/EDIT-LOCATOR.md`. Do not run E2 on this locator.
+
 If G0 shows retrieval solving the task, harden before training. If GE2 and
 GC1 both fail, stop and ship the delta product. A gate that is not met
 names the next lever; it does not end the program.
@@ -211,7 +224,9 @@ Add two modules and one CLI command. Keep `TODO8` codec code untouched.
 3. `cml editdata --repos ... --out ...`: build manifest and split.
 4. `cml editlm --arm retrieval`: G0 baseline; write `reports/EDIT-LM.md`.
 5. `cml editlm --arm locator`: E1; synthetic pretrain, then real commits.
-6. `cml editlm --arm compiler`: E2; writer + exact assembler.
+   **Attempted; GE1 fail** (`reports/EDIT-LOCATOR.md`).
+6. `cml editlm --arm compiler`: E2; writer + exact assembler. Wait for a
+   locator that passes GE1.
 7. `cml editlm --arm copy --sft`: C1; teacher-forced delta actions.
 8. `cml editlm --arm copy --dpo`: D; sample K, score exact/test pass,
    build preference pairs, DPO. No learned reward model.
@@ -225,9 +240,11 @@ Commands, after the build. Run from `cml/`; `runs/` is ignored.
 ```bash
 uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
   --cache ~/.cache/hncm/edit --out runs/edit-manifest.json
-uv run cml editlm --arm retrieval --manifest runs/edit-manifest.json
+uv run cml editlm --arm retrieval --manifest runs/edit-manifest.json \
+  --split test
 uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
-  --pretrain synthetic --steps 1000
+  --split val --limit 500 --pretrain synthetic --steps 1200
+# E2 only after GE1 passes: locator + writer
 uv run cml editlm --arm compiler --manifest runs/edit-manifest.json \
   --from edit-locator --steps 2000
 uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
@@ -295,17 +312,20 @@ benchmark is the foundation for both tracks.
 
 ## 12. Next-session start
 
-Read this file first, then `cml/reports/EDIT-LM.md`. G0 is recorded (pass),
-so the first-session gate is closed. Reuse the manifest and blob cache;
-do not re-mine unless the config changes.
+Read this file first, then `cml/reports/EDIT-LM.md` and
+`cml/reports/EDIT-LOCATOR.md`. G0 passed; GE1 failed. Reuse the manifest
+and blob cache; do not re-mine unless the config changes.
 
 Remaining work, in order:
 
-1. E1 locator: build `spans_from` targets, pretrain on synthetic span edits,
-   then real commits; gate GE1 against a message-only baseline.
+1. E1b locator: change the input, not the budget. Try line-level labels
+   or explicit message-to-file cross-attention; rerun GE1 against the
+   message-only baseline. Keep test untouched.
 2. C1 copy-SFT: teacher-forced `dump_actions(copy_actions(new, old))`
-   targets; gate GC1 against the full-file baseline.
-3. Only then E2 writer (`--arm compiler`), D (DPO), H (holes), V (rerank).
+   targets; gate GC1 against the full-file baseline. This is independent
+   of the locator and can run first if E1b is blocked.
+3. Only after a pass: E2 writer (`--arm compiler`), D (DPO), H (holes),
+   V (rerank).
 
 Do not train D before C1 has a recorded baseline. Do not tune on test.
 Do not raise `max_diff` to make exact match easier; a gate that fails names

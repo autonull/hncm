@@ -1,4 +1,5 @@
 import os
+import random
 import subprocess
 from pathlib import Path
 
@@ -96,6 +97,79 @@ def test_transplant_identical_and_shifted() -> None:
         b"x\ny\na\nB\nc\nd\n"
     )
     assert editlm.transplant(b"unrelated\n", ret_old, ret_new) is None
+
+
+def test_locator_forward_and_predict() -> None:
+    import torch
+
+    model = editlm.Locator(d=16, layers=1, heads=2, msg=8, win=16)
+    msg = torch.zeros(2, 8, dtype=torch.long)
+    file = torch.randint(0, 256, (2, 16))
+    assert model(msg, file).shape == (2, 16)
+    assert model(msg, file, zero_file=True).shape == (2, 16)
+    spans = editlm.predict_spans(model, b"x" * 40, "fix", torch.device("cpu"))
+    assert isinstance(spans, list)
+
+
+def test_window_starts_cover_the_tail() -> None:
+    starts = editlm._window_starts(100, 16, 8)
+    assert starts[0] == 0
+    assert starts[-1] == 84
+    assert all(b - a <= 8 for a, b in zip(starts, starts[1:]))
+
+
+def test_span_prf_uses_iou() -> None:
+    target = [editlm.Span(10, 4, b"")]
+    assert editlm.span_prf([editlm.Span(10, 4, b"")], target)["f1"] == 1.0
+    assert editlm.span_prf([editlm.Span(11, 4, b"")], target)["f1"] == 1.0
+    assert editlm.span_prf([editlm.Span(30, 4, b"")], target)["f1"] == 0.0
+    assert editlm.span_prf([], target)["f1"] == 0.0
+
+
+def test_sample_window_shapes_and_focus() -> None:
+    old = b"".join(f"line {i}\n".encode() for i in range(20))
+    start = old.index(b"line 9\n")
+    span = editlm.Span(start, 7, b"")
+    example = editlm.Labeled(
+        {"message": "edit line 9"},
+        old,
+        [span],
+        editlm._mask_from_spans(old, [span]),
+        [(start, start + 7)],
+    )
+    rng = random.Random(0)
+    for _ in range(50):
+        _, chunk, labels, length = editlm._sample(example, rng, 16, 8)
+        assert 0 < length <= 16
+        assert labels.shape == (16,)
+        assert chunk
+
+
+def test_locator_trains_on_cpu() -> None:
+    import torch
+
+    old = b"alpha\nbeta\ngamma\ndelta\n"
+    span = editlm.Span(6, 4, b"")
+    example = editlm.Labeled(
+        {"message": "edit beta"},
+        old,
+        [span],
+        editlm._mask_from_spans(old, [span]),
+        [(span.old_start, span.old_start + span.old_len)],
+    )
+    model = editlm.Locator(d=16, layers=1, heads=2, msg=8, win=16)
+    trained, log = editlm.train_locator(
+        [example, example],
+        1,
+        0,
+        "",
+        False,
+        torch.device("cpu"),
+        batch=2,
+        model=model,
+    )
+    assert len(log) == 1
+    assert trained is model
 
 
 def test_mine_local_repo(tmp_path: Path) -> None:
