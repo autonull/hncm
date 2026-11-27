@@ -808,3 +808,121 @@ def selftest() -> dict[str, float | int]:
         "byte_bpb": 8 * len(blob) / len(text),
         "elapsed_s": elapsed,
     }
+
+
+def lazy_parse(
+    data: bytes,
+    window: int = 1 << 20,
+    min_match: int = 8,
+    cap: int = 64,
+    depth: int = 16,
+) -> list[tuple[int, int]]:
+    """Greedy LZ77 with one-step lazy matching and a 1 MB window."""
+    n = len(data)
+    head: dict[int, list[int]] = {}
+    tokens: list[tuple[int, int]] = []
+
+    def match(i: int) -> tuple[int, int]:
+        if i + 4 > n:
+            return (0, 0)
+        cand = head.get(int.from_bytes(data[i : i + 4], "big"))
+        if not cand:
+            return (0, 0)
+        best = 0
+        best_off = 0
+        seen = 0
+        lo = i - window
+        for p in reversed(cand):
+            if p < lo or seen >= depth:
+                break
+            seen += 1
+            lim = min(cap, n - i, n - p)
+            d = int.from_bytes(data[i : i + lim], "big") ^ int.from_bytes(
+                data[p : p + lim], "big"
+            )
+            ell = lim if d == 0 else lim - (d.bit_length() + 7) // 8
+            if ell > best:
+                best = ell
+                best_off = i - p
+        return best, best_off
+
+    def insert(i: int) -> None:
+        if i + 4 <= n:
+            head.setdefault(int.from_bytes(data[i : i + 4], "big"), []).append(i)
+
+    i = 0
+    while i < n:
+        best, off = match(i)
+        if best >= min_match:
+            nxt, _ = match(i + 1)
+            if nxt > best:
+                tokens.append((0, data[i]))
+                insert(i)
+                i += 1
+                continue
+            tokens.append((best, off))
+            for q in range(i, i + best):
+                insert(q)
+            i += best
+        else:
+            tokens.append((0, data[i]))
+            insert(i)
+            i += 1
+    return tokens
+
+
+class RepArm:
+    """The copy arm with four repeat distances; a repeat costs an index.
+
+    A new distance pays a token bit, a `0` bit, a distance slot and its raw
+    bits; a repeat pays a `1` bit and a 2-bit index.  The last four used
+    distances are the repeat set, most recent first, as in LZMA.
+    """
+
+    def __init__(
+        self, window: int = 1 << 20, min_match: int = 8, cap: int = 64
+    ) -> None:
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        slots = max((window - 1).bit_length(), 1)
+        self.tok = Counts(2, init=np.ones(2, dtype=np.int64))
+        self.rep = Counts(2, init=np.ones(2, dtype=np.int64))
+        self.index = Counts(4, init=np.ones(4, dtype=np.int64))
+        self.slot = Counts(slots + 1, init=np.ones(slots + 1, dtype=np.int64))
+        self.length = Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+
+    def _match(self, enc, length: int, offset: int, reps: list[int]) -> None:
+        _put(self.tok, 1, enc)
+        if offset in reps:
+            _put(self.rep, 1, enc)
+            i = reps.index(offset)
+            _put(self.index, i, enc)
+            reps.insert(0, reps.pop(i))
+        else:
+            _put(self.rep, 0, enc)
+            v = offset - 1
+            slot = v.bit_length()
+            _put(self.slot, slot, enc)
+            for shift in range(slot - 2, -1, -1):
+                bit = (v >> shift) & 1
+                enc.encode(bit, bit + 1, 2)
+            reps.insert(0, offset)
+            del reps[4:]
+        _put(self.length, length - self.min_match, enc)
+
+    def encode(self, data: bytes, tokens: list[tuple[int, int]] | None = None) -> bytes:
+        if tokens is None:
+            tokens = lazy_parse(data, self.window, self.min_match, self.cap)
+        enc = ArithEncoder()
+        reps: list[int] = []
+        literals = ByteArm()
+        for length, value in tokens:
+            if length == 0:
+                _put(self.tok, 0, enc)
+                literals.encode_one(value, enc)
+            else:
+                self._match(enc, length, value, reps)
+        return enc.finish()

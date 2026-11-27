@@ -6434,6 +6434,68 @@ def run_composition(pairs: int, depth: int, seed: int) -> int:
     return 0
 
 
+CONTAINER = b"CMLC"
+
+
+def run_compress(path: Path, out: Path | None, run: str, proof: int) -> int:
+    """Compress one file with the exact byte codec and a self-describing header."""
+    import bytecodec
+
+    t0 = time.perf_counter()
+    data = path.read_bytes()
+    model = bytecodec.load_model(RUNS / run / "model.pt")
+    coder = bytecodec.StaticByteCodec(model, half=True)
+    payload = coder.encode(data)
+    want = min(proof, len(data))
+    if coder.decode(payload, want, limit=want) != data[:want]:
+        raise SystemExit("compress: proof round-trip failed")
+    meta = {
+        "run": run,
+        "params": sum(p.numel() for p in model.parameters()),
+        "seq": model.pos.num_embeddings,
+        "n": len(data),
+        "sha": hashlib.sha256(data).hexdigest(),
+        "proof": want,
+        "git": git_sha(),
+    }
+    head = json.dumps(meta).encode()
+    blob = CONTAINER + struct.pack("<I", len(head)) + head + payload
+    target = out or path.with_suffix(path.suffix + ".cmlc")
+    write_bytes = target.write_bytes
+    write_bytes(blob)
+    print(
+        f"{path} -> {target}: {len(data):,} B -> {len(blob):,} B "
+        f"({8 * len(blob) / max(len(data), 1):.3f} bpb, "
+        f"{len(data) / max(len(blob), 1):.2f}x), {time.perf_counter() - t0:.1f} s"
+    )
+    return 0
+
+
+def run_decompress(path: Path, out: Path | None) -> int:
+    """Restore a `.cmlc` file and check its digest against the header."""
+    import bytecodec
+
+    t0 = time.perf_counter()
+    blob = path.read_bytes()
+    if blob[:4] != CONTAINER:
+        raise SystemExit("decompress: bad magic")
+    n_head = struct.unpack_from("<I", blob, 4)[0]
+    meta = json.loads(blob[8 : 8 + n_head])
+    model = bytecodec.load_model(RUNS / meta["run"] / "model.pt")
+    data = bytecodec.StaticByteCodec(model, half=True).decode(
+        blob[8 + n_head :], meta["n"]
+    )
+    if hashlib.sha256(data).hexdigest() != meta["sha"]:
+        raise SystemExit("decompress: digest mismatch")
+    target = out or path.with_suffix("")
+    target.write_bytes(data)
+    print(
+        f"{path} -> {target}: {len(data):,} B, digest ok, "
+        f"{time.perf_counter() - t0:.1f} s"
+    )
+    return 0
+
+
 def run_perfile_model(
     run: str,
     corpus_name: str,
@@ -7956,6 +8018,14 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--min-count", type=int, default=16)
     cf.add_argument("--cap", type=int, default=16)
     cf.add_argument("--no-baseline", action="store_true")
+    zc = sub.add_parser("compress")
+    zc.add_argument("path", type=Path)
+    zc.add_argument("-o", "--out", type=Path)
+    zc.add_argument("--run", default="codec-byte-model-code-756752-d448-l8")
+    zc.add_argument("--proof", type=int, default=4096)
+    zd = sub.add_parser("decompress")
+    zd.add_argument("path", type=Path)
+    zd.add_argument("-o", "--out", type=Path)
     pf = sub.add_parser("perfile-model")
     pf.add_argument("--run", required=True)
     pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -8164,6 +8234,10 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "composition":
         return run_composition(a.pairs, a.depth, a.seed)
+    if a.cmd == "compress":
+        return run_compress(a.path, a.out, a.run, a.proof)
+    if a.cmd == "decompress":
+        return run_decompress(a.path, a.out)
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":

@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import math
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -375,3 +377,177 @@ class FastCopyCodec:
             codec.emit([self.length], length - self.min_match, self.length.n, enc)
             i += length
         return enc.finish()
+
+
+class RepFastCodec:
+    """Size instrument for `RepArm`: rep distances and lazy parse, seconds.
+
+    Same chunked literal counts as `FastByteCodec`; the token charge adds a
+    repeat index instead of a full distance when one of the last four
+    distances repeats.
+    """
+
+    def __init__(
+        self,
+        literals: FastByteCodec,
+        window: int = 1 << 20,
+        min_match: int = 8,
+        cap: int = 64,
+        depth: int = 16,
+    ) -> None:
+        self.literals = literals
+        self.seq = literals.seq
+        self.window = window
+        self.min_match = min_match
+        self.cap = cap
+        self.depth = depth
+        slots = max((window - 1).bit_length(), 1)
+        self.tok = codec.Counts(2, init=np.ones(2, dtype=np.int64))
+        self.rep = codec.Counts(2, init=np.ones(2, dtype=np.int64))
+        self.index = codec.Counts(4, init=np.ones(4, dtype=np.int64))
+        self.slot = codec.Counts(slots + 1, init=np.ones(slots + 1, dtype=np.int64))
+        self.length = codec.Counts(
+            cap - min_match + 1, init=np.ones(cap - min_match + 1, dtype=np.int64)
+        )
+
+    def encode(self, data: bytes, tokens: list[tuple[int, int]] | None = None) -> bytes:
+        if tokens is None:
+            tokens = codec.lazy_parse(
+                data, self.window, self.min_match, self.cap, self.depth
+            )
+        enc = codec.ArithEncoder()
+        reps: list[int] = []
+        i = 0
+        base = -1
+        cums = None
+        for length, value in tokens:
+            if length == 0:
+                j = i % self.seq
+                if i - j != base:
+                    base = i - j
+                    cums = self.literals._cums(data[base : base + self.seq])
+                sym = value
+                if j == 0:
+                    enc.encode(sym, sym + 1, BYTE)
+                else:
+                    row = cums[j - 1]
+                    lo = int(row[sym - 1]) if sym else 0
+                    enc.encode(lo, int(row[sym]), int(row[-1]))
+                i += 1
+                continue
+            codec.emit([self.tok], 1, 2, enc)
+            if value in reps:
+                codec.emit([self.rep], 1, 2, enc)
+                k = reps.index(value)
+                codec.emit([self.index], k, self.index.n, enc)
+                reps.insert(0, reps.pop(k))
+            else:
+                codec.emit([self.rep], 0, 2, enc)
+                v = value - 1
+                slot = v.bit_length()
+                codec.emit([self.slot], slot, self.slot.n, enc)
+                for shift in range(slot - 2, -1, -1):
+                    bit = (v >> shift) & 1
+                    enc.encode(bit, bit + 1, 2)
+                reps.insert(0, value)
+                del reps[4:]
+            codec.emit([self.length], length - self.min_match, self.length.n, enc)
+            i += length
+        return enc.finish()
+
+
+def literal_bits(literals: FastByteCodec, data: bytes) -> np.ndarray:
+    """The cost of coding each byte as a literal under the all-literal stream."""
+    out = np.full(len(data), 8.0)
+    for base in range(0, len(data), literals.seq):
+        chunk = data[base : base + literals.seq]
+        if len(chunk) < 2:
+            continue
+        cums = literals._cums(chunk)
+        for j in range(1, len(chunk)):
+            row = cums[j - 1]
+            sym = chunk[j]
+            lo = row[sym - 1] if sym else 0
+            cnt = row[sym] - lo
+            out[base + j] = math.log2(row[-1]) - math.log2(max(cnt, 1))
+    return out
+
+
+LENS = (8, 9, 10, 11, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256)
+
+
+def priced_parse(
+    data: bytes,
+    bits: np.ndarray,
+    window: int = 1 << 20,
+    min_match: int = 8,
+    cap: int = 256,
+    depth: int = 16,
+) -> list[tuple[int, int]]:
+    """Backward DP: a match is taken only when it beats the literal cost.
+
+    The charge is flat (`18 + 2*log2(len)` bits); the DP minimises the sum of
+    literal bits, so the parse adapts to the model's own per-byte costs.
+    """
+    n = len(data)
+    head: dict[int, list[int]] = {}
+    longest = np.zeros(n, dtype=np.int32)
+    offsets = np.zeros(n, dtype=np.int32)
+    for i in range(n):
+        if i + 4 <= n:
+            key = int.from_bytes(data[i : i + 4], "big")
+            cand = head.get(key)
+            if cand:
+                best = 0
+                best_off = 0
+                seen = 0
+                lo = i - window
+                for p in reversed(cand):
+                    if p < lo or seen >= depth:
+                        break
+                    seen += 1
+                    lim = min(cap, n - i, n - p)
+                    d = int.from_bytes(data[i : i + lim], "big") ^ int.from_bytes(
+                        data[p : p + lim], "big"
+                    )
+                    ell = lim if d == 0 else lim - (d.bit_length() + 7) // 8
+                    if ell > best:
+                        best = ell
+                        best_off = i - p
+                        if best >= cap:
+                            break
+                longest[i] = best
+                offsets[i] = best_off
+            head.setdefault(key, []).append(i)
+    cost = np.zeros(n + 1)
+    choice = [(1, 0)] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        c = bits[i] + cost[i + 1]
+        ch = (1, 0)
+        top = int(longest[i])
+        if top >= min_match:
+            for ell in LENS:
+                if ell > top or ell < min_match:
+                    continue
+                alt = 18 + 2 * math.log2(ell) + cost[i + ell]
+                if alt < c:
+                    c = alt
+                    ch = (ell, int(offsets[i]))
+            if top not in LENS:
+                alt = 18 + 2 * math.log2(top) + cost[i + top]
+                if alt < c:
+                    c = alt
+                    ch = (top, int(offsets[i]))
+        cost[i] = c
+        choice[i] = ch
+    tokens: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        ell, off = choice[i]
+        if ell == 1:
+            tokens.append((0, data[i]))
+            i += 1
+        else:
+            tokens.append((ell, off))
+            i += ell
+    return tokens

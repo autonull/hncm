@@ -36,9 +36,9 @@ held-out code, with exact round-trip and provenance.
 | 20M byte control, 48 MB | **1.266** | 0% | 6.3x | **measured** |
 | 20M concept pack 256 | 1.518 | +19.9% | 5.3x | measured, loses |
 | copy + 4.86M byte | 1.393 | +10.0% | 5.8x | measured |
-| 20% | 1.012 | -20% | 7.9x | next |
-| 30% | 0.886 | -30% | 9.0x | path |
-| 40% | 0.759 | -40% | 10.5x | path |
+| 20% | 1.012 | -20% | 7.9x | **met (instrument)** |
+| 30% | 0.886 | -30% | 9.0x | **met (instrument)** |
+| 40% | 0.759 | -40% | 10.5x | next |
 | **50%** | **0.633** | **-50%** | **12.6x** | north star |
 
 The denominator is the 20M byte control on the same train/test/steps:
@@ -283,11 +283,34 @@ one; the truth is between, and the exact 20M number is not measured. The
 deterministic fast decoder or a cheaper per-byte step. G5 still fails with
 the 20M model charged per file.
 
+## 1.10 Price the parse: measured 2026-11-27
+
+`literal_bits` + `priced_parse` (backward DP) + `RepFastCodec`, 20M byte
+trunk, same 756,752 B test, 51 s per point.
+
+| parse / arm | copy | matches | payload |
+|---|---:|---:|---:|
+| greedy, 64 KB, min 8, slot | 0.837 | 65,038 | 1.157 |
+| greedy, 1 MB, min 12, rep | 0.724 | 3,600 | 1.024 |
+| lazy, 1 MB, min 8, rep | 0.859 | 6,933 | 1.152 |
+| **priced DP, 1 MB, min 8, rep** | **0.405** | **6,933** | **0.852** |
+
+**Read.** The parse was the bottleneck, not the architecture of the arm:
+pricing every candidate match against the trunk's own literal cost and
+taking the DP optimum drops the payload to `0.852`, **32.7% below the 20M
+byte control** (`1.266`), so the 20% and 30% milestones are met on the
+instrument. The DP keeps only 6,933 long matches and copies 40.5% of bytes:
+short matches were costing more than the literals they replace, which is why
+every greedy arm plateaus near 1.15. This is a *size instrument*; the exact
+codec is `StaticByteCodec` at `1.266`, so the next step is an exact priced
+parse (a slow encode/decode pair) to turn `0.852` into a codec. The product
+CLI ships the exact codec until then.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 20M byte 1.266; copy instrument 1.157 (-8.6%), exact 4.86M 1.393 | exact fast copy decoder | 20/30/50% |
+| **Compression** | 20M byte 1.266; priced parse 0.852 instrument; 20%/30% met | exact priced parse; 40% (0.759) | 40/50% |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
@@ -538,6 +561,7 @@ uv run cml copycodec --run codec-byte-model-code-756752 --bytes 756752
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --d 448 --layers 8 --scale-cap 48000000
 uv run cml perfile-model --run codec-byte-model-code-756752-d448-l8
+uv run cml compress NOTES.md && uv run cml decompress NOTES.md.cmlc
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
