@@ -52,7 +52,7 @@ T1 is the common screen. T2 is the honest compression check. T3-T6 test the
 properties that make the architecture different from a byte LM. T7 is not the
 first gate; it runs only when a combination earns it.
 
-### 2.1 Round 1-2 progress (2026-11-26)
+### 2.1 Round 1-3 progress (2026-11-26)
 
 | item | state | evidence |
 |---|---|---|
@@ -65,7 +65,8 @@ first gate; it runs only when a combination earns it.
 | concept+copy on T1 | **done, target met** | blend key 10 α0.90: 0.705 / 2.362; key 6 α0.50: 0.680 / 1.698; no cap 0.720 / 4.782 |
 | concept+edit on T3 | **done, local** | survivors 0.733 vs base 0.745 (−0.012); `self` free |
 | concept+spec on T4 | **done, calibration was the limit** | τ4 K16 blend 4.650 accepted/call; τ1 1.480; pointer τ4 4.450 |
-| R3 T2 / scale | **next** | T2 on the promoted combo; then 5M/10M |
+| R3 T2 review | **done, pass** | 5.21M pointer: 1.692 payload / 1.722 shared / 1.600 teacher; 50k proof / 81,531 B; blend is not a codec |
+| R3 scale 5M/10M | **done, promoted** | 24 MB train, same 756,752 B test: 5M 1.583 / 1.613; 10M (9.17M actual) 1.538 / 1.568; −0.154 payload vs base |
 | R4 RLFP | **blocked** | needs a T1-T4 survivor |
 
 Round 2 frontier: 6 arms, all `r2+r3/r4`. The blend dominates the
@@ -73,7 +74,10 @@ concept-only point (0.650 / 1.720): key 6 α0.50 gives 0.680 at 1.698;
 key 10 α0.90 gives 0.705 at 2.362, so the T1 target **is met**. Pack
 size is settled at 256. T3 is local (−0.012 on survivors). T4 was a
 draft-calibration limit, not a trunk limit: τ1 gives 1.480 accepted/call,
-τ4 K16 gives 4.650. R2 is complete.
+τ4 K16 gives 4.650. R2 is complete. R3 confirms the promoted codec:
+T2 passes, and more unique train code improves the 5M point from 1.692
+to 1.583 payload; the 10M point reaches **1.538 / 1.568**. The T2 result
+is a codec result, not a T1 blend result.
 
 ## 3. Families and first grids
 
@@ -82,13 +86,13 @@ draft-calibration limit, not a trunk limit: τ1 gives 1.480 accepted/call,
 | **r1** adapter/install | charged copy / equal bytes | oracle +0.758; charged −2.224; P0a fails | dict size, charge, no-pack, transfer | T5 |
 | **r2** copy/hybrid | copy a prior context | key 1→12; blend 0.705 / 2.362 (target), 0.680 / 1.698; no cap 0.720 / 4.782 | key 4-12, blend α, margin, stack, concept fallback | T1, T4 |
 | **r3** PhraseLM | lexicon-agnostic heads | concept-only 0.650; unconstrained 0.415 | gate/joint, concept-only, temperature, three heads | T1, T2 |
-| **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
+| **r4** concept LM | neural prices | 1.600 teacher / 1.692 payload / 1.722 shared; scale 10M 1.445 / 1.538 / 1.568 | pack 128-2048, seq 128-256, steps 2k-8k | T1, T2 |
 | **r5** LedgerLM/edits | persistence, market, editing | `self` −0.000 bpb / 0.000 exact; newline +0.228 / −0.072 exact; blend survivors −0.012 | prefix choice, merge size, held-out win rate | T3 |
 | **r6** CMT/pack | tied entries, provenance | 256 wins T1: 0.415 / 3.133 / 1.00; 128, 512, 1024 dominated | active 128-1024, install/transfer, pack bytes | T1, T2, T5 |
 | **r7** CoLib/library | holes, templates, composition | order 1→5: exact 0.030→0.205; template radius 2: 0.340 | order 5, template/hole, retrieval, anti-unification | T6 |
 | **r8** speculative | pointer drafts, trunk verifies | τ4 K16: 4.650 accepted/call; τ1 K8: 1.480; draft temperature is the lever | K 2-16, draft temp, verifier calls | T4 |
 | **r9** RLFP/DPO | preference projection | untested; decision gate is span-policy | pairs 2k-10k, SFT, DPO, KL | T7 |
-| **r10** scale | larger model/data | 20M overfits at 7.2 MB; host restarts | 5M/10M/20M, more unique code | T2 |
+| **r10** scale | larger model/data | 24 MB train: 5M 1.583 / 1.613, 10M 9.17M 1.538 / 1.568 payload/shared; 10M promotes | 5M/10M/20M, more unique code | T2 |
 
 The family list is not a kill list. It is the current search space. A family
 with a weak first grid gets another config before it is parked.
@@ -103,6 +107,9 @@ with a weak first grid gets another config before it is parked.
 | concept vs byte | 3.1x exact, 3.0x fewer decisions, 7.4x fewer bits | `reports/SCREEN.md` |
 | compression | 1.600 teacher / 1.692 payload / 1.722 shared | `reports/CONCEPT.md` |
 | round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
+| T2 review (promoted codec) | 1.692 payload / 1.722 shared / 1.600 teacher; round-trip OK; blend excluded | `reports/PORTFOLIO.md` |
+| T2 scale 5M, 24 MB train | 1.583 payload / 1.613 shared / 1.490 teacher | `reports/SCALE.md` |
+| T2 scale 10M, 24 MB train | **1.538 payload / 1.568 shared / 1.445 teacher**, 9.17M actual | `reports/SCALE.md` |
 | local deletion | 35 removed; 165 survivors ±0.006; +0.146 bpb | `reports/EDIT-CURVE.md` |
 | merge | 256→320; +0.108 bpb; exact | `reports/SCREEN.md` |
 | copy key 6, no cap | **0.720 exact**, 0.340 hit, 4.871 bits | `reports/BREADTH.md` |
@@ -126,7 +133,10 @@ The concept-only point (0.650 / 1.720) is now dominated by the blend
 (0.680 / 1.698). The T1 frontier is six `r2+r3/r4` arms from 0.675 / 1.667
 to 0.720 / 4.782, and the target 0.705 / 2.362 is met. Pack size is
 settled at 256. The concept head lives inside the blend as the fallback.
-The trunk wins teacher-forced compression but not the action space.
+The trunk wins teacher-forced compression but not the action space. On T2,
+the promoted codec passes and improves with more unique train code:
+1.692 → 1.583 (5M) → 1.538 (10M) payload. That is a codec result, not a
+T1 blend result.
 
 ### 4.1 Hypotheses
 
@@ -136,7 +146,7 @@ The trunk wins teacher-forced compression but not the action space.
 | H2 | copy, edit, and draft add capability | **pass on copy, local on edit, calibrated on draft**; blend 0.705 at 2.362 bits, 0.680 at 1.698; blend edit −0.012; T4 τ4 K16 4.650 |
 | H3 | concept DPO beats byte DPO | **untested**; only after a combination reaches the T1-T4 frontier |
 | H4 | pack edits change behavior without gradients | **local**; removed targets are lost, survivors unchanged |
-| H5 | the combination scales | **deferred**; 20M on 7.2 MB overfits; needs more code |
+| H5 | the combination scales | **pass on T2**; 24 MB train: 5M 1.583 / 1.613, 10M 1.538 / 1.568 payload/shared; 20M remains untested |
 
 ## 5. Fair allocation
 
@@ -234,12 +244,13 @@ exploration reserve, and the next round's allocation.
 | R0 | shared suite + portfolio schema | T1-T5 run; every family has a grid | 0.5 d | **done** |
 | R1 | Round 1: all families | best/median/worst; frontier | 1 d | **done** |
 | R2 | combinations | 3-5 combined arms on T1/T4/T3 | 1 d | **done** |
-| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d | **next** |
+| R3 | compression/scale | T2 on promoted combos; 5M/10M | 1 d | **done** |
 | R4 | RLFP optional | 2k-10k pairs; SFT; concept vs byte DPO | 1-2 d | blocked |
-| R5 | decision | scale the Pareto winner or record the negative | 0.5 d | deferred |
+| R5 | decision | scale the Pareto winner or record the negative | 0.5 d | **partial: T2 scale promoted; RLFP blocked** |
 
-M1 is already printed. R0-R2 are printed; T2 on the promoted combination
-and the 5M/10M scale are the next build. R4 is not the first gate.
+M1 is already printed. R0-R3 are printed. T2 passes on the promoted codec
+(1.692 → 1.583 → 1.538 payload), and the 10M scale point promotes. R4 is
+still not the first gate: no combination has survived T1-T4 yet.
 
 ## 10. Interfaces
 
@@ -252,16 +263,22 @@ uv run cml editcurve --spans 200
 uv run cml packs --sizes 128,256,512,1024
 ```
 
-New portfolio interface:
+New interfaces:
 ```bash
 uv run cml portfolio --round 1 --families all --task t1 --budget 2h
 uv run cml portfolio --round 2 --families r2,r3/r4 --task t1,t4 --budget 6h
 uv run cml portfolio --round 3 --families all --task t2 --budget 6h
+uv run cml scale --sizes 5m,10m --steps 8000 --seed 0
 ```
 `cml portfolio` does not train; it aggregates every measured grid, scores the
 T1 frontier, writes `PORTFOLIO.md` and `portfolio.json`, and returns the next
 allocation. Rounds are stored in `portfolio.json`, so a rerun replaces only
 that round and keeps the history.
+
+`cml scale` keeps the pinned 756,752 B T2 test and the 256-unit pack, adds
+unique train code up to 24 MB, and trains the requested 5M/10M pointers. It
+writes `reports/SCALE.md` and per-arm `runs/codec-scale-*/metrics.json`.
+5M and 10M are parameter targets, not exact counts (5.21M and 9.17M).
 
 ## 11. Risks
 
@@ -272,28 +289,29 @@ that round and keeps the history.
 - **Edit tautology.** Removed targets are lost by construction; report
   survivors separately.
 - **DPO overfit.** Held-out prompts, KL, and both decision definitions.
-- **Scale illusion.** 20M on 7.2 MB overfits; more unique code first.
+- **Scale illusion.** 20M is untested; 24 MB is still finite. Extend unique
+  code before parameters.
 - **Host instability.** Checkpoint every arm; no 20k runs.
 
-## 12. Next round (R3)
+## 12. Next round (R5)
 
-Done in R1/R2: all grids, pack size, the T1 target, T3 local, and T4
-calibration. Still open: T2, scale, and RLFP.
+Done in R3: T2 review on the promoted codec, the 5M/10M scale, and the
+10M promotion. Still open: RLFP, a combined T1-T4 survivor, and 20M.
 
-1. **R3 T2 review.** The codec pointer already holds 1.692 payload /
-   1.722 shared / 1.600 teacher. The blend is a span policy, not a
-   codec. Test T2 only on the promoted codec combination; do not claim
-   the blend as a compression win.
-2. **R3 scale.** 5M/10M only after T2 passes; add unique code before
-   parameters.
-3. **R5 decision.** If T2 does not pass, record the negative and keep
-   the T1/T3 result; do not start RLFP.
-4. **R4 RLFP.** Blocked until T2 passes.
+1. **R5 decision.** Promote the T2 10M codec (1.538 payload / 1.568
+   shared) as the codec winner. Keep the T1 blend (0.680 / 1.698) as the
+   span-policy winner. Do not merge the two numbers or average them.
+2. **R4 RLFP.** Still blocked: no combination survives T1-T4. If one does,
+   start with 2k-10k pairs, SFT, and both decision definitions.
+3. **20M only with more unique code.** Do not train 20M on 7.2 MB; the
+   24 MB scale corpus is the current limit. Extend unique code first.
+4. **Seed repeat.** Repeat the 10M T2 point at seed 1 before treating
+   the 0.154 payload gain as a stable claim.
 
 The exploration reserve reopens parked `r1`, `r1/r6`, `r2`, `r3/r4`,
 `r3/r4/r6`, `r6`, and `r7` only with a new grid or a new combination.
 r6 keeps 256 as the pack; r5 and r8 stay active through their T3/T4
-capability rows.
+capability rows; r10 stays active through its T2 scale row.
 
 ## References
 
@@ -302,4 +320,5 @@ capability rows.
 - `cml/pointer.py`: content-addressed pack reader.
 - `cml/codec.py`: `Lexicon`, `greedy_parse`, `build_lexicon`, arms.
 - `cml/cml.py`: `Trunk`, `train_text`, `p1_sample`, `cml train/sample/stats`,
-  `cml screen/breadth/editcurve/packs/portfolio`, pack ops.
+  `cml screen/breadth/editcurve/packs/portfolio/scale`, pack ops.
+- `cml/reports/SCALE.md`: the R3 5M/10M T2 scale grid and verdict.

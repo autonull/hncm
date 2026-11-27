@@ -1,5 +1,5 @@
 {
- "round": 2,
+ "round": 3,
  "arms": [
   {
    "family": "r1",
@@ -2557,11 +2557,40 @@
    "source": "breadth"
   },
   {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m",
+   "task": "t2",
+   "bits": 1.4446701411735052,
+   "payload": 1.5381630970251814,
+   "shared": 1.567985284478931,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p5m",
+   "task": "t2",
+   "bits": 1.4897978464318704,
+   "payload": 1.5831342368437744,
+   "shared": 1.612956424297524,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
+  {
    "family": "r3/r4",
    "arm": "concept-pointer-code-p5m-s8000",
    "task": "t2",
    "bits": 1.5996977685816873,
    "payload": 1.692242636953718,
+   "shared": 1.7220648244074677,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
    "decisions": 0.6764871450620547,
    "source": "concept",
    "exact": null
@@ -2572,6 +2601,9 @@
    "task": "t2",
    "bits": 1.5160839931000691,
    "payload": null,
+   "shared": null,
+   "roundtrip": true,
+   "provenance": "parse",
    "decisions": 0.6764871450620547,
    "source": "concept",
    "exact": null
@@ -2966,6 +2998,19 @@
    "decisions": 1.0,
    "source": "screen"
   },
+  "r10": {
+   "family": "r10",
+   "arm": "codec-scale-code-756752-p10m",
+   "task": "t2",
+   "bits": 1.4446701411735052,
+   "payload": 1.5381630970251814,
+   "shared": 1.567985284478931,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "scale",
+   "exact": null
+  },
   "r2": {
    "family": "r2",
    "arm": "copy-6-cinf-t0.00",
@@ -2986,12 +3031,16 @@
   },
   "r3/r4": {
    "family": "r3/r4",
-   "arm": "concept",
-   "task": "t1",
-   "exact": 0.65,
-   "bits": 1.7197363641034173,
-   "decisions": 1.0,
-   "source": "screen"
+   "arm": "concept-pointer-code-p5m-s8000",
+   "task": "t2",
+   "bits": 1.5996977685816873,
+   "payload": 1.692242636953718,
+   "shared": 1.7220648244074677,
+   "roundtrip": true,
+   "provenance": "pointer-codec",
+   "decisions": 0.6764871450620547,
+   "source": "concept",
+   "exact": null
   },
   "r3/r4/r6": {
    "family": "r3/r4/r6",
@@ -3055,7 +3104,7 @@
   {
    "combination": "concept+pack",
    "tests": "t1,t2",
-   "status": "inputs measured"
+   "status": "T2 pass: 1.538/1.568 bpb"
   },
   {
    "combination": "concept+edit",
@@ -3113,14 +3162,15 @@
    "r2+r3/r4:blend-12-m2-a0.50"
   ],
   "explore_arms": [
-   "R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only",
-   "R3 scale: 5M/10M only after T2 passes",
+   "R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and \u22641.75",
+   "R3 scale: T2 passes; 5M/10M only on the promoted codec combo",
    "concept+copy: T1 target met; tune the blend on held-out seeds",
    "concept+edit: local (-0.012); test `self` end-to-end",
    "concept+spec: neutral; the trunk is the bottleneck",
    "r7 templates: radius 2 is 0.340; add hole composition",
+   "R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote",
    "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
-   "capability families: r5, r8"
+   "capability families: r10, r5, r8"
   ]
  },
  "rounds": [
@@ -3211,7 +3261,7 @@
     "t4"
    ],
    "families": "all",
-   "arms": 314,
+   "arms": 316,
    "frontier": 6,
    "allocation": {
     "frontier": 0.7,
@@ -3243,18 +3293,72 @@
      "r2+r3/r4:blend-12-m2-a0.50"
     ],
     "explore_arms": [
-     "R3 T2: the codec pointer holds 1.692 payload; test the promoted combo only",
-     "R3 scale: 5M/10M only after T2 passes",
+     "R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and \u22641.75",
+     "R3 scale: T2 passes; 5M/10M only on the promoted codec combo",
      "concept+copy: T1 target met; tune the blend on held-out seeds",
      "concept+edit: local (-0.012); test `self` end-to-end",
      "concept+spec: neutral; the trunk is the bottleneck",
      "r7 templates: radius 2 is 0.340; add hole composition",
+     "R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote",
      "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
-     "capability families: r5, r8"
+     "capability families: r10, r5, r8"
     ]
    },
-   "seconds": 0.014,
-   "at": "2026-11-26T19:19:53"
+   "seconds": 0.013,
+   "at": "2026-11-26T20:02:32"
+  },
+  {
+   "round": 3,
+   "budget": "6h",
+   "tasks": [
+    "t2"
+   ],
+   "families": "all",
+   "arms": 316,
+   "frontier": 6,
+   "allocation": {
+    "frontier": 0.7,
+    "near": 0.2,
+    "explore": 0.1,
+    "frontier_hours": 4.2,
+    "near_hours": 1.2,
+    "explore_hours": 0.6,
+    "frontier_arms": [
+     "r2+r3/r4:blend-10-m1-a0.75",
+     "r2+r3/r4:blend-10-m1-a0.90",
+     "r2+r3/r4:blend-6-m1-a0.25",
+     "r2+r3/r4:blend-6-m1-a0.50",
+     "r2+r3/r4:blend-6-m1-a0.90",
+     "r2+r3/r4:conceptcopy-6-cinf-t0.00"
+    ],
+    "near_arms": [
+     "r2+r3/r4:blend-10-m2-a0.50",
+     "r2+r3/r4:blend-10-m1-a0.25",
+     "r2+r3/r4:blend-6-m2-a0.50",
+     "r2+r3/r4:blend-8-m1-a0.25",
+     "r2+r3/r4:blend-12-m1-a0.25",
+     "r2+r3/r4:blend-6-m2-a0.25",
+     "r2+r3/r4:blend-10-m1-a0.50",
+     "r2+r3/r4:blend-8-m2-a0.50",
+     "r2+r3/r4:blend-10-m2-a0.25",
+     "r2+r3/r4:blend-8-m2-a0.25",
+     "r2+r3/r4:blend-12-m1-a0.50",
+     "r2+r3/r4:blend-12-m2-a0.50"
+    ],
+    "explore_arms": [
+     "R3 T2 review: `codec-scale-code-756752-p10m` 1.538 payload / 1.568 shared bpb, pass on round-trip and \u22641.75",
+     "R3 scale: T2 passes; 5M/10M only on the promoted codec combo",
+     "concept+copy: T1 target met; tune the blend on held-out seeds",
+     "concept+edit: local (-0.012); test `self` end-to-end",
+     "concept+spec: neutral; the trunk is the bottleneck",
+     "r7 templates: radius 2 is 0.340; add hole composition",
+     "R5 decision: scale `codec-scale-code-756752-p10m` -0.154 payload vs the 5M base; promote",
+     "parked families: r1, r1/r6, r2, r3/r4, r3/r4/r6, r6, r7",
+     "capability families: r10, r5, r8"
+    ]
+   },
+   "seconds": 0.013,
+   "at": "2026-11-26T20:10:59"
   }
  ]
 }

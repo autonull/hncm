@@ -897,8 +897,14 @@ def byte_preset(params: int) -> tuple[int, int, int]:
 
 def pointer_preset(params: int) -> tuple[int, int]:
     """d and layers for a pointer near the requested parameter count."""
-    if params <= 12_000_000:
+    if params <= 6_000_000:
         return 256, 6
+    if params <= 10_000_000:
+        return 320, 7
+    if params <= 14_000_000:
+        return 352, 7
+    if params <= 18_000_000:
+        return 384, 8
     if params <= 26_000_000:
         return 448, 8
     return 512, 10
@@ -3475,7 +3481,7 @@ def _metric(arm: dict, task: str) -> float | None:
     if task == "t1":
         return arm.get("exact")
     if task == "t2":
-        return arm.get("bits")
+        return arm.get("payload")
     if task == "t3":
         delta = arm.get("edit_delta")
         return None if delta is None else abs(delta)
@@ -3493,7 +3499,7 @@ def _task_metric(task: str, value: float | None) -> str:
     if task == "t1":
         return f"{value:.3f} exact"
     if task == "t2":
-        return f"{value:.3f} bpb"
+        return f"{value:.3f} bpb payload"
     if task == "t3":
         return f"{value:+.3f} bpb edit"
     if task == "t4":
@@ -3776,8 +3782,27 @@ def _collect_arms() -> list[dict]:
                 "task": "t2",
                 "bits": m["bits_per_byte"],
                 "payload": m["payload_bpb"],
+                "shared": m.get("shared_bpb"),
+                "roundtrip": m.get("roundtrip"),
+                "provenance": m.get("roundtrip_kind"),
                 "decisions": m["decisions_per_byte"],
                 "source": "concept",
+            }
+        )
+    for path in sorted(RUNS.glob("codec-scale-*/metrics.json")):
+        m = json.loads(path.read_text())
+        arms.append(
+            {
+                "family": "r10",
+                "arm": m["id"],
+                "task": "t2",
+                "bits": m["bits_per_byte"],
+                "payload": m["payload_bpb"],
+                "shared": m.get("shared_bpb"),
+                "roundtrip": m.get("roundtrip"),
+                "provenance": m.get("roundtrip_kind"),
+                "decisions": m["decisions_per_byte"],
+                "source": "scale",
             }
         )
 
@@ -3857,6 +3882,11 @@ def run_portfolio(
         (a for a in scored if a not in frontier and a["exact"] >= 0.8 * best_exact),
         key=lambda a: (a["bits"], -a["exact"]),
     )[:12]
+    t2_rows = sorted(
+        (a for a in arms if a["task"] == "t2" and a.get("payload") is not None),
+        key=lambda a: a["payload"],
+    )
+    t2_best = t2_rows[0] if t2_rows else None
 
     t1_fams = {a["family"] for a in scored}
     all_fams = {a["family"] for a in arms}
@@ -3913,6 +3943,17 @@ def run_portfolio(
             status = "blocked: needs a T1-T4 survivor"
         elif missing:
             status = "needs " + ", ".join(missing)
+        elif name == "concept+pack" and t2_best is not None:
+            shared = t2_best.get("shared")
+            gate = (
+                t2_best["payload"] <= 1.75
+                and (shared is None or shared <= 1.75)
+                and bool(t2_best.get("roundtrip"))
+            )
+            status = (
+                f"T2 {'pass' if gate else 'fail'}: "
+                f"{t2_best['payload']:.3f}/{_fmt(shared)} bpb"
+            )
         else:
             status = "inputs measured"
         combo_rows.append({"combination": name, "tests": tests, "status": status})
@@ -3925,6 +3966,32 @@ def run_portfolio(
         "concept+spec: neutral; the trunk is the bottleneck",
         "r7 templates: radius 2 is 0.340; add hole composition",
     ]
+    if t2_best is not None:
+        shared = t2_best.get("shared")
+        gate = (
+            t2_best["payload"] <= 1.75
+            and (shared is None or shared <= 1.75)
+            and bool(t2_best.get("roundtrip"))
+        )
+        exploration[0] = (
+            f"R3 T2 review: `{t2_best['arm']}` {t2_best['payload']:.3f} payload / "
+            f"{_fmt(shared)} shared bpb, "
+            f"{'pass' if gate else 'fail'} on round-trip and ≤1.75"
+        )
+        if gate:
+            exploration[1] = (
+                "R3 scale: T2 passes; 5M/10M only on the promoted codec combo"
+            )
+    t2_scale = [a for a in t2_rows if a["source"] == "scale"]
+    if t2_scale:
+        best_scale = min(t2_scale, key=lambda a: a["payload"])
+        concept = [a for a in t2_rows if a["source"] == "concept"]
+        base = min(concept, key=lambda a: a["payload"]) if concept else None
+        delta = best_scale["payload"] - base["payload"] if base else 0.0
+        exploration.append(
+            f"R5 decision: scale `{best_scale['arm']}` {delta:+.3f} payload "
+            f"vs the 5M base; {'promote' if delta < 0 else 'record the negative'}"
+        )
     if parked:
         exploration.append("parked families: " + ", ".join(parked))
     if capability:
@@ -4028,6 +4095,42 @@ def run_portfolio(
         lines.append(
             f"| {t} | `{best['family']}:{best['arm']}` | "
             f"{_task_metric(t, _metric(best, t))} | {best['source']} |"
+        )
+    lines += [
+        "",
+        "## T2 compression review",
+        "",
+        "| family | arm | payload | shared | teacher | decisions | "
+        "round-trip | provenance | source |",
+        "|---|---|---:|---:|---:|---:|---|---|---|",
+    ]
+    for a in t2_rows:
+        shared = a.get("shared")
+        gate = (
+            a["payload"] <= 1.75
+            and (shared is None or shared <= 1.75)
+            and bool(a.get("roundtrip"))
+        )
+        mark = "PASS" if gate else "FAIL"
+        lines.append(
+            f"| {a['family']} | `{a['arm']}` | {a['payload']:.3f} | "
+            f"{_fmt(shared)} | {a.get('bits', float('nan')):.3f} | "
+            f"{a.get('decisions', 0):.3f} | {mark} | "
+            f"{a.get('provenance') or '-'} | {a['source']} |"
+        )
+    lines += [""]
+    if t2_best is None:
+        lines.append("- No payload/shared T2 arm is measured yet.")
+    else:
+        lines.append(
+            f"- best T2 arm `{t2_best['arm']}`: "
+            f"{t2_best['payload']:.3f} payload / "
+            f"{_fmt(t2_best.get('shared'))} shared bpb, "
+            f"{'round-trip' if t2_best.get('roundtrip') else 'no round-trip'}."
+        )
+        lines.append(
+            "- The blend is a span policy, not a codec: do not use a T1 blend "
+            "as a T2 compression claim."
         )
     lines += [
         "",
@@ -4158,6 +4261,7 @@ def src_bytes() -> bytes:
 
 
 CODE_CAP = 8_000_000
+SCALE_CAP = 24_000_000
 CODE_DROP = frozenset(
     (
         "__pycache__",
@@ -4254,6 +4358,67 @@ def code_corpus(refreeze: bool = False) -> CodeCorpus:
     write_json(pin, {"sha": sha, "files": files, "split": split})
     return CodeCorpus(
         raw, train, test, tuple(files), split, sha, hashlib.sha256(train).hexdigest()
+    )
+
+
+def code_scale_corpus(cap: int = SCALE_CAP) -> CodeCorpus:
+    """The pinned T2 test plus extra unique train code, never its test file."""
+    base = code_corpus()
+    pin = CACHE / f"code-scale-{cap}.json"
+    if pin.exists():
+        data = json.loads(pin.read_text())
+        if data.get("base_sha") == base.sha:
+            raw = (CACHE / f"code-scale-{data['sha'][:12]}.bin").read_bytes()
+            if hashlib.sha256(raw).hexdigest() != data["sha"]:
+                raise ValueError("code scale corpus: pinned cache mismatch")
+            split = int(data["split"])
+            train, test = raw[:split], raw[split:]
+            files = tuple(tuple(row) for row in data["files"])
+            return CodeCorpus(
+                raw,
+                train,
+                test,
+                files,
+                split,
+                data["sha"],
+                hashlib.sha256(train).hexdigest(),
+            )
+    used = {rel for rel, _, _ in base.files}
+    extra = bytearray()
+    files = list(base.files)
+    for rel, path in _code_files():
+        if rel in used:
+            continue
+        data = path.read_bytes()
+        marker = f"\n# --- {rel} ---\n".encode()
+        if len(base.train) + len(extra) + len(marker) + len(data) > cap:
+            continue
+        start = len(base.train) + len(extra)
+        extra += marker + data
+        files.append((rel, start, len(base.train) + len(extra)))
+        if len(base.train) + len(extra) >= cap:
+            break
+    train = base.train + bytes(extra)
+    raw = train + base.test
+    sha = hashlib.sha256(raw).hexdigest()
+    split = len(train)
+    cached = CACHE / f"code-scale-{sha[:12]}.bin"
+    if not cached.exists():
+        tmp = cached.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        os.replace(tmp, cached)
+    write_json(
+        pin,
+        {"base_sha": base.sha, "sha": sha, "split": split, "files": files},
+    )
+    return CodeCorpus(
+        raw,
+        train,
+        base.test,
+        tuple(files),
+        split,
+        sha,
+        hashlib.sha256(train).hexdigest(),
     )
 
 
@@ -5915,14 +6080,17 @@ def _run_concept(
     head: str = "gate",
     parse_mode: str = "greedy",
     seq: int = 256,
+    target_params: int | None = None,
 ) -> dict:
     import pointer
 
+    d, layers = pointer_preset(target_params) if target_params else (256, 6)
     model, active_lex, _ = _pointer_for(
-        corpus, lex, active, steps, seed, rotate, full_every, span, head, seq
+        corpus, lex, active, steps, seed, rotate, full_every, span, head, seq, d, layers
     )
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{suffix}"
     pointer.save_model(out_dir / "model.pt", model, model.cfg, [])
+    teacher = pointer.eval_bpb(model, data, active_lex, seq=seq)
     pcodec = pointer.PointerCodec(model, active_lex, half=True)
     ids, covered = codec_mod.greedy_parse(data, active_lex)
     stats = codec_mod.parse_stats(ids, active_lex, len(data), covered)
@@ -5945,6 +6113,7 @@ def _run_concept(
     metrics = {
         "id": f"codec-{arm}-{corpus_name}-{nbytes}{suffix}",
         "arm": arm,
+        "family": "r10" if arm == "scale" else "r3/r4",
         "corpus": corpus_name,
         "split": split,
         "bytes": nbytes,
@@ -5957,7 +6126,12 @@ def _run_concept(
         "self_bpb": shared_bpb + 8 * base_bytes / n,
         "base_bytes": base_bytes,
         "params": params,
+        "bits_per_byte": teacher["payload_bpb"],
+        "teacher_bpb": teacher["payload_bpb"],
+        "decisions": len(ids),
+        "decisions_per_byte": len(ids) / n,
         "roundtrip": True,
+        "roundtrip_kind": "pointer-codec",
         "proof_units": want,
         "proof_bytes": len(out),
         "coding_dtype": "fp16",
@@ -6131,6 +6305,120 @@ def run_codec(
             else ""
         )
     )
+    return 0
+
+
+def run_scale(
+    sizes: str = "5m,10m",
+    corpus_name: str = "code",
+    nbytes: int = 756_752,
+    steps: int = 8_000,
+    seed: int = 0,
+    active: int = 256,
+    units: int = 8192,
+    min_count: int = 16,
+    cap: int = 16,
+    proof: int = 50_000,
+    rotate: int = 8,
+    full_every: int = 8,
+) -> int:
+    """R3 scale: train 5M/10M pointers on extra train code, same T2 test."""
+    base = code_corpus()
+    scale = code_scale_corpus()
+    lex = _lexicon_for(base, units, min_count, cap)
+    data = base.test[:nbytes]
+    rows = []
+    for size in [s.strip() for s in sizes.split(",") if s.strip()]:
+        target = int(size.removesuffix("m")) * 1_000_000
+        t0 = time.perf_counter()
+        metrics = _run_concept(
+            scale,
+            data,
+            lex,
+            active,
+            steps,
+            seed,
+            proof,
+            rotate,
+            full_every,
+            "scale",
+            corpus_name,
+            nbytes,
+            "test",
+            suffix=f"-p{size}",
+            span="ngram",
+            head="joint",
+            target_params=target,
+        )
+        metrics["target_params"] = target
+        metrics["seconds"] = round(time.perf_counter() - t0, 3)
+        write_json(RUNS / metrics["id"] / "metrics.json", metrics)
+        rows.append(metrics)
+        print(
+            f"{metrics['id']}: {metrics['params'] / 1e6:.2f}M params, "
+            f"{metrics['payload_bpb']:.3f} / {metrics['shared_bpb']:.3f} bpb, "
+            f"round-trip {metrics['roundtrip_kind']}",
+            flush=True,
+        )
+    baseline_path = RUNS / "concept-pointer-code-p5m-s8000/metrics.json"
+    baseline = json.loads(baseline_path.read_text()) if baseline_path.exists() else None
+    lines = [
+        "# R3 scale (T2)",
+        "",
+        "The pinned T2 test is unchanged; only the pointer and the train code",
+        "grow.  The 256-unit pack is the promoted codec combination.  `5m` and",
+        "`10m` are parameter targets, not exact counts.",
+        "",
+        f"- train code: {len(scale.train):,} B (base {len(base.train):,} B), "
+        f"test {nbytes:,} B",
+        f"- pack: {len(lex.units[:active])} units / "
+        f"{len(codec_mod.Lexicon(lex.units[:active]).blob()):,} B",
+        f"- steps {steps}, seed {seed}, ngram+joint",
+        "- `seconds` is the encode+eval wall time after a model-cache hit;",
+        "  the first 8k-step train pass is in the run log.",
+        "",
+        "| arm | params | payload | shared | teacher | round-trip |"
+        " provenance | seconds |",
+        "|---|---:|---:|---:|---:|---|---|---:|",
+    ]
+    for m in [*([baseline] if baseline else []), *rows]:
+        lines.append(
+            f"| `{m['id']}` | {m['params'] / 1e6:.2f}M | "
+            f"{m['payload_bpb']:.3f} | {m['shared_bpb']:.3f} | "
+            f"{m['bits_per_byte']:.3f} | "
+            f"{'OK' if m['roundtrip'] else 'FAIL'} | "
+            f"{m.get('roundtrip_kind', 'pointer-codec')} | "
+            f"{m.get('seconds') or m.get('encode_seconds') or 0:.1f} |"
+        )
+    best = min(rows, key=lambda m: m["payload_bpb"]) if rows else None
+    lines += ["", "## Verdict", ""]
+    if best is None:
+        lines.append("No scale arm ran.")
+    else:
+        lines.append(
+            f"- best scale arm `{best['id']}`: {best['payload_bpb']:.3f} payload / "
+            f"{best['shared_bpb']:.3f} shared bpb."
+        )
+        if baseline is not None:
+            delta = best["payload_bpb"] - baseline["payload_bpb"]
+            lines.append(
+                f"- versus the 5M base arm: {delta:+.3f} payload; "
+                f"{'promote' if delta < 0 else 'do not promote'}."
+            )
+        gate = (
+            best["payload_bpb"] <= 1.75
+            and best["shared_bpb"] <= 1.75
+            and best["roundtrip"]
+        )
+        lines.append(
+            f"- T2 gate (≤1.75 payload and shared, round-trip): "
+            f"{'PASS' if gate else 'FAIL'}."
+        )
+    report = REPORTS / "SCALE.md"
+    tmp = report.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.replace(tmp, report)
+    print(f"wrote {report}")
     return 0
 
 
@@ -7269,6 +7557,19 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--families", default="all")
     pf.add_argument("--task", default="t1")
     pf.add_argument("--budget", default="2h")
+    sl = sub.add_parser("scale")
+    sl.add_argument("--sizes", default="5m,10m")
+    sl.add_argument("--corpus", choices=("code",), default="code")
+    sl.add_argument("--bytes", type=int, default=756_752)
+    sl.add_argument("--steps", type=int, default=8000)
+    sl.add_argument("--seed", type=int, default=0)
+    sl.add_argument("--active", type=int, default=256)
+    sl.add_argument("--units", type=int, default=8192)
+    sl.add_argument("--min-count", type=int, default=16)
+    sl.add_argument("--cap", type=int, default=16)
+    sl.add_argument("--proof", type=int, default=50_000)
+    sl.add_argument("--rotate", type=int, default=8)
+    sl.add_argument("--full-every", type=int, default=8)
     ins = sub.add_parser("install")
     ins.add_argument("--corpus", default="code")
     ins.add_argument("--package", default="networkx")
@@ -7408,6 +7709,21 @@ def main(argv: list[str] | None = None) -> int:
         return run_packs(a.corpus, a.bytes, a.spans, a.steps, a.sizes, a.seed)
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)
+    if a.cmd == "scale":
+        return run_scale(
+            a.sizes,
+            a.corpus,
+            a.bytes,
+            a.steps,
+            a.seed,
+            a.active,
+            a.units,
+            a.min_count,
+            a.cap,
+            a.proof,
+            a.rotate,
+            a.full_every,
+        )
     if a.cmd == "train":
         if a.units == "codec":
             if a.corpus not in ("code", "shakespeare"):

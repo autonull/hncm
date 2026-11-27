@@ -14,6 +14,8 @@ These are measured wins, not plans. Do not regress them silently.
 | Concept vs trunk | 0.650 vs **0.480** exact; 1.72 vs 2.59 bits/span | `reports/SCREEN.md` |
 | Concept vs byte | **3.1x** exact; **3.0x** fewer decisions; **7.4x** fewer bits/span | `reports/SCREEN.md` |
 | Compression | **1.600** bpb teacher, **1.692** payload, **1.722** shared | `reports/CONCEPT.md` |
+| T2 review | promoted codec: **1.692** payload / **1.722** shared / **1.600** teacher; blend excluded | `reports/PORTFOLIO.md` |
+| T2 scale | 24 MB train: 5M **1.583** / 1.613, 10M **1.538** / 1.568 payload/shared | `reports/SCALE.md` |
 | Exact round-trip | 50,000 units / 81,531 B | `reports/CONCEPT.md` |
 | Local deletion | 35 targets removed by construction; 165 survivors ±0.006; **+0.146 bpb** full encode | `reports/EDIT-CURVE.md` |
 | Merge | 256 -> 320 units; **+0.108 bpb**; exact round-trip | `reports/SCREEN.md` |
@@ -22,9 +24,10 @@ These are measured wins, not plans. Do not regress them silently.
 | Edit locality | `self` **-0.000** bpb, `return` +0.026, indent +0.028, space +0.146, newline +0.228; all round-trip | `reports/BREADTH.md` |
 
 Commands that produce them: `cml train --units codec`, `cml screen`,
-`cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`.
-Scope: 5.21M pointer, 70k held-out bytes, 200 spans. Not yet a preference
-win, a wall-clock speedup, or a 20M-scale claim.
+`cml editcurve`, `cml breadth`, `cml packs`, `cml portfolio`, `cml scale`.
+Scope: 5.21M pointer, 70k held-out bytes, 200 spans; T2 scale uses 24 MB
+train code and the pinned 756,752 B test. Not yet a preference win, a
+wall-clock speedup, or a 20M-scale claim.
 
 ## What this covers
 
@@ -168,9 +171,12 @@ The four bets, and where they live:
   128, 512, and 1024 are dominated.
 - `cml portfolio --round N --families ... --task ... --budget ...`:
   aggregates every measured arm into a T1 Pareto frontier, family
-  best/median/worst, task views, combinations, and a resumable
-  50/30/20 (round 1) or 70/20/10 (later) allocation; `reports/PORTFOLIO.md`.
-  It parks families without killing them.
+  best/median/worst, task views, a T2 compression review, combinations,
+  and a resumable 50/30/20 (round 1) or 70/20/10 (later) allocation;
+  `reports/PORTFOLIO.md`. It parks families without killing them.
+- `cml scale --sizes 5m,10m`: keeps the pinned T2 test and the 256-unit
+  pack, adds unique train code up to 24 MB, and trains the requested
+  pointers; `reports/SCALE.md`. 5M/10M are targets (5.21M/9.17M actual).
 - `experiments/p0..p5.toml`: one manifest per experiment, no per-experiment
   Python.
 - `tests/test_invariants.py`: gate ops, manifest, space, search, render,
