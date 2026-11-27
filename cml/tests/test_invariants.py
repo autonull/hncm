@@ -507,3 +507,22 @@ def test_cortex_sweep_render() -> None:
     assert "| depth |" in text
     assert "| 3 |" in text and "| 5 |" in text
     assert "edge gap" in text
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="stream codec uses cuda")
+def test_stream_and_copy_roundtrip() -> None:
+    import bytecodec
+
+    torch.manual_seed(0)
+    model = bytecodec.Trunk(256, 32, 1, 2, 16).cuda()
+    data = (b"alpha = beta + gamma\n" * 12) + bytes(range(32))
+    blob = bytecodec.StreamCoder(model).encode(data)
+    assert bytecodec.StreamCoder(model).decode(blob, len(data)) == data
+    plain = bytecodec.StreamCoder(model).encode(data)
+    copy = bytecodec.CopyCodec(bytecodec.StreamCoder(model), 256, 8, 32)
+    blob = copy.encode(data)
+    back = bytecodec.CopyCodec(bytecodec.StreamCoder(model), 256, 8, 32).decode(
+        blob, len(data)
+    )
+    assert back == data
+    assert len(blob) < len(plain)

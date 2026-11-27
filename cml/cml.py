@@ -6420,6 +6420,80 @@ def run_composition(pairs: int, depth: int, seed: int) -> int:
     return 0
 
 
+def run_copycodec(
+    run: str,
+    corpus_name: str,
+    nbytes: int,
+    window: int,
+    min_match: int,
+    cap: int,
+) -> int:
+    """Stage 3 copy proxy: LZ tokens plus the trained trunk for literals."""
+    import bytecodec
+
+    t0 = time.perf_counter()
+    corpus = _corpus(corpus_name)
+    data = corpus.test[:nbytes]
+    model = bytecodec.load_model(RUNS / run / "model.pt")
+
+    def fresh() -> "bytecodec.CopyCodec":
+        return bytecodec.CopyCodec(bytecodec.StreamCoder(model), window, min_match, cap)
+
+    blob = fresh().encode(data)
+    if fresh().decode(blob, len(data)) != data:
+        raise SystemExit("copycodec: round-trip failed")
+    n = max(len(data), 1)
+    base = bytecodec.StreamCoder(model).encode(data)
+    recorded = json.loads((RUNS / run / "metrics.json").read_text())
+    report = {
+        "id": f"copycodec-{corpus_name}-{nbytes}",
+        "run": run,
+        "corpus": corpus_name,
+        "split": "test",
+        "n": len(data),
+        "window": window,
+        "min_match": min_match,
+        "cap": cap,
+        "payload_bytes": len(blob),
+        "payload_bpb": 8 * len(blob) / n,
+        "stream_bytes": len(base),
+        "stream_bpb": 8 * len(base) / n,
+        "recorded_bpb": recorded.get("payload_bpb"),
+        "recorded_n": recorded.get("n"),
+        "saving": 1 - len(blob) / max(len(base), 1),
+        "roundtrip": True,
+        "corpus_sha": corpus.sha,
+        "git": git_sha(),
+        "seconds": round(time.perf_counter() - t0, 1),
+    }
+    text = [
+        "# Copy arm in front of the trained trunk",
+        "",
+        f"- run `{run}` on `{corpus_name}` sha `{corpus.sha[:12]}`, "
+        f"held-out {len(data):,} B",
+        f"- LZ window {window:,} B, min match {min_match}, cap {cap}",
+        "- matches cost a token bit, a distance slot, raw slot bits and a",
+        "  length symbol; literals and copied bytes advance the same trunk",
+        "  cache, so the decoder rebuilds the literal context",
+        "",
+        "| arm | payload B | bpb |",
+        "|---|---:|---:|",
+        f"| stream only | {len(base):,} | {8 * len(base) / n:.3f} |",
+        f"| LZ copy + stream | {len(blob):,} | {8 * len(blob) / n:.3f} |",
+        f"| recorded run | {recorded.get('payload_bytes', 0):,} | "
+        f"{recorded.get('payload_bpb', 0):.3f} |",
+        "",
+        f"- exact round-trip; copy changes the payload by {report['saving']:+.1%}",
+        "  against the stream arm on the same bytes.",
+        "",
+        f"Took {report['seconds']:.0f} s on one GPU.",
+    ]
+    write_json(REPORTS / "copy-model.json", report)
+    write_text(REPORTS / "COPY-MODEL.md", "\n".join(text) + "\n")
+    print("\n".join(text))
+    return 0
+
+
 def run_cortex(
     pairs: int,
     depth: int,
@@ -7783,6 +7857,13 @@ def main(argv: list[str] | None = None) -> int:
     cf.add_argument("--min-count", type=int, default=16)
     cf.add_argument("--cap", type=int, default=16)
     cf.add_argument("--no-baseline", action="store_true")
+    cc = sub.add_parser("copycodec")
+    cc.add_argument("--run", required=True)
+    cc.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    cc.add_argument("--bytes", type=int, default=756_752)
+    cc.add_argument("--window", type=int, default=65536)
+    cc.add_argument("--min-match", type=int, default=8)
+    cc.add_argument("--cap", type=int, default=256)
     cx = sub.add_parser("cortex")
     cx.add_argument("--pairs", type=int, default=30_000)
     cx.add_argument("--depth", type=int, default=4)
@@ -7974,6 +8055,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "composition":
         return run_composition(a.pairs, a.depth, a.seed)
+    if a.cmd == "copycodec":
+        return run_copycodec(a.run, a.corpus, a.bytes, a.window, a.min_match, a.cap)
     if a.cmd == "cortex":
         return run_cortex(
             a.pairs,

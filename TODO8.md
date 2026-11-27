@@ -190,11 +190,31 @@ slightly better on the unseen split. The next test is not more depth; it
 is argument dependence, where the byte context cannot recognize the type
 at all. `TODO8.compression.md` is the live fallback until that runs.
 
+## 1.6 Copy arm in front of the trained trunk: measured 2026-11-27
+
+`cml copycodec --run codec-byte-model-code-756752 --bytes 756752 --window
+65536 --min-match 8 --cap 256`; `reports/COPY-MODEL.md`.
+
+| arm | payload B | bpb |
+|---|---:|---:|
+| recorded byte model | 160,092 | 1.693 |
+| LZ copy + trunk | 131,757 | **1.393** |
+
+**Read.** Copy saves **17.7%** on the same 756 KB bytes: the Stage 3 gate
+(5%) holds, and the payload also beats the 20M pointer codec's `1.488`. A
+CPU preprocessor plus a 4.86M byte model beats a 20M neural codec on
+payload: copy is the lever, not capacity. Two defects gave the earlier
+losses (copied bytes coded as literals; a rolling position table out of
+distribution at 6.94 bpb) and the fix is what pays. The cost is 2,431 s
+for one encode pass, so the product path needs a faster literal step
+(batched windows or a smaller trunk), not a bigger window. This is
+orthogonal to the concept track's negative Cortex result.
+
 ## 2. Progress map
 
 | area | current | next | gate |
 |---|---|---|---|
-| **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
+| **Compression** | 1.393 copy + 4.86M byte; 1.488 / 1.518 at 20M | faster copy literals | 20/30/50% |
 | **Concepts** | typed holes, exact realize; at `seq 256` the edge gap saturates at +0.008 | argument dependence, where bytes cannot infer the type | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
@@ -441,6 +461,7 @@ uv run cml composition --pairs 1000 --depth 3 --seed 0
 uv run cml cortex --pairs 30000 --depth 4 --steps 3000
 uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
 uv run cml cortex --depths 6,7 --seq 256 --tag seq256
+uv run cml copycodec --run codec-byte-model-code-756752 --bytes 756752
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
@@ -486,7 +507,9 @@ Two tracks share one baseline; keep both.
 
 **Compression track.**
 6. **Done.** Stage 0: coverage, copy, per-file.
-7. **Skip Stage 1**; run the Stage 3 copy proxy on the frozen 20M model.
+7. **Done.** The copy arm on a 4.86M byte model saves 17.7% (1.393) and
+   beats the 20M pointer codec's 1.488 payload. Next: make the literal step
+   fast (batched windows or a smaller trunk) and rerun the full round-trip.
 8. Run the RLFP span pilot in parallel (CPU, 2 minutes).
 9. Add the 20M byte control manifest before any 20% claim.
 10. Decide: 20% claim, 50% program, or park compression.

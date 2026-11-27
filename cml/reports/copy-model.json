@@ -1,0 +1,21 @@
+{
+ "id": "copycodec-code-2048",
+ "run": "codec-byte-model-code-756752",
+ "corpus": "code",
+ "split": "test",
+ "n": 2048,
+ "window": 65536,
+ "min_match": 8,
+ "cap": 64,
+ "payload_bytes": 422,
+ "payload_bpb": 1.6484375,
+ "stream_bytes": 422,
+ "stream_bpb": 1.6484375,
+ "recorded_bpb": 1.6932046430006131,
+ "recorded_n": 756752,
+ "saving": 0.0,
+ "roundtrip": true,
+ "corpus_sha": "1ccd9ffc7f68052ed14e4a2c26bde6dc050a98cb0e5c3c89d4c56c3c800ceab2",
+ "git": "7a7078d1e17ee54672ae83739d3ffe53c1c7390a",
+ "seconds": 27.1
+}
