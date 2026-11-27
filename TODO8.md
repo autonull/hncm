@@ -562,6 +562,7 @@ uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --d 448 --layers 8 --scale-cap 48000000
 uv run cml perfile-model --run codec-byte-model-code-756752-d448-l8
 uv run cml compress NOTES.md && uv run cml decompress NOTES.md.cmlc
+uv run pytest cml/tests
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
 ```
 
@@ -583,6 +584,14 @@ exact codec round-trip. No coverage target.
   alignment. Label it correctly.
 - **Host OOM.** Checkpoint; cap memory; one task; no timer that kills.
 - **Portfolio sprawl.** Enforce 3-5 arms per stage and a 2 h cap.
+- **Instrument vs codec.** `FastByteCodec`/`FastCopyCodec`/`RepFastCodec`
+  are size instruments: their arithmetic rounding diverges from the exact
+  decoder, and on the copy arm the exact codec is 11% worse than the
+  instrument (1.393 vs 1.245). A number from an instrument is a target,
+  not a claim until a decoder reproduces it.
+- **Product scope.** The shipped codec is `StaticByteCodec` only; the
+  priced parse (`0.852`) is not yet decodable, so the product documented in
+  `products/codec/` states `1.266` and marks the frontier as research.
 
 ## 14. Next actions
 
@@ -603,15 +612,25 @@ Two tracks share one baseline; keep both.
 5. Only then scale the Cortex and compare against a matched byte
    Transformer at 5M and 20M params.
 
-**Compression track.**
-6. **Done.** Stage 0: coverage, copy, per-file.
-7. **Done.** The copy arm on a 4.86M byte model saves 17.7% (1.393) and
-   beats the 20M pointer codec's 1.488 payload. Next: make the literal step
-   fast (batched windows or a smaller trunk) and rerun the full round-trip.
-8. Run the RLFP span pilot in parallel (CPU, 2 minutes).
-9. Add the 20M byte control manifest before any 20% claim.
-10. Decide: 20% claim, 50% program, or park compression.
-11. Product pack: adaptive or delta, never a bigger static pack (G5).
+**Compression track (the live product).**
+6. **Done.** Stage 0, the fast encoder (290x), the 20M byte control
+   (`1.266`, G1), the per-file charge (G5 fails), the copy arm and the
+   priced parse (`0.852` instrument; 20% and 30% met).
+7. **Shipped.** `products/codec`: `cml compress` / `cml decompress`, exact
+   round-trip, `.cmlc` container, SHA-256, 1.266 bpb = 6.3x.
+8. **Next: exact priced parse.** A slow encode/decode pair with
+   `priced_parse`: encode 32 KB, decode it, compare with the instrument's
+   `0.852`. If it round-trips, it becomes the product codec; cost about 20
+   minutes for 32 KB, so prove on a slice first.
+9. **Then the 40% point (0.759).** Levers, in order: a longer price horizon
+   (DP lookahead), window/cap up (2 MB, 512), a second literal pass, or a
+   24-30M trunk. One at a time, instrument only, and only promote what
+   survives at 40%.
+10. **Per-file with the priced parse** and the install-once charge; then
+    decide 40/50% or park.
+11. RLFP span pilot (CPU, 2 minutes); it is still the only untested
+    capability lever. The concept track parks except for argument dependence
+    if the priced parse plateaus.
 
 ## References
 
@@ -620,4 +639,5 @@ Two tracks share one baseline; keep both.
 - `cml/PLAN.md`: design and charge arithmetic.
 - `reports/SCALE.md`, `reports/PORTFOLIO.md`, `reports/CONCEPT.md`,
   `reports/EDIT-CURVE.md`.
-- `cml/cml.py`, `cml/pointer.py`, `cml/codec.py`.
+- `cml/cml.py`, `cml/pointer.py`, `cml/codec.py`, `cml/bytecodec.py`.
+- `products/README.md`, `products/codec/README.md`.

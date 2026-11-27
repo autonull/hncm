@@ -1,27 +1,13 @@
-# hncm — a codec, not just a plan
+# hncm — products and research
 
-## Product: `cml compress` / `cml decompress`
+## Products
 
-A self-contained byte codec for code and text: a 20M byte trunk trained on
-48 MB of code, a self-describing `.cmlc` container, exact round-trip, and a
-SHA-256 digest check on decompress.
+| product | what | status |
+|---|---|---|
+| [`products/codec`](products/codec/README.md) | a lossless byte codec for code: `cml compress` / `cml decompress` | exact **1.266 bpb (6.3x)**; priced-parse frontier **0.852** |
 
-```bash
-uv run cml codec --arm byte-model --d 448 --layers 8 --steps 8000 \
-  --scale-cap 48000000 --bytes 756752          # trains and caches the model
-uv run cml compress NOTES.md                    # -> NOTES.md.cmlc
-uv run cml decompress NOTES.md.cmlc              # -> NOTES.md, digest checked
-```
-
-| input | payload | ratio | notes |
-|---|---:|---:|---|
-| 756,752 B code test | 1.266 bpb | **6.3x** | exact codec, 48 MB train |
-| 756,752 B + copy arm | 0.852 bpb | **9.4x** | priced parse, instrument pending exactness |
-| 100 KB file | 1.696 bpb | 5.9x | per-file, model installed once |
-
-Known limits: the header costs about 180 B, so files below ~1 KB do not pay;
-the model is 9.7 MB and is installed once, not charged per file; decode is
-sequential and slow (minutes per MB), encode is fast.
+Each product is self-contained in its own directory and uses the shared
+utilities in `cml/`. Start with [`products/README.md`](products/README.md).
 
 # H-NCM: one model, many streams
 
