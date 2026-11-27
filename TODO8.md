@@ -7,8 +7,9 @@ holes, exact realization, and a `0.230` bpb representation gain on
 unseen compositions (a pilot, not reasoning). The cortex pilot is a
 negative at this grain: the term model leads on seen (`-0.022` bpb) and
 loses the unseen edge (`+0.004`). The depth sweep shows the cortex
-winning unseen at depth 5 (`-0.011`) while its novel-edge pay falls to
-`+0.018` against `+0.005` for bytes. The 20M codec is at `1.488` payload /
+winning unseen from depth 5 (`-0.021` at depth 6) while its novel-edge
+pay falls to `+0.012` against `+0.003` for bytes; the gap is still
+positive, so bytes still pay less for a novel composition. The 20M codec is at `1.488` payload /
 `1.518` shared on the pinned 756,752 B test. The 50% target is `0.847`
 shared bpb against a 20M byte control. RLFP is untested. The next move is
 a composition task that a byte context cannot recompute, plus the Stage 3
@@ -146,22 +147,24 @@ held-out agree.
 
 ## 1.4 Cortex depth sweep: measured 2026-11-27
 
-`cml cortex --depths 3,4,5`: one matched pair per depth, 20,000 terms per
-split, 2,500 steps, batch 32, `d128 l4 h4 seq128`, 810,496 params,
-243 s on one GPU. Report: `reports/CORTEX-DEPTH.md`.
+`cml cortex --depths 3,4,5,6`: one matched pair per depth, 20,000 terms
+per split, 2,500 steps, batch 32, `d128 l4 h4 seq128`, 810,496 params,
+358 s on one GPU. Report: `reports/CORTEX-DEPTH.md`.
 
 | depth | seen delta | unseen delta | cortex edge pay | byte edge pay | gap |
 |---:|---:|---:|---:|---:|---:|
-| 3 | +0.020 | +0.050 | +0.038 | +0.014 | +0.024 |
-| 4 | -0.017 | +0.008 | +0.028 | +0.008 | +0.020 |
-| 5 | -0.027 | -0.011 | +0.018 | +0.005 | +0.013 |
+| 3 | +0.017 | +0.051 | +0.038 | +0.014 | +0.023 |
+| 4 | -0.016 | +0.011 | +0.028 | +0.008 | +0.020 |
+| 5 | -0.028 | -0.011 | +0.019 | +0.005 | +0.014 |
+| 6 | -0.032 | -0.021 | +0.012 | +0.003 | +0.009 |
 
-**Read.** The cortex wins the total rate from depth 4 and wins unseen at
-depth 5 (`-0.011`). Its novel-edge pay falls with depth (`+0.038` to
-`+0.018`) while the byte arm stays near `+0.005`; the gap closes about
-`0.006` bpb per depth. That is a direction, not evidence: extrapolation
-past the measured points is not a result. The next points are depth 6
-with `seq 256` (the term outgrows the 128 context) and argument
+**Read.** The cortex wins the total rate from depth 4 and wins unseen
+from depth 5 (`-0.021` at depth 6). Its novel-edge pay falls with depth
+(`+0.038` to `+0.012`) while the byte arm stays near `+0.003`; the gap
+closes about `0.005` bpb per depth. The runs reproduce across seeds
+(depth 3-5 moved by at most `0.003`). A linear extrapolation would reach
+zero near depth 8, but that is not evidence: depth 6 terms approach the
+128-symbol context, so the next point needs `seq 256` and argument
 dependence, where a local byte context cannot recompute the structure.
 
 ## 2. Progress map
@@ -169,7 +172,7 @@ dependence, where a local byte context cannot recompute the structure.
 | area | current | next | gate |
 |---|---|---|---|
 | **Compression** | 1.488 / 1.518 at 20M; copy -15.1% | 20M copy proxy | 20/30/50% |
-| **Concepts** | typed holes, exact realize; depth 5 cortex wins unseen, edge gap +0.013 | depth 6 at seq 256; argument dependence | P5d |
+| **Concepts** | typed holes, exact realize; depth 6 cortex wins unseen, edge gap +0.009 | seq 256 plus argument dependence | P5d |
 | **T1 capability** | 0.680 / 1.698; frontier 0.675-0.720 | hold; do not regress | T1 frontier |
 | **T3 edit** | local, -0.012 | delta codec | survivors |
 | **T4 spec** | 4.650 accepted/call | hold | no regression |
@@ -413,7 +416,7 @@ uv run cml copyprobe --window 4096 --bytes 756752
 uv run cml perfile --sizes 1024,4096,10240,102400
 uv run cml composition --pairs 1000 --depth 3 --seed 0
 uv run cml cortex --pairs 30000 --depth 4 --steps 3000
-uv run cml cortex --depths 3,4,5 --pairs 20000 --steps 2500
+uv run cml cortex --depths 3,4,5,6 --pairs 20000 --steps 2500
 uv run cml scale --sizes 20m --copy --steps 8000 --seed 0
 uv run cml codec --arm byte-model --params 20000000 --steps 8000
 uv run cml rlfp --pairs 2000 --run concept-pointer-code-p5m-s8000
@@ -448,8 +451,8 @@ Two tracks share one baseline; keep both.
 2. **Done, negative at depth 4.** The matched Cortex pilot (`§1.3`): the
    term model leads on seen, the byte arm wins the novel edge.
 3. **Done, direction only.** The depth sweep (`§1.4`): the cortex wins
-   unseen at depth 5 and the edge gap falls with depth, but the byte arm
-   still pays less for a novel composition.
+   unseen from depth 5 and the edge gap falls to `+0.009` at depth 6,
+   but the byte arm still pays less for a novel composition.
 4. Next: depth 6 at `seq 256` and an argument-dependent task, where a
    local byte context cannot recompute the structure. Rerun the matched
    pair before any Cortex claim or scale-up.

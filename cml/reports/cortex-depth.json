@@ -7,7 +7,7 @@
      "terms": 20000,
      "nodes": 168325,
      "bytes": 643332,
-     "cortex_bpb": 0.9961867313477537,
+     "cortex_bpb": 0.9933106263213213,
      "byte_bpb": 0.9759446919644328
     },
     {
@@ -15,7 +15,7 @@
      "terms": 20000,
      "nodes": 216541,
      "bytes": 833424,
-     "cortex_bpb": 1.018470289117101,
+     "cortex_bpb": 1.019201169152557,
      "byte_bpb": 0.968659255387144
     },
     {
@@ -23,7 +23,7 @@
      "terms": 20000,
      "nodes": 216541,
      "bytes": 833424,
-     "cortex_bpb": 0.9802203890205553,
+     "cortex_bpb": 0.9814545565093413,
      "byte_bpb": 0.9542168177825847
     }
    ],
@@ -41,7 +41,7 @@
    "params": 810496,
    "library_bytes": 351,
    "banned": "ADD->XOR",
-   "seconds": 78.2
+   "seconds": 73.0
   },
   {
    "rows": [
@@ -50,7 +50,7 @@
      "terms": 20000,
      "nodes": 248968,
      "bytes": 971829,
-     "cortex_bpb": 0.9641845628665685,
+     "cortex_bpb": 0.9655950477547273,
      "byte_bpb": 0.9812925305141043
     },
     {
@@ -58,7 +58,7 @@
      "terms": 20000,
      "nodes": 345225,
      "bytes": 1356326,
-     "cortex_bpb": 0.9767065808154201,
+     "cortex_bpb": 0.9800612266762718,
      "byte_bpb": 0.9686956325971906
     },
     {
@@ -66,7 +66,7 @@
      "terms": 20000,
      "nodes": 345225,
      "bytes": 1356326,
-     "cortex_bpb": 0.9488860113602006,
+     "cortex_bpb": 0.9522947840848763,
      "byte_bpb": 0.9606598879487472
     }
    ],
@@ -84,7 +84,7 @@
    "params": 810496,
    "library_bytes": 351,
    "banned": "ADD->XOR",
-   "seconds": 77.3
+   "seconds": 72.0
   },
   {
    "rows": [
@@ -93,7 +93,7 @@
      "terms": 20000,
      "nodes": 345611,
      "bytes": 1365220,
-     "cortex_bpb": 0.9624435033556092,
+     "cortex_bpb": 0.9616893994585216,
      "byte_bpb": 0.9896667268160753
     },
     {
@@ -101,7 +101,7 @@
      "terms": 20000,
      "nodes": 519678,
      "bytes": 2065149,
-     "cortex_bpb": 0.9644429400913592,
+     "cortex_bpb": 0.9648209363547977,
      "byte_bpb": 0.9758303733226296
     },
     {
@@ -109,7 +109,7 @@
      "terms": 20000,
      "nodes": 519678,
      "bytes": 2065149,
-     "cortex_bpb": 0.9463888477704876,
+     "cortex_bpb": 0.9461504089360014,
      "byte_bpb": 0.9712004527188546
     }
    ],
@@ -127,13 +127,57 @@
    "params": 810496,
    "library_bytes": 351,
    "banned": "ADD->XOR",
-   "seconds": 87.9
+   "seconds": 70.3
+  },
+  {
+   "rows": [
+    {
+     "split": "seen",
+     "terms": 20000,
+     "nodes": 457473,
+     "bytes": 1821024,
+     "cortex_bpb": 0.9656890927225684,
+     "byte_bpb": 0.9980456931563291
+    },
+    {
+     "split": "unseen",
+     "terms": 20000,
+     "nodes": 760701,
+     "bytes": 3044576,
+     "cortex_bpb": 0.963180178337157,
+     "byte_bpb": 0.984071826912207
+    },
+    {
+     "split": "twin",
+     "terms": 20000,
+     "nodes": 760701,
+     "bytes": 3044576,
+     "cortex_bpb": 0.9513689034755908,
+     "byte_bpb": 0.9809186146667127
+    }
+   ],
+   "pairs": 20000,
+   "depth": 6,
+   "steps": 2500,
+   "seq": 128,
+   "batch": 32,
+   "seed": 0,
+   "cfg": {
+    "d": 128,
+    "layers": 4,
+    "heads": 4
+   },
+   "params": 810496,
+   "library_bytes": 351,
+   "banned": "ADD->XOR",
+   "seconds": 143.1
   }
  ],
  "depths": [
   3,
   4,
-  5
+  5,
+  6
  ],
  "pairs": 20000,
  "steps": 2500,
@@ -146,6 +190,6 @@
   "heads": 4
  },
  "params": 810496,
- "seconds": 243.4,
- "git": "27954c6c803ac2e885bd2a748a1cef6a030948b3"
+ "seconds": 358.4,
+ "git": "eaaff9824e85f10fe5f8b844ee40cd64713fb598"
 }
