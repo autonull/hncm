@@ -10,6 +10,12 @@ target is `0.847` shared bpb against a 20M byte control. RLFP is
 untested. The next move is the concept Cortex with a matched byte
 Transformer, plus the Stage 3 copy proxy.
 
+**Backup.** `TODO8.compression.md` is the original compression plan,
+unchanged: the state before the concept track, including its full Stage 1
+ladder. If the concept test does not separate from a matched byte
+Transformer, resume that plan; its Stage 0 step is already answered by
+§1.1, and its Stage 3 copy proxy is answered by `reports/COPY.md`.
+
 ## 0. One claim, one target
 
 **Claim.** An exact, editable codec beats a byte LM at equal compute on
