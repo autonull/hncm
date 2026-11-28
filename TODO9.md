@@ -844,6 +844,13 @@ counts, provenance, and search as JSON. It is an audit/search and install
 artifact, not a compressor. On the `cml` source: 2,990 templates, 7,318
 fills, 844 KB pack.
 
+**Codebench (LLM capability).** On the `cml` source, a pack built from 33
+files covers 24.3% of held-out bytes and reproduces **17.6% of held-out
+lines fully exactly**; decisions are 1.69 B/decision. Hybrid bits are 1.186
+bpb vs 1.143 for the byte trunk, so the exact-memory path is at near
+parity. The next experiment is a trained exact-structural code LM, not a
+codec (T3a in `TODO11.md`).
+
 ## References
 
 - `TODO11.md`: current working plan; template products and exact memory.

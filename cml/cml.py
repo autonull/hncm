@@ -8768,6 +8768,12 @@ def main(argv: list[str] | None = None) -> int:
     tpp.add_argument("--min-count", type=int, default=3)
     tpp.add_argument("--max-n", type=int, default=6)
     tpp.add_argument("--max-bytes", type=int, default=2_000_000)
+    cb = sub.add_parser("codebench")
+    cb.add_argument("--repo", type=Path, default=Path("."))
+    cb.add_argument("--max-bytes", type=int, default=2_000_000)
+    cb.add_argument("--min-fill", type=int, default=8)
+    cb.add_argument("--min-count", type=int, default=3)
+    cb.add_argument("--max-n", type=int, default=6)
     cl = sub.add_parser("copy-lm")
     cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     cl.add_argument("--steps", type=int, default=300)
@@ -9199,6 +9205,16 @@ def main(argv: list[str] | None = None) -> int:
             a.min_count,
             a.max_n,
             a.max_bytes,
+        )
+    if a.cmd == "codebench":
+        import codebench
+
+        return codebench.run(
+            a.repo,
+            a.max_bytes,
+            a.min_fill,
+            a.min_count,
+            a.max_n,
         )
     if a.cmd == "copy-lm":
         import copylm

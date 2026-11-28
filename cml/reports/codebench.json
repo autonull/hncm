@@ -1,0 +1,19 @@
+{
+ "train_files": 33,
+ "test_files": 1,
+ "train_bytes": 711525,
+ "test_bytes": 26850,
+ "templates": 8888,
+ "table_bytes": 312136,
+ "coverage": 0.24324022346368715,
+ "exact_lines": 0.17569352708058125,
+ "literal_share": 0.7567597765363129,
+ "literal_bytes": 20319,
+ "fill_local": 0.07445065176908752,
+ "fill_pack": 0.03813780260707635,
+ "fill_literal": 0.18808193668528864,
+ "decisions_per_byte": 0.5912476722532588,
+ "bytes_per_decision": 1.6913385826771654,
+ "trunk_bpb": 1.1426392707602178,
+ "pack_bpb": 1.1864738767621037
+}

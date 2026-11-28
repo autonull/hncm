@@ -11,7 +11,8 @@ stays as the record of B1/T0-T1d/TP1. `TODO9.md` is the research record.
   FILL-COPY.md`, `LITERAL-LM.md`, `TPACK.md`, and
   `products/template-pack/README.md`.
 - Do **not** rerun T1a-T1d. Their rows are recorded.
-- First task: **P2, Template Pack MCP + diff** (CPU, ≤1 day).
+- First task: **T3a, the exact-structural code LM** (GPU, 1-2 days).
+  P2 (Template Pack MCP + diff) follows.
 
 The exact-memory products are green. The template line has a working
 exact codec and a shipped product. The open work is productization,
@@ -54,30 +55,44 @@ install transfer, and two long-standing code tasks.
 
 ## 3. Plan (ordered)
 
-1. **P2 — Template Pack MCP + diff** (CPU, 1 day).
+0. **North star — byte-level code LM with exact structural memory.** The
+   codebench on the `cml` source: 24.3% structural coverage, **17.6% fully
+   exact held-out lines**, 1.69 B/decision, hybrid 1.186 bpb vs 1.143 for
+   the byte trunk. This is the unique capability: exact repo structure at a
+   near-parity literal cost. The next step is a trained code LM, not a
+   codec.
+
+1. **T3a — exact-structural code LM** (GPU, 1-2 days).
+   - Train a 30-60M byte model with a template/fill interface and a byte
+     fallback; compare with the `-q2048` trunk on held-out files.
+   - Gate: ≤0.03 bpb regression, ≥15% fully exact held-out lines, ≥2x
+     bytes/decision, pack install ≥0.15 bpb, table ≤5% of repo bytes.
+   - Start from `cml/codebench.py` + `cml/literallm.py`; the codebench
+     numbers are the control.
+2. **P2 — Template Pack MCP + diff** (CPU, 1 day).
    - Expose each pack as `template://path` and a `template://{path}@{hash}`
      version template; add a pack list/search resource.
    - Add `cml tpack --diff a.tpack b.tpack`. Gate: exact added/removed/
      changed template sets; MCP client lists and reads resources.
    - Files: `cml/tpack.py`, `cml/mcp_server.py`, `tests/test_tpack.py`,
      `tests/test_mcp.py`. Keep the five repo tools unchanged.
-2. **T2 — install transfer** (GPU, 1 day).
+3. **T2 — install transfer** (GPU, 1 day).
    - Build a pack on repo A; parse repo B with A's templates/fills.
    - Compare literal bpb against B's own pack and empty. Gate: ≥0.15 bpb
      from installation alone; parse exact.
    - Planned CLI: `cml tpack --score --pack a.tpack --repo b`.
-3. **T1e — literal scale** (GPU, 1 day), only if T2 shows transfer.
+4. **T1e — literal scale** (GPU, 1 day), only if T2 shows transfer.
    - Mixed vs ablated at 8M/12 layers/4k steps. Gate: +0.03 bpb.
    - If two scales miss, stop the size claim and keep the pack product.
-4. **P1 — pack-doctor end to end** (3 h).
+5. **P1 — pack-doctor end to end** (3 h).
    - `cml pack fit` the shipped counted pack, then price the held-out
      test. Note: `memory-probe --oracle` uses a corpus lexicon, not the
      fitted pack; add a pack-probe path before claiming the gate.
    - Gate: positive net on the test.
-5. **RD1 — repo-delta multi-file** (1 day).
+6. **RD1 — repo-delta multi-file** (1 day).
    - `cml repo-delta --repo R --path P --before A --after B --out O`.
    - Gate: apply + verify on 100 random commit pairs.
-6. **PG1 — patch-guard breadth** (1 day).
+7. **PG1 — patch-guard breadth** (1 day).
    - `git apply` mode, binary patches, 100 random diffs.
    - Gate: exact or a clear refusal, never a silent wrong byte.
 
@@ -85,6 +100,7 @@ install transfer, and two long-standing code tasks.
 
 | id | hypothesis | command | pass signal | cost |
 |---|---|---|---|---|
+| **T3a** | exact-structural code LM | `cml codebench` + trained model | ≤0.03 bpb, ≥15% exact lines, ≥2x | 1 GPU-day |
 | **P2** | Template Pack over MCP | `cml tpack --diff` + MCP | list/read + exact diff | 1 CPU-day |
 | **T2** | pack install transfer | `cml tpack --score --pack a --repo b` | ≥0.15 bpb, exact | 1 GPU-day |
 | **T1e** | literal model scales | `cml literal-lm --steps 4000 --d 384` | +0.03 bpb vs ablated | 1 GPU-day |
@@ -122,6 +138,7 @@ product.
 ```bash
 cd cml
 uv run pytest tests
+uv run cml codebench --repo /home/me/hncm/cml --max-bytes 2000000
 uv run cml tpack --repo /home/me/hncm/cml --out /tmp/cml.tpack --search "def "
 uv run cml tpack --diff /tmp/a.tpack /tmp/b.tpack        # P2, to add
 uv run cml literal-lm --train-bytes 2000000 --test-bytes 100000 \
