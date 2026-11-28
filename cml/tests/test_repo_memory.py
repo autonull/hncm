@@ -42,7 +42,7 @@ def test_repo_index_roundtrip_and_search(tmp_path: Path, capsys) -> None:
     )
     manifest = json.loads((out / "manifest.json").read_text())
     row = manifest["files"][0]
-    header, versions = memory.decode_chain((out / row["file"]).read_bytes())
+    header, versions = memory.load_chain(out / row["file"])
     assert versions[-1] == path.read_bytes()
     assert manifest["stats"]["exact"]
 

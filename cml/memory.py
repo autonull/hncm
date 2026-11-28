@@ -140,6 +140,14 @@ def decode_chain(blob: bytes) -> tuple[dict, list[bytes]]:
     return header, versions
 
 
+def load_chain(path: Path) -> tuple[dict, list[bytes]]:
+    """Read a chain, accepting a gzip-wrapped `CMLH` container."""
+    blob = path.read_bytes()
+    if blob[:2] == b"\x1f\x8b":
+        blob = gzip.decompress(blob)
+    return decode_chain(blob)
+
+
 def write_chain(path: Path, blob: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -250,7 +258,7 @@ def run_chain(
 
 
 def run_unchain(blob_path: Path, out_dir: Path, index: int) -> int:
-    header, versions = decode_chain(blob_path.read_bytes())
+    header, versions = load_chain(blob_path)
     if index < 0:
         index = len(versions) - 1
     if not 0 <= index < len(versions):
@@ -335,8 +343,7 @@ def run_repo(
         needle = search.encode()
         hits = 0
         for row in manifest["files"]:
-            blob = (root / row["file"]).read_bytes()
-            header, versions = decode_chain(blob)
+            header, versions = load_chain(root / row["file"])
             last = versions[-1]
             at = last.find(needle)
             while at >= 0 and hits < 50:
@@ -370,22 +377,26 @@ def run_repo(
         raw = sum(len(v) for v in versions)
         gz = sum(len(gzip.compress(v, 9)) for v in versions)
         name = _safe_name(path)
-        write_chain(out / name, blob)
+        stored = gzip.compress(blob, 9)
+        compressed = len(stored) < len(blob)
+        data = stored if compressed else blob
+        write_chain(out / name, data)
         row = {
             "path": path,
             "file": name,
             "versions": len(versions),
             "raw_bytes": raw,
-            "chain_bytes": len(blob),
+            "chain_bytes": len(data),
+            "compressed": compressed,
             "gzip_bytes": gz,
-            "ratio": raw / max(len(blob), 1),
+            "ratio": raw / max(len(data), 1),
             "gzip_ratio": raw / max(gz, 1),
             "head": shas[-1],
         }
         rows.append(row)
         print(
             f"  {path}: {len(versions)} v, {raw:,} B -> "
-            f"{len(blob):,} B ({row['ratio']:.1f}x)",
+            f"{len(data):,} B ({row['ratio']:.1f}x)",
             flush=True,
         )
     secs = time.perf_counter() - t0

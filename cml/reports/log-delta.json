@@ -1,0 +1,49 @@
+{
+ "stats": {
+  "logs": [
+   "run0.log",
+   "run1.log",
+   "run2.log",
+   "run3.log",
+   "run4.log"
+  ],
+  "versions": 5,
+  "raw_bytes": 504465,
+  "chain_bytes": 18445,
+  "compressed": true,
+  "gzip_bytes": 32827,
+  "ratio": 27.349688262401735,
+  "gzip_ratio": 15.36738050994608,
+  "vs_gzip": 1.7797235023041476,
+  "exact": true,
+  "seconds": 0.7
+ },
+ "header": {
+  "path": "logs",
+  "commits": [
+   "run0.log",
+   "run1.log",
+   "run2.log",
+   "run3.log",
+   "run4.log"
+  ],
+  "sizes": [
+   100895,
+   100890,
+   100895,
+   100890,
+   100895
+  ],
+  "shas": [
+   "a0f95241454ba9e0821bb20f0ea79eca27cf436d44fa3dc5edea811cda889e52",
+   "47cfc7a403f1535f1e5d3aa73dbd479ea8e93c09f370e48ae684262c471291c5",
+   "9be0b39507cd6ca1f48a24d63c74f9daae9f4646030d46bc81a3ae5fd2dcb67e",
+   "1189ebf5356863f72bdd41b976683a7eb172766939b251a3c10c8ed0296bac77",
+   "958a8c7da6d9ec0662425e2ab982e876aeafd37e33d52cbbe940a685794df14e"
+  ],
+  "window": 1048576,
+  "min_match": 8,
+  "cap": 256,
+  "depth": 16
+ }
+}

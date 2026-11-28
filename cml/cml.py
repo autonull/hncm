@@ -8727,6 +8727,14 @@ def main(argv: list[str] | None = None) -> int:
     mp.add_argument("--scale-cap", type=int, default=48_000_000)
     mp.add_argument("--copy-bpb", type=float, default=0.852)
     mp.add_argument("--tag", default="")
+    cl = sub.add_parser("copy-lm")
+    cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
+    cl.add_argument("--steps", type=int, default=300)
+    cl.add_argument("--window", type=int, default=2048)
+    cl.add_argument("--train-bytes", type=int, default=1_000_000)
+    cl.add_argument("--eval-bytes", type=int, default=50_000)
+    cl.add_argument("--windows", type=int, default=80)
+    cl.add_argument("--seed", type=int, default=0)
     mg = sub.add_parser("memory-gate")
     mg.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     mg.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -8937,6 +8945,32 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("run")
     r.add_argument("--prefix", required=True)
     r.add_argument("--bytes", type=int, default=70000)
+    f = pks.add_parser("fit")
+    f.add_argument("pack", type=Path)
+    f.add_argument("--out", type=Path, default=Path("pack-fit.bin"))
+    f.add_argument("--report", type=Path, default=REPORTS / "PACK-FIT.md")
+    f.add_argument("--bpb", type=float, default=0.974)
+    f.add_argument("--id-bits", type=float, default=9.0)
+    f.add_argument("--units", type=int, default=1024)
+    f.add_argument("--min-len", type=int, default=8)
+    pt = sub.add_parser("patch")
+    pt.add_argument("--base", type=Path, required=True)
+    pt.add_argument("--diff", type=Path, required=True)
+    pt.add_argument("--expect", type=Path)
+    pt.add_argument("--strip", type=int, default=0)
+    lg = sub.add_parser("logdelta")
+    lg.add_argument("--dir", type=Path, required=True)
+    lg.add_argument("--out", type=Path, default=RUNS / "logs.cmlh")
+    lg.add_argument("--report", type=Path, default=REPORTS / "LOG-DELTA.md")
+    lg.add_argument("--json", type=Path, default=REPORTS / "log-delta.json")
+    rd = sub.add_parser("repo-delta")
+    rd.add_argument("--repo", type=Path, required=True)
+    rd.add_argument("--path", required=True)
+    rd.add_argument("--before", required=True)
+    rd.add_argument("--after", required=True)
+    rd.add_argument("--out", type=Path, required=True)
+    ms = sub.add_parser("mcp")
+    ms.add_argument("--index", type=Path, required=True)
     a = p.parse_args(argv)
     if a.cmd == "selftest":
         return selftest()
@@ -9056,6 +9090,18 @@ def main(argv: list[str] | None = None) -> int:
             a.scale_cap,
             a.fit_bytes,
             a.samples,
+            a.seed,
+        )
+    if a.cmd == "copy-lm":
+        import copylm
+
+        return copylm.run(
+            a.run,
+            a.steps,
+            a.window,
+            a.train_bytes,
+            a.eval_bytes,
+            a.windows,
             a.seed,
         )
     if a.cmd == "portfolio":
@@ -9287,7 +9333,29 @@ def main(argv: list[str] | None = None) -> int:
             return pack_diff(a.a, a.b)
         if a.op == "merge":
             return pack_merge(a.out, a.a, a.b, a.size)
+        if a.op == "fit":
+            import packdoctor
+
+            return packdoctor.run_fit(
+                a.pack, a.out, a.report, a.bpb, a.id_bits, a.units, a.min_len
+            )
         return pack_rm(a.run, a.prefix.encode(), a.bytes)
+    if a.cmd == "patch":
+        import tools
+
+        return tools.run_patch(a.base, a.diff, a.expect, a.strip)
+    if a.cmd == "logdelta":
+        import tools
+
+        return tools.run_logdelta(a.dir, a.out, a.report, a.json)
+    if a.cmd == "repo-delta":
+        import tools
+
+        return tools.run_repo_delta(a.repo, a.path, a.before, a.after, a.out)
+    if a.cmd == "mcp":
+        import mcp_server
+
+        return mcp_server.run(a.index)
     p.print_help()
     return 1
 

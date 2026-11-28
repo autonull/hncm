@@ -16,7 +16,10 @@ are applications of the memory, not the claim.
 | C1 copy-SFT | **paused after GC1 fail** | `cml/reports/EDIT-COPY.md` |
 | delta product | **shipped** | `products/delta/README.md`; **56.6x** hunk edits, exact |
 | memory product | **shipped** | `products/memory/README.md`; **40.0x** over 1,823 versions, exact |
-| repo-memory product | **shipped** | `products/repo-memory/README.md`; **12.5x** on 80 files, exact `path:line` search |
+| repo-memory product | **shipped** | `products/repo-memory/README.md`; **20.7x** on 80 files, exact `path:line` search |
+| agent memory | **shipped** | `products/memory-mcp/README.md`; 5 exact MCP tools |
+| exact tools | **shipped** | patch-guard, repo-delta (85.8x), log-delta (27.3x) |
+| ByteCopy LM | **prototype** | `products/copy-lm/README.md`; exact copies, joint gate next |
 
 **Banked products.** `cml delta` is exact at `56.6x` on 2% hunk edits and
 `27.8x` scattered. `cml chain` is exact at `40.0x` over five real files
@@ -713,17 +716,17 @@ on a failed A1.
 Ranked by user value per CPU-day. Each is exact, CPU-only, and reuses
 the substrate. None depends on a new model or a bpb win.
 
-| product | what it solves | first command | cost |
+| product | what it solves | command | state |
 |---|---|---|---|
-| **repo-memory** | exact installable repo history + search | `cml repo` | **shipped** |
-| **patch-guard** | apply a diff and refuse non-exact bytes | `cml patch --verify` | 1 day |
-| **memory-mcp** | expose the repo index to an agent (search, read version, diff) | `cml repo serve` | 2 days |
-| **repo-delta** | exact patch between any two commits, not full history | `cml repo delta <a> <b>` | 1 day |
-| **log-delta** | exact CI logs: delta each run against the previous | `cml logdelta` | 1 day |
-| **span-index** | per-file phrasebook; amortize ids over one file | `cml span-index` | 2 days |
-| **pack-doctor** | rank spans by net bits at the measured base bpb, not 8 bpb | `cml pack fit` | 1 day |
-| **exact-priced-codec** | full-length 0.852 proof; promote only on exact decode | `cml copycodec --proof 756752` | 3 h |
-| **concept-cards** | typed holes with exact realization for new code | `cml concepts` | 1 week |
+| **repo-memory** | exact installable repo history + search | `cml repo` | **shipped**, 20.7x |
+| **patch-guard** | apply a diff and refuse non-exact bytes | `cml patch` | **shipped** |
+| **memory-mcp** | expose the repo index to an agent | `cml mcp` | **shipped**, 5 tools |
+| **repo-delta** | exact patch between two commits | `cml repo-delta` | **shipped**, 85.8x example |
+| **log-delta** | exact CI logs, delta each run | `cml logdelta` | **shipped**, 27.3x |
+| **pack-doctor** | rank spans by net bits at the measured bpb | `cml pack fit` | **shipped** |
+| **span-index** | per-file phrasebook; amortize ids locally | `cml span-index` | next; 2 days |
+| **exact-priced-codec** | full-length 0.852 proof, promote on exact decode | `cml copycodec --proof 756752` | next; 3 h |
+| **concept-cards** | typed holes with exact realization | `cml concepts` | next; 1 week |
 
 The defect the A0.2 run exposed is the guide: a flat span pack scores
 spans by bytes saved at 8 bpb, but the base is ~1 bpb and a copy also
@@ -732,6 +735,27 @@ pays an id. At 1 bpb a 3-byte span saves ~3 bits and a 9-bit id loses
 and `pack-doctor` (net-bit ranking) attack that directly; `repo-memory`
 sidesteps it by giving the model exact context instead of asking it to
 code spans.
+
+## 15. Model invention: ByteCopy LM
+
+A genuine model-side invention, not a bitstream patch: a byte-level trunk
+with a **copy head** (pointer over the context), a **run head** (span
+length), and a **gate**. Copied spans are exact and update the cache in a
+chunked forward; novel bytes go through the byte head. No tokenizer, no
+flat span id, no pack charge. Training is self-supervised: the label is the
+longest prior match in the context (min 8 B, cap 64 B).
+
+The prototype (`cml/copylm.py`, `cml/reports/COPY-LM.md`) trains a 403k
+frozen copy head on 2 MB of code. Exact copies work; the gate is not
+calibrated on frozen last states: 52.6% copy precision at gate 0.9, 0.96x
+bytes/step. Next experiment (one GPU job): train the head **jointly with
+the last block**, add a relative-position bias and a top-2 pointer margin,
+and require a digest before a copy. Target >90% precision at ≥5% coverage;
+at mean length 10 that is >1.2x bytes/step with exact copied bytes.
+
+The product path is `memory-mcp`: the model queries an exact repo index and
+conditions on the bytes. ByteCopy LM is the trained-model path; the MCP
+server is the installable-memory path.
 
 ## References
 

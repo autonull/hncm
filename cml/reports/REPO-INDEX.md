@@ -1,33 +1,33 @@
 # Repo memory: exact history index
 
 - repo `/home/me/.cache/hncm/edit/repos/tiangolo__fastapi.git`; 80 files, 9,839,584 B raw
-- chain **787,482 B = 12.5x**; gzip 3,413,837 B (2.9x); the chain is **4.3x better than gzip**
-- every file decoded and every SHA-256 checked; 46.8 s on CPU
+- chain **476,080 B = 20.7x**; gzip 3,413,837 B (2.9x); the chain is **7.2x better than gzip**
+- every file decoded and every SHA-256 checked; 34.3 s on CPU
 
 ## Largest files
 
 | path | versions | raw B | chain B | ratio |
 |---|---:|---:|---:|---:|
-| `README.md` | 195 | 4,077,812 | 90,008 | 45.3x |
-| `.github/workflows/test.yml` | 112 | 654,264 | 28,861 | 22.7x |
-| `docs/de/docs/deployment/docker.md` | 12 | 429,784 | 49,634 | 8.7x |
-| `docs/de/docs/alternatives.md` | 11 | 300,262 | 33,644 | 8.9x |
-| `.github/workflows/build-docs.yml` | 86 | 280,780 | 18,397 | 15.3x |
-| `docs/de/docs/async.md` | 9 | 249,225 | 32,194 | 7.7x |
-| `docs/de/docs/advanced/behind-a-proxy.md` | 13 | 213,694 | 20,252 | 10.6x |
-| `docs/de/docs/advanced/settings.md` | 14 | 212,039 | 24,026 | 8.8x |
-| `docs/de/docs/advanced/security/oauth2-scopes.md` | 11 | 203,498 | 28,300 | 7.2x |
-| `docs/de/docs/advanced/generate-clients.md` | 17 | 197,547 | 18,699 | 10.6x |
-| `docs/de/docs/deployment/concepts.md` | 8 | 172,418 | 24,744 | 7.0x |
-| `docs/de/docs/advanced/custom-response.md` | 11 | 151,145 | 19,072 | 7.9x |
-| `.github/workflows/deploy-docs.yml` | 51 | 134,655 | 11,823 | 11.4x |
-| `docs/de/docs/advanced/events.md` | 14 | 133,687 | 13,129 | 10.2x |
-| `.github/workflows/translate.yml` | 31 | 130,416 | 9,724 | 13.4x |
-| `docs/de/docs/advanced/additional-responses.md` | 13 | 130,222 | 13,527 | 9.6x |
-| `docs/de/docs/advanced/advanced-dependencies.md` | 15 | 123,447 | 12,378 | 10.0x |
-| `docs/de/docs/deployment/https.md` | 8 | 121,032 | 17,388 | 7.0x |
-| `docs/de/docs/_llm-test.md` | 9 | 114,835 | 15,312 | 7.5x |
-| `docs/de/docs/advanced/path-operation-advanced-configuration.md` | 13 | 112,545 | 12,503 | 9.0x |
+| `README.md` | 195 | 4,077,812 | 74,803 | 54.5x |
+| `.github/workflows/test.yml` | 112 | 654,264 | 23,594 | 27.7x |
+| `docs/de/docs/deployment/docker.md` | 12 | 429,784 | 23,093 | 18.6x |
+| `docs/de/docs/alternatives.md` | 11 | 300,262 | 16,116 | 18.6x |
+| `.github/workflows/build-docs.yml` | 86 | 280,780 | 14,118 | 19.9x |
+| `docs/de/docs/async.md` | 9 | 249,225 | 14,880 | 16.7x |
+| `docs/de/docs/advanced/behind-a-proxy.md` | 13 | 213,694 | 11,583 | 18.4x |
+| `docs/de/docs/advanced/settings.md` | 14 | 212,039 | 11,750 | 18.0x |
+| `docs/de/docs/advanced/security/oauth2-scopes.md` | 11 | 203,498 | 11,038 | 18.4x |
+| `docs/de/docs/advanced/generate-clients.md` | 17 | 197,547 | 10,659 | 18.5x |
+| `docs/de/docs/deployment/concepts.md` | 8 | 172,418 | 11,478 | 15.0x |
+| `docs/de/docs/advanced/custom-response.md` | 11 | 151,145 | 9,976 | 15.2x |
+| `.github/workflows/deploy-docs.yml` | 51 | 134,655 | 8,823 | 15.3x |
+| `docs/de/docs/advanced/events.md` | 14 | 133,687 | 7,197 | 18.6x |
+| `.github/workflows/translate.yml` | 31 | 130,416 | 7,174 | 18.2x |
+| `docs/de/docs/advanced/additional-responses.md` | 13 | 130,222 | 6,322 | 20.6x |
+| `docs/de/docs/advanced/advanced-dependencies.md` | 15 | 123,447 | 9,255 | 13.3x |
+| `docs/de/docs/deployment/https.md` | 8 | 121,032 | 8,869 | 13.6x |
+| `docs/de/docs/_llm-test.md` | 9 | 114,835 | 7,442 | 15.4x |
+| `docs/de/docs/advanced/path-operation-advanced-configuration.md` | 13 | 112,545 | 6,681 | 16.8x |
 
 ## Use
 

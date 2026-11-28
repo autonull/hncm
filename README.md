@@ -7,7 +7,13 @@
 | [`products/codec`](products/codec/README.md) | a lossless byte codec for code: `cml compress` / `cml decompress` | exact **1.266 bpb (6.3x)**; priced-parse frontier **0.852** |
 | [`products/delta`](products/delta/README.md) | exact version compression from an old file: `cml delta` / `cml undelta` | exact **56.6x** on hunk edits, **27.8x** scattered; CPU-only |
 | [`products/memory`](products/memory/README.md) | exact history compression: `cml chain` / `cml unchain` | exact **40.0x** over 1,823 real versions; **6.5x better than gzip** |
-| [`products/repo-memory`](products/repo-memory/README.md) | exact searchable repo index: `cml repo` | exact **12.5x** on 80 files; `path:line` search |
+| [`products/repo-memory`](products/repo-memory/README.md) | exact searchable repo index: `cml repo` | exact **20.7x** on 80 files; `path:line` search |
+| [`products/memory-mcp`](products/memory-mcp/README.md) | MCP server for the repo index | 5 exact tools: files, search, read, versions, diff |
+| [`products/patch-guard`](products/patch-guard/README.md) | apply a diff only if byte-exact | exit 0 on exact, hard error otherwise |
+| [`products/repo-delta`](products/repo-delta/README.md) | exact delta between two commits | **85.8x** on `README.md`, verified |
+| [`products/log-delta`](products/log-delta/README.md) | exact CI log history | **27.3x**, 1.8x better than gzip |
+| [`products/pack-doctor`](products/pack-doctor/README.md) | rank spans by net bits at the measured bpb | 1,024 → 498 paying spans |
+| [`products/copy-lm`](products/copy-lm/README.md) | byte LM with an exact copy head | research prototype; next: joint gate training |
 
 Each product is self-contained in its own directory and uses the shared
 utilities in `cml/`. Start with [`products/README.md`](products/README.md).

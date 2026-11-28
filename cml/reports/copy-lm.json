@@ -1,0 +1,42 @@
+{
+ "run": "codec-byte-model-code-756752-d448-l8-q2048",
+ "config": {
+  "steps": 5000,
+  "batch": 128,
+  "lr": 0.001,
+  "window": 2048,
+  "min_len": 8,
+  "cap": 64,
+  "depth": 8,
+  "train_bytes": 2000000,
+  "eval_bytes": 100000,
+  "windows": 200,
+  "seed": 0
+ },
+ "rows": [
+  {
+   "threshold": 0.5,
+   "coverage": 0.21028645833333334,
+   "precision": 0.09099552769658767,
+   "copies": 2416,
+   "speedup": 0.3225620160126001
+  },
+  {
+   "threshold": 0.7,
+   "coverage": 0.15201822916666666,
+   "precision": 0.18058778035576178,
+   "copies": 1719,
+   "speedup": 0.5919645437903459
+  },
+  {
+   "threshold": 0.9,
+   "coverage": 0.042154947916666664,
+   "precision": 0.5108481262327417,
+   "copies": 472,
+   "speedup": 0.9616528408201597
+  }
+ ],
+ "train_copy_rate": 0.39508056640625,
+ "seconds": 49.5,
+ "git": "4dbfa1d805f7a20fce10d0a858de1c2d6c4f6d42"
+}
