@@ -82,23 +82,52 @@ line.
 
 ## Track A: memory-augmented LM
 
-A0 is the decisive, inference-only probe. It reuses the codecs, the trunk,
-and the corpus; no new base training.
+A0-P and A0.0 are inference-only and reuse the codecs, the trunk, and the
+corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 
 | id | experiment | cost | gate |
 |---|---|---|---|
-| **A0** | freeze the 20M byte trunk; induce a 4k-64k exact-span pack; tied embeddings from the trunk's last-state readout; fit a 3-parameter gate; provenance tags | 3-5 days, inference only | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
+| **A0** | on the 2K base: induce a 4k-64k exact-span pack; tied embeddings from the last-state readout; fit a 3-parameter gate; provenance tags (256 B oracle is A0.0) | 2 days, after A0.0/A0.1 | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
 | **A0b** | shuffle control: permute concept ids, keep embeddings | hours | must cost ≥ 0.2 bpb, or identity is decorative and the claim narrows to patches |
 | **A1** | equal-charged-bytes: pack vs kNN vs LoRA at 64k/256k/1MB | 1 week | pack wins ≥ 2 of 3 structured domains; prose may go to LoRA |
 | **A2** | train the head: mixture NLL + charge on DP parses | 1-2 weeks | tied embeddings beat counts on held-out spans; ≥ 20% acceptance per pack byte |
 | **A3** | two-clock / CoLib: concept tokens, holes, planning | 1 GPU-month | G0 parity, G2 shuffle, G4 composition ≥ +10 points |
+
+### Efficiency audit: three fixes
+
+1. **Base context.** The frozen 20M trunk has `seq = 256` (run
+   `codec-byte-model-code-756752-d448-l8`). It cannot condition on a
+   4k-64k pack. A0 must first measure an oracle inside 256 B, or train a
+   2K-context 20M trunk (1-2 GPU-h) before any gate. Do not call the 256 B
+   trunk a long-context base.
+2. **Metric.** bpb alone duplicates the LZ copy arm (`0.852`) and the 40x
+   chain. The unique claim is install, exact delete, and provenance at equal
+   quality. Gate on bits-to-adapt and exact deletion first; bpb is a safety
+   check.
+3. **Time to signal.** Split A0: a 2-hour oracle, a 1-2 hour base, then
+   1-day probes. No 3-5 day run before the oracle.
+
+| id | probe | cost | stop rule |
+|---|---|---|---|
+| **A0-P** | pack ops on the exact chain: attach/detach/rm/diff plus provenance; exact delete | 1-2 CPU-days | cannot delete exactly → no product |
+| **A0.0** | oracle copy inside 256 B: free pack IDs, charged pack bytes; compare to the LZ copy arm | 2 h CPU | oracle ≥ copy arm → defer the LM claim |
+| **A0.1** | 2K-context 20M trunk on code, only if A0.0 passes | 1-2 GPU-h | quality/context fails → stop |
+| **A0.2** | tied span embeddings + 3-parameter gate on the 2K base | 1 day | no signal over counts → stop |
+| **A0.3** | provenance, copy acceptance, structured decode on the 2K base | 1 day | gates in the A0 table |
+
+A0-P is the efficient first win: it needs no base and no training.
+Concretely: `cml chain attach/detach/diff/rm --index`, rebuild the chain
+after a delete, verify every remaining version, and record the new ratio
+and the removed provenance. A0.0 decides whether the LM integration is
+worth a base. Do not train A0.1 until A0.0 passes.
 
 **Decision rule.** If A0 or A0b fails, record the negative, ship the codecs,
 and do not claim an architecture. If A0 passes, A1 decides whether the
 memory beats LoRA/kNN at equal bytes. If A1 passes, Track A becomes the
 main research line and E1/C1 become copy-path applications.
 
-**Budget.** A0 is inference-only on the existing trunk. A1 is one week.
+**Budget.** A0-P/A0.0 are inference-only; A0.1 is a 1-2 GPU-hour base
+extension. A1 is one week.
 A2/A3 need a separate 1 GPU-month; the current 8 GPU-hour budget does not
 cover them. Do not start A2 before A0 and A1 pass.
 
@@ -334,7 +363,10 @@ not covered here; start it only after A0 and A1 pass.
 | bucket | budget | rule |
 |---|---:|---|
 | product track (delta, memory, logs, verifier) | 4 CPU-days | bank first; no GPU |
-| **A0/A0b concept-pack probe** | 3-5 days, inference | decisive architecture test; no new base training |
+| **A0-P pack ops** | 1-2 CPU-days | exact delete/provenance; no base |
+| **A0.0 oracle copy** | 2 h CPU | free IDs inside 256 B; compare to LZ |
+| **A0.1 2K base** | 1-2 GPU-h | only if A0.0 passes |
+| **A0.2/A0.3 gate + provenance** | 2 days | only on the 2K base |
 | **A1 equal-charged-bytes** | 1 week | pack vs kNN vs LoRA |
 | exact priced codec proof | 2-3 h | one batch; promote only if exact |
 | E1 controls | 45 min GPU | ≤ 15 min each |
@@ -347,7 +379,7 @@ not covered here; start it only after A0 and A1 pass.
 Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before a control
 passes. Do not run 40M. If a hypothesis has no signal on 50 files, stop it
 and preserve the budget for the next hypothesis. Track A uses the 20M trunk
-that already exists; do not train a new base for A0.
+for A0-P/A0.0; A0.1 is the only base extension.
 
 ## 10. Product track: bank exact wins first
 
@@ -378,7 +410,9 @@ capability gate passing on held-out data. Anything else is a diagnostic.
 | next | repo-wide memory | ≥ 20x exact, ≥ 3x gzip | planned |
 | next | exact priced codec | 9.4x exact | proof pending |
 | next | CI log codec | ≥ 10x near-identical | planned |
-| research | **A0 concept pack** | code/JSON ≥ 0.1 bpb, ≥ 1.5x | **next probe** |
+| next | **A0-P exact pack ops** | attach/detach/rm + exact delete | 1-2 CPU-days |
+| research | **A0.0 oracle pack** | ≥ LZ copy arm at 256 B | 2 h |
+| research | **A0 concept pack** | code/JSON ≥ 0.1 bpb, ≥ 1.5x | after 2K base |
 | research | E1b locator | byte F1 ≥ 0.20 | control first |
 | research | C1b copy-LM | exact ≥ 0.05 on 50 | control first |
 
@@ -417,18 +451,22 @@ Phase D stays gated.
 **Execution order by expected value.**
 
 1. A1 repo-wide memory: the 40x win becomes a repo-level product claim.
-2. **A0 concept-pack probe + A0b shuffle control** (3-5 days, inference):
-   the decisive test of the memory-as-adapter ambition. If it fails, the
-   architecture claim stops here and the codecs ship.
-3. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
+2. **A0-P pack ops** (1-2 CPU-days): attach/detach/rm/diff plus exact
+   deletion on the chain. No base, no training, a unique memory product.
+3. **A0.0 oracle copy** (2 h CPU): free pack IDs inside 256 B, charged
+   pack bytes, compared to the LZ copy arm. This is the cheapest test of
+   whether the LM integration is worth a base.
+4. **A0.1 2K base** (1-2 GPU-h): only if A0.0 passes. The current trunk
+   is `seq=256` and cannot read a 4k-64k pack.
+5. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
    next model run is a bug fix or a new hypothesis.
-4. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
-5. **A1 equal-charged-bytes** (1 week) only if A0/A0b pass: pack vs kNN
-   vs LoRA at equal bytes. This is the architecture's product test.
-6. B controls E1-R2, C1-R1, C1-R2.
-7. C models E1b/E1c and C1b/C1c, one at a time.
-8. A3/A4 CI logs and patch verifier in leftover CPU time; A2/A3
-   (train head, two-clock) need the separate GPU-month.
+6. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
+7. **A0.2/A0.3 + A1 equal-charged-bytes** (2 days + 1 week) only if
+   A0.1 passes: tied embeddings, gate, provenance, pack vs kNN vs LoRA.
+8. B controls E1-R2, C1-R1, C1-R2.
+9. C models E1b/E1c and C1b/C1c, one at a time.
+10. A3/A4 CI logs and patch verifier in leftover CPU time; A2/A3
+    (train head, two-clock) need the separate GPU-month.
 
 ### Phase A0: architecture probe (the r-series bet)
 
@@ -449,7 +487,8 @@ Gates, in order:
 
 Kill rule: if A0 or A0b fails, record the negative, ship the codecs, and
 do not claim an architecture. If it passes, A1 compares the pack against
-kNN and LoRA at equal charged bytes. Do not train a new base for A0.
+kNN and LoRA at equal charged bytes. Do not train a new base for A0-P/A0.0;
+A0.1 is the only allowed extension.
 
 ### Phase A: bank exact wins
 
