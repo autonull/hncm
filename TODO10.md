@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`76 passed`. The bytes for the repo index are stored gzip-wrapped when
+`79 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -141,6 +141,16 @@ round-trip, <=0.03 bpb regression vs the byte trunk, >=+10 points exact
 fill accuracy on held-out combinations, >=2x bytes/decision. T2: install
 a repo-A library on repo B, empty-library control, >=0.15 bpb.
 
+**T1 pilot (500 steps, `cml event-lm`).** Template event model reaches
+**4.8% new-combination accuracy vs 1.4% for type-count** and 13.0%
+overall fill accuracy. Bits/byte is **1.77** on template-covered bytes:
+predicting an exact fill ID is expensive. The arm has the capability
+signal but not the size. The next lever is **long fills (>=8 B) with a
+local copy pointer**, not a larger fill softmax. A 500 KB probe estimate:
+8 B fill gate, 5.12 B/decision, **0.957 bpb** with an 11-bit local
+pointer and a 1 bpb literal fallback. That is a narrow pass; implement
+the exact codec before claiming it.
+
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Price a rejected proposal as a byte
 comparison, not a forward: a proposal is not an emitted copy. When a
@@ -190,7 +200,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | ~~**B1**~~ | joint copy head — repair loop | `cml copy-lm --joint` | **shipped; gate PASS** on verified top-8: 38.6% at 1.56x, 100% exact | 1 GPU-h |
 | ~~**B2**~~ | exact pack proposer | `_pack_oracle` + `repo` | **resolved; hash dominates**: 78.4% at 3.59x with a 2 MB pack | CPU |
 | ~~**T0**~~ | template-fill headroom | `cml template-probe` | **shipped**: 4.58 B/decision, 29.7% new combinations | 1 CPU-day |
-| **T1** | event LM, compositional split | `cml template-lm` | <=0.03 bpb, >=2x, +10 pts held-out fills | 1 GPU-day |
+| ~~**T1a**~~ | event LM pilot | `cml event-lm` | **signal**: 4.8% new combos vs 1.4%; bpb 1.77, fill IDs expensive | 1 GPU-h |
+| **T1b** | long-fill copy codec | `cml event-lm --min-fill 8 --copy` | estimate 0.957 bpb; gate <=0.03 regression, exact | 1 GPU-day |
 | **T2** | library install transfer | `cml template-lm --install` | >=0.15 bpb from installation | 1 GPU-day |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
@@ -210,16 +221,17 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **B1 verified copy gate + B2 exact pack + T0
-template probe**. The learned pointer is dominated by a hash for exact
-spans. The new unit is a template with typed holes: 22.4% fixed bytes,
-27.8% holes, 0.218 decisions/B, 4.58 B/decision, and **29.7% of hole
-bytes are new slot combinations with a known fill**. That is the
-capability a flat model cannot share.
+Shipped this session: **T0 template probe + T1a event pilot**. The new
+unit is a template with typed holes. The event arm reaches **4.8% new-
+combination accuracy vs 1.4% for type-count**, so template context has a
+signal. Its bits/byte is 1.77 because exact fill IDs are expensive; the
+next lever is **long fills with a local copy pointer**, not a larger fill
+softmax. A 500 KB estimate puts the long-fill codec at 0.957 bpb, near
+the 0.97 byte trunk.
 
 Next session, one of:
-1. **T1**: train the event LM on the compositional split. This is the
-   decisive capability test; <=0.03 bpb, >=2x, +10 pts held-out fills.
+1. **T1b**: long-fill copy codec. Gate: exact round-trip, <=0.03 bpb
+   regression, >=2x bytes/decision. This is the decisive size test.
 2. **T2**: install a repo-A library on repo B; >=0.15 bpb.
 3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
 4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
@@ -250,6 +262,8 @@ uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
   --pointer-scale 2 --verify-topk 8 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 400
 uv run cml template-probe --train-bytes 2000000 --test-bytes 100000
+uv run cml event-lm --train-bytes 2000000 --test-bytes 100000 \
+  --steps 500 --seq 128 --d 192 --layers 4 --batch 32
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

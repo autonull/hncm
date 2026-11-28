@@ -8732,6 +8732,16 @@ def main(argv: list[str] | None = None) -> int:
     tp.add_argument("--test-bytes", type=int, default=100_000)
     tp.add_argument("--min-count", type=int, default=3)
     tp.add_argument("--max-n", type=int, default=6)
+    ev = sub.add_parser("event-lm")
+    ev.add_argument("--train-bytes", type=int, default=2_000_000)
+    ev.add_argument("--test-bytes", type=int, default=100_000)
+    ev.add_argument("--steps", type=int, default=2_000)
+    ev.add_argument("--batch", type=int, default=32)
+    ev.add_argument("--seq", type=int, default=128)
+    ev.add_argument("--d", type=int, default=192)
+    ev.add_argument("--layers", type=int, default=4)
+    ev.add_argument("--heads", type=int, default=4)
+    ev.add_argument("--seed", type=int, default=0)
     cl = sub.add_parser("copy-lm")
     cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     cl.add_argument("--steps", type=int, default=300)
@@ -9112,6 +9122,20 @@ def main(argv: list[str] | None = None) -> int:
         import templates
 
         return templates.run_probe(a.train_bytes, a.test_bytes, a.min_count, a.max_n)
+    if a.cmd == "event-lm":
+        import eventlm
+
+        return eventlm.run(
+            a.train_bytes,
+            a.test_bytes,
+            a.steps,
+            a.batch,
+            a.seq,
+            a.d,
+            a.layers,
+            a.heads,
+            a.seed,
+        )
     if a.cmd == "copy-lm":
         import copylm
 

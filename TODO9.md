@@ -813,6 +813,16 @@ This keeps the exactness discipline and changes the unit of computation.
 It is the first path that targets composition rather than more pointer
 capacity.
 
+**T1a pilot (500 steps).** The template event model reaches 4.8% exact
+accuracy on new fill combinations, against 1.4% for a type-frequency
+baseline and 0.1% for slot frequency; overall fill accuracy is 13.0%.
+Bits/byte is 1.77 on template-covered bytes. Exact fill IDs are too
+expensive: mean fill length is short (2.6 B). The next lever is a **long
+fill** (>=8 B: dotted names average 16.9 B, bracket groups 14.5 B) copied
+from local context with a pointer. A 500 KB probe estimates 0.957 bpb at
+an 8 B fill gate, 5.12 B/decision, an 11-bit local pointer, and a 1 bpb
+literal fallback. That is a narrow pass; the exact codec must verify it.
+
 ## References
 
 - `TODO8.md`: codec record; delta product and exact codec.

@@ -1,0 +1,29 @@
+{
+ "rows": [
+  {
+   "arm": "template-event",
+   "params": 7243392,
+   "seconds": 23.7,
+   "bits_per_byte": 1.7674516098576978,
+   "fill_accuracy": 0.12950916617386163,
+   "held_accuracy": 0.0,
+   "combo_accuracy": 0.04814814814814815,
+   "fills": 1691,
+   "held_fills": 0,
+   "combo_fills": 1080
+  },
+  {
+   "arm": "slot-count",
+   "fill_accuracy": 0.12038614423622941,
+   "held_accuracy": 0.0,
+   "combo_accuracy": 0.0008888888888888889
+  },
+  {
+   "arm": "type-count",
+   "fill_accuracy": 0.07268597387847814,
+   "held_accuracy": 0.0,
+   "combo_accuracy": 0.014222222222222223
+  }
+ ],
+ "git": "63958709502186367cf413f5c80aca4c51f1f009"
+}
