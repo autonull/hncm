@@ -44,6 +44,64 @@ a cheap correctness control, a measurable signal, and a kill rule. A
 negative result that passes its control is evidence; one that fails its
 control is a bug.
 
+## Ambition: the memory-augmented LM
+
+`hncm.r1-r7.md` converge on one thesis, stated seven ways:
+
+> A frozen/amortized neural base plus an exact, MDL-priced, transmissible,
+> editable memory of spans, with a copy-or-compute gate. Knowledge is data;
+> compute routes around known spans; every emitted span is verifiable.
+
+That is an architecture claim, not a codec claim. It is bigger than exact
+edit prediction: the memory is the adapter, the tokenizer, the drafter, and
+the audit trail at once.
+
+| plan | name | core claim | decisive test |
+|---|---|---|---|
+| r1 | frozen base + charged span memory | adapter = compressor = LoRA competitor = drafter | equal-charged-bytes probe vs kNN and LoRA |
+| r2 | C2LM | route each span between zero-compute COPY and neural COMPUTE | G1 quality, G2 speed |
+| r3 | PhraseLM | installable lexicon; lexicon-agnostic pretraining | held-out install ≥ 0.15 bpb |
+| r4 | Concept-LM | the vocabulary is data; neural prices + MDL | P0 ≤ 1.83 bpb |
+| r5 | LedgerLM | persistent ledger with an admission market | S1 vs byte/BPE/BLT at equal FLOPs |
+| r6 | CMT | concept pack + tied embeddings + provenance | v0: structured ≥ 1.5x at exact quality |
+| r7 | CoLib | exact concepts with typed holes under a cortex | G0 parity, G2 shuffle, G4 composition |
+
+**What we already own.** Exact delta (`56.6x`) and history chains (`40x`);
+a trained 20M byte trunk; pointer/concept code; the Exact Edit Bench; the
+round-tripping judge. These are the memory substrate and the evaluation.
+
+**What is missing.** Content-addressed span embeddings tied to the
+backbone; a copy-or-compute gate; pack operations (attach/detach/diff/rm);
+provenance tags; a two-clock concept input; typed holes.
+
+**What we got wrong.** E1/C1 tried to predict an unknown edit from a commit
+message. The r-series says the memory should *hold* known spans and route
+around them; predicting the edit is a narrow application, not the
+architecture. Keep E1/C1 as diagnostics and applications, not as the main
+line.
+
+## Track A: memory-augmented LM
+
+A0 is the decisive, inference-only probe. It reuses the codecs, the trunk,
+and the corpus; no new base training.
+
+| id | experiment | cost | gate |
+|---|---|---|---|
+| **A0** | freeze the 20M byte trunk; induce a 4k-64k exact-span pack; tied embeddings from the trunk's last-state readout; fit a 3-parameter gate; provenance tags | 3-5 days, inference only | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
+| **A0b** | shuffle control: permute concept ids, keep embeddings | hours | must cost ≥ 0.2 bpb, or identity is decorative and the claim narrows to patches |
+| **A1** | equal-charged-bytes: pack vs kNN vs LoRA at 64k/256k/1MB | 1 week | pack wins ≥ 2 of 3 structured domains; prose may go to LoRA |
+| **A2** | train the head: mixture NLL + charge on DP parses | 1-2 weeks | tied embeddings beat counts on held-out spans; ≥ 20% acceptance per pack byte |
+| **A3** | two-clock / CoLib: concept tokens, holes, planning | 1 GPU-month | G0 parity, G2 shuffle, G4 composition ≥ +10 points |
+
+**Decision rule.** If A0 or A0b fails, record the negative, ship the codecs,
+and do not claim an architecture. If A0 passes, A1 decides whether the
+memory beats LoRA/kNN at equal bytes. If A1 passes, Track A becomes the
+main research line and E1/C1 become copy-path applications.
+
+**Budget.** A0 is inference-only on the existing trunk. A1 is one week.
+A2/A3 need a separate 1 GPU-month; the current 8 GPU-hour budget does not
+cover them. Do not start A2 before A0 and A1 pass.
+
 ## 0. One claim, two formulations
 
 **Track E (edit compiler).** A small model that predicts *where* a file
@@ -269,21 +327,27 @@ uv run pytest tests
 
 ## 9. Budget
 
-Total: **8 GPU-hours** and **4 CPU-days**. One GPU job at a time.
+Total for products and controls: **8 GPU-hours** and **4 CPU-days**. One
+GPU job at a time. Track A A2/A3 needs a separate **1 GPU-month** and is
+not covered here; start it only after A0 and A1 pass.
 
 | bucket | budget | rule |
 |---|---:|---|
 | product track (delta, memory, logs, verifier) | 4 CPU-days | bank first; no GPU |
+| **A0/A0b concept-pack probe** | 3-5 days, inference | decisive architecture test; no new base training |
+| **A1 equal-charged-bytes** | 1 week | pack vs kNN vs LoRA |
 | exact priced codec proof | 2-3 h | one batch; promote only if exact |
 | E1 controls | 45 min GPU | ≤ 15 min each |
 | C1 controls | 45 min GPU | ≤ 15 min each |
 | E1b/E1c models | 2 GPU-h | ≤ 1 GPU-h each |
 | C1b/C1c models | 2 GPU-h | ≤ 1 GPU-h each |
 | D/H/V | 1 GPU-h | only after a gate passes |
+| **A2/A3** | 1 GPU-month | only after A0/A1 pass; separate budget |
 
 Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before a control
 passes. Do not run 40M. If a hypothesis has no signal on 50 files, stop it
-and preserve the budget for the next hypothesis.
+and preserve the budget for the next hypothesis. Track A uses the 20M trunk
+that already exists; do not train a new base for A0.
 
 ## 10. Product track: bank exact wins first
 
@@ -314,6 +378,7 @@ capability gate passing on held-out data. Anything else is a diagnostic.
 | next | repo-wide memory | ≥ 20x exact, ≥ 3x gzip | planned |
 | next | exact priced codec | 9.4x exact | proof pending |
 | next | CI log codec | ≥ 10x near-identical | planned |
+| research | **A0 concept pack** | code/JSON ≥ 0.1 bpb, ≥ 1.5x | **next probe** |
 | research | E1b locator | byte F1 ≥ 0.20 | control first |
 | research | C1b copy-LM | exact ≥ 0.05 on 50 | control first |
 
@@ -332,24 +397,59 @@ capability gate passing on held-out data. Anything else is a diagnostic.
 - **DPO reward hacking.** The reward is exact decode, not a learned model.
 - **Action grammar errors.** Constrained decoding or a valid-action mask;
   invalid parses score zero.
+- **Memory is decorative.** A0b must cost ≥ 0.2 bpb when concept ids are
+  shuffled; if not, the claim is a patch model, not exact memory.
+- **Adapter loses to LoRA/kNN.** A1 compares at equal charged bytes; if the
+  pack loses, ship the codecs and record the negative.
+- **Over-copying / provenance.** Verification mode bounds quality; the pack
+  is inspectable and every emitted span carries `(concept-id, offset)`.
 - **Compute creep.** One job at a time; small trunk; budgets, not timers.
 - **Bug vs evidence.** A failed control means a bug, not a verdict. A
   failed gate with passed controls is evidence; record it and move on.
 
-## 12. Forward plan: bank, control, then revive
+## 12. Forward plan: bank, probe, control, then revive
 
-Phase A (CPU, no new training) runs first. Phase B is cheap diagnostics.
-Phase C is one GPU job per hypothesis. Phase D stays gated.
+Phase A banks exact products. Phase A0 is the architecture probe from the
+r-series: no new base training, frozen 20M trunk, exact concept pack.
+Phase B is cheap diagnostics. Phase C is one GPU job per hypothesis.
+Phase D stays gated.
 
 **Execution order by expected value.**
 
 1. A1 repo-wide memory: the 40x win becomes a repo-level product claim.
-2. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
+2. **A0 concept-pack probe + A0b shuffle control** (3-5 days, inference):
+   the decisive test of the memory-as-adapter ambition. If it fails, the
+   architecture claim stops here and the codecs ship.
+3. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
    next model run is a bug fix or a new hypothesis.
-3. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
-4. B controls E1-R2, C1-R1, C1-R2.
-5. C models E1b/E1c and C1b/C1c, one at a time.
-6. A3/A4 CI logs and patch verifier in leftover CPU time.
+4. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
+5. **A1 equal-charged-bytes** (1 week) only if A0/A0b pass: pack vs kNN
+   vs LoRA at equal bytes. This is the architecture's product test.
+6. B controls E1-R2, C1-R1, C1-R2.
+7. C models E1b/E1c and C1b/C1c, one at a time.
+8. A3/A4 CI logs and patch verifier in leftover CPU time; A2/A3
+   (train head, two-clock) need the separate GPU-month.
+
+### Phase A0: architecture probe (the r-series bet)
+
+Freeze the existing 20M byte trunk
+(`codec-byte-model-code-756752-d448-l8`). Induce a 4k-64k exact-span pack
+with the existing DP/EM. Embed each span from the trunk's causal last-state
+readout (not mean pooling). Add a small score head and a three-parameter
+copy-or-compute gate; tag every emitted span with `(concept-id, offset)`.
+
+Gates, in order:
+
+1. text ≤ 0.01 bpb loss vs the frozen trunk;
+2. code/JSON ≥ 0.1 bpb win;
+3. structured ≥ 1.5x decode at exact quality;
+4. pack ≤ 1 MB; provenance round-trip 100%;
+5. **A0b shuffle control**: permute concept ids, keep embeddings; it must
+   cost ≥ 0.2 bpb, or identity is decorative.
+
+Kill rule: if A0 or A0b fails, record the negative, ship the codecs, and
+do not claim an architecture. If it passes, A1 compares the pack against
+kNN and LoRA at equal charged bytes. Do not train a new base for A0.
 
 ### Phase A: bank exact wins
 
@@ -405,6 +505,20 @@ Only run one after its control passes and its control row is recorded.
 - **H/V** only after the preceding gate; V is rerank, not a rescue.
 
 ## 13. Revival program: hypotheses and kill rules
+
+### Track A: memory-augmented LM (r-series)
+
+| # | hypothesis | cheap test | if true | if false |
+|---|---|---|---|---|
+| 1 | the pack is an adapter, not a patch index | A1 pack vs kNN/LoRA at equal bytes | architecture claim | ship codecs; no architecture |
+| 2 | discrete identity is load-bearing | A0b shuffle ids | exact spans carry the win | it is a patch model; narrow the claim |
+| 3 | tied content embeddings transfer | hold out 10% of the pack; predict similar spans | zero-shot install | per-domain training |
+| 4 | copy-or-compute gate is safe | verification mode bounds quality | product path | gate redesign |
+| 5 | exact concepts + holes compose | r7 G4 slot split | capability claim | efficiency paper only |
+
+Kill rules for Track A: no structured win at A0 → stop; no shuffle cost at
+A0b → stop; pack loses to LoRA and kNN at A1 → stop; do not scale A2/A3
+on a failed A1.
 
 ### E1 locator
 
