@@ -5,60 +5,44 @@ the objective from bits per byte to **exact edit capability**. It keeps
 the original copy-edit LM and adds a cheaper edit-compiler track. Both are
 funded; the benchmark decides which one wins.
 
-## Status 2026-11-27: first session complete; G0 passed
+## Status 2026-11-27: wins banked; E1/C1 paused, not abandoned
 
-| §8 step | state | artifact |
-|---:|---|---|
-| 1 editdata | **done** | `cml/editdata.py`: git mining, filters, repo split, manifest, blob cache |
-| 2 editlm core | **done** | `cml/editlm.py`: copy actions, spans, exact assemblers, metrics |
-| 3 CLI | **done** | `cml editdata`, `cml editlm` |
-| 4 retrieval G0 | **done** | `cml/reports/EDIT-LM.md`, `cml/reports/editlm.json` |
-| 5 E1 locator | **attempted; GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
-| 6 E2 writer | **blocked** | needs a locator that passes GE1 |
-| 7 C1 copy-SFT | **attempted; GC1 fail** | `cml/reports/EDIT-COPY.md` |
-| 8-11 D/H/V | **not started** | blocked by GC1 |
+| work | state | artifact |
+|---|---|---|
+| data + benchmark | **done** | `cml/editdata.py`; 5 repos, 12,811 edits, repo split |
+| retrieval G0 | **done** | `cml/reports/EDIT-LM.md`; exact `0.000` on 1,648 test commits |
+| E1 locator | **paused after GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
+| C1 copy-SFT | **paused after GC1 fail** | `cml/reports/EDIT-COPY.md` |
+| delta product | **shipped** | `products/delta/README.md`; **56.6x** hunk edits, exact |
+| memory product | **shipped** | `products/memory/README.md`; **40.0x** over 1,823 versions, exact |
+
+**Banked wins.** `cml delta` is exact at `56.6x` on 2% hunk edits and
+`27.8x` scattered. `cml chain` is exact at `40.0x` over five real files
+(90.1 MB → 2.26 MB), `6.5x` better than gzip. Both are CPU-only. Tests:
+`55 passed`.
 
 **G0 recorded: pass.** Retrieval on 1,648 held-out `tiangolo/fastapi`
-commits: exact `0.000`, valid decode `0.027`, output `0.991x`, line edit
-distance `0.020`. Train `5,672` commits (`httpx`, `flask`, `requests`);
-val `5,491` (`pytest`). The cross-repo transplant rarely aligns context,
-so the baseline is weak by construction; it cannot see the query
-repository's history. That is the point of G0: it is not a fake win.
+commits: exact `0.000`, valid `0.027`, output `0.991x`. Train `5,672`
+(`httpx`, `flask`, `requests`); val `5,491` (`pytest`). The cross-repo
+transplant cannot see the query repository's history; that is the point of
+G0. Artifacts: manifest `cml/runs/edit-manifest.json` (ignored), blob
+cache `~/.cache/hncm/edit` (308 MB). Reuse them.
 
-Artifacts are local: manifest `cml/runs/edit-manifest.json` (ignored),
-blob cache `~/.cache/hncm/edit` (308 MB). Reports are tracked. Reuse
-them; do not re-mine unless the config changes.
+**E1/C1 are paused, not closed.** Their first runs produced no exact file,
+but the controls also exposed likely implementation and regime defects:
 
-**Next:** stop capability training. Both tracks failed their first gate, so
-package the exact delta product (`cml delta`) and keep the benchmark. If
-work resumes, the lever is the task/data, not more steps. Do not train D,
-H, or V without a gate that passes.
+- E1: zeroed-file baseline loss matched the locator at every log point; a
+  50-file/5,000-step control still emitted no spans; line pooling scored
+  `0.055`. The next tests are oracle-message (does the pipeline work at
+  all?), balanced train/eval priors, and candidate/pointer localization.
+- C1: `valid = 0.960` but `exact = 0`; `exact@8 = 0`. The grammar is
+  learned, the content is not. The next tests are one-window exact overfit,
+  a text/pointer action grammar, and beam-plus-verifier.
 
-**E1 recorded: GE1 fail.** The 5.2M byte locator (`d256 l6`, 1024 B
-window, 1200 steps) scores byte F1 `0.000` against the message-only
-baseline's `0.000` on 500 val files; it emits no spans. Synthetic
-pretraining fits (`loss 0.34`), but real fine-tuning does not transfer and
-collapses to the prior. A 50-file, 5,000-step control also scored `0.000`,
-so this is not a budget problem. A line-level prototype (8-line windows,
-byte pooling) on the same 50 files scored `0.055` with an unstable loss.
-The next lever is the model input/architecture (explicit message-to-file
-cross-attention or a different decoder), not more steps on this trunk. E2
-must not reuse this locator. C1 is independent and should run first.
-
-**C1 recorded: GC1 fail.** Pilot on files that fit one 1024 B window:
-596 train, 50 val, 1,000 steps, 5.2M causal byte LM. Exact `0.000`,
-valid program `0.960`, output `0.057x` of the new file. Sampling `K = 8`
-programs per file and keeping any exact assembly also gives `exact@8 0.000`:
-test-time search does not find the target. A 5,000-step run was worse
-(valid `0.300`, output `0.086x`). Constrained decoding keeps the bytes
-grammar-valid, but the model does not learn the edit content. Since exact
-is zero, a +10-point lift over any baseline is impossible; the full-file
-arm is not needed to reject this arm. Do not start DPO or holes from it.
-
-**Program decision.** Both funded tracks now fail their first gate: GE1
-`0.000`, GC1 `0.000`. Per §7, stop capability training and ship the delta
-product. The next lever is the task/data (retrieval prior, smaller
-grammar, or a different edit distribution), not more GPU hours.
+Do not run the same formulation longer. Each revival experiment below has
+a cheap correctness control, a measurable signal, and a kill rule. A
+negative result that passes its control is evidence; one that fails its
+control is a bug.
 
 ## 0. One claim, two formulations
 
@@ -232,166 +216,236 @@ GE1 recorded 2026-11-27: byte F1 `0.000` versus the message-only baseline
 no usable spans and the loss is unstable; see `cml/reports/EDIT-LOCATOR.md`.
 Do not run E2 on this locator.
 
-GC1 recorded 2026-11-27: exact `0.000`, valid `0.370`, output `0.044x` on
-200 val files, fail. Exact zero makes a +10-point lift impossible; see
-`cml/reports/EDIT-COPY.md`. Do not start DPO or holes from this arm.
+GC1 recorded 2026-11-27: exact `0.000`, exact@8 `0.000`, valid `0.960`,
+output `0.057x` on 50 val files, fail. Exact zero makes a +10-point lift
+impossible; see `cml/reports/EDIT-COPY.md`. Do not start DPO or holes from
+this arm until C1-R0..R2 pass.
 
-If G0 shows retrieval solving the task, harden before training. If GE2 and
-GC1 both fail, stop and ship the delta product. A gate that is not met
-names the next lever; it does not end the program.
+A failed first run with failed controls is a bug. A failed first run with
+passed controls is evidence. Neither stops the product track; both choose
+the next experiment.
 
 ## 8. Implementation order
 
-Add two modules and one CLI command. Keep `TODO8` codec code untouched.
+Delivered: data, benchmark, retrieval, delta product, memory product.
+Paused: E1/C1. The revival controls and models are ordered in §12-13,
+not repeated here.
 
 1. `cml/editdata.py`: mining, filters, repo split, manifest, blob cache.
    Tests: deterministic split, no repo leakage, diff-size filter.
 2. `cml/editlm.py`: action grammar for both tracks, target builders,
    exact assembler, metrics.
 3. `cml editdata --repos ... --out ...`: build manifest and split.
-4. `cml editlm --arm retrieval`: G0 baseline; write `reports/EDIT-LM.md`.
-5. `cml editlm --arm locator`: E1; synthetic pretrain, then real commits.
-   **Attempted; GE1 fail** (`reports/EDIT-LOCATOR.md`).
-6. `cml editlm --arm compiler`: E2; writer + exact assembler. Wait for a
-   locator that passes GE1.
-7. `cml editlm --arm copy --sft`: C1; teacher-forced delta actions.
-   **Attempted; GC1 fail** (`reports/EDIT-COPY.md`).
-8. `cml editlm --arm copy --dpo`: D; sample K, score exact/test pass,
-   build preference pairs, DPO. No learned reward model.
+4. `cml editlm --arm retrieval`: G0 baseline; `reports/EDIT-LM.md`.
+5. `cml editlm --arm locator`: E1; **paused after GE1 fail**; run the
+   E1-R0..R2 controls first (`reports/EDIT-LOCATOR.md`).
+6. `cml editlm --arm compiler`: E2; wait for a locator that passes GE1b.
+7. `cml editlm --arm copy --sft`: C1; **paused after GC1 fail**; run the
+   C1-R0..R2 controls first (`reports/EDIT-COPY.md`).
+8. `cml editlm --arm copy --dpo`: D; only after C1b has exact@K > 0.
 9. `cml editlm --arm copy --rlfp`: G only if D plateaus.
-10. `cml editlm --arm holes --sft`: H; typed holes + exact realizer.
-11. `cml editlm --arm compiler --rerank`: V; sample K and verify.
+10. `cml editlm --arm holes --sft`: H; after the preceding gate.
+11. `cml editlm --arm compiler --rerank`: V; after E2; rerank only.
 12. Reports and tests: `reports/EDIT-LM.md`, `tests/test_editlm.py`.
 
-Commands, after the build. Run from `cml/`; `runs/` is ignored.
+Commands. Run from `cml/`; `runs/` is ignored.
 
 ```bash
+# delivered
 uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
   --cache ~/.cache/hncm/edit --out runs/edit-manifest.json
 uv run cml editlm --arm retrieval --manifest runs/edit-manifest.json \
   --split test
+uv run cml chain --repo ~/.cache/hncm/edit/repos/psf__requests.git \
+  --path requests/models.py --out runs/models.cmlh
+# paused: controls first (§12), then one model job per hypothesis
 uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
-  --split val --limit 500 --pretrain synthetic --steps 1200
-# E2 only after GE1 passes: locator + writer
-uv run cml editlm --arm compiler --manifest runs/edit-manifest.json \
-  --from edit-locator --steps 2000
+  --split val --limit 50 --steps 500
 uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
-  --from codec-byte-model-code-756752-d448-l8 --steps 2000
-uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
-  --split val --limit 200 --steps 1000
-# D/H/V only after a gate passes; both funded gates failed.
-uv run cml editlm --arm copy --dpo --manifest runs/edit-manifest.json \
-  --from edit-copy-sft --pairs 2000
-uv run cml editlm --arm holes --sft --manifest runs/edit-manifest.json \
-  --from edit-copy-sft
-uv run cml editlm --arm compiler --rerank --manifest runs/edit-manifest.json \
-  --from edit-compiler --samples 8
+  --split val --limit 50 --steps 500 --samples 8
+# E2/D/H/V commands stay out until their gate passes
 uv run pytest tests
 ```
 
 ## 9. Budget
 
-Under **8 GPU-hours total**, one job at a time:
+Total: **8 GPU-hours** and **4 CPU-days**. One GPU job at a time.
 
-| step | budget |
-|---|---:|
-| data + retrieval | 2 h CPU |
-| full-file baseline | 1-2 GPU-h |
-| locator + writer (Track E) | 2-3 GPU-h |
-| copy-SFT (Track C) | 1-2 GPU-h |
-| DPO / RLFP | 1 GPU-h |
-| holes | 1 GPU-h |
-| rerank | inference only |
+| bucket | budget | rule |
+|---|---:|---|
+| product track (delta, memory, logs, verifier) | 4 CPU-days | bank first; no GPU |
+| exact priced codec proof | 2-3 h | one batch; promote only if exact |
+| E1 controls | 45 min GPU | ≤ 15 min each |
+| C1 controls | 45 min GPU | ≤ 15 min each |
+| E1b/E1c models | 2 GPU-h | ≤ 1 GPU-h each |
+| C1b/C1c models | 2 GPU-h | ≤ 1 GPU-h each |
+| D/H/V | 1 GPU-h | only after a gate passes |
 
-Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before G1. Do not
-run 40M.
+Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before a control
+passes. Do not run 40M. If a hypothesis has no signal on 50 files, stop it
+and preserve the budget for the next hypothesis.
 
-## 10. Products/wins within reach
+## 10. Product track: bank exact wins first
 
-| product | what it is | effort | value |
-|---|---|---:|---|
-| **`cml delta`** | exact version compression; 56.6x on edits | built; 1 day to package | immediate |
-| **Exact Edit Bench** | real commits, repo split, exact/test-pass | 1 day CPU | foundation + artifact |
-| **Edit locator API** | old file + instruction -> changed spans | 1 week | useful to any coding agent |
-| **Edit compiler** | locator + writer + exact assembler | 2-3 weeks | the capability win |
-| **Repo memory** | delta chain across versions; exact retrieval | 2-3 days | agent context compression |
-| **Patch verifier** | apply a proposed diff, reject non-exact results | 1 day | hallucination guard |
-| **CI log codec** | delta repeated test logs | 1 day | small but real |
+The capability tracks are research; the codec products are exact and
+measured. Bank them while the revival controls run.
 
-The fastest conclusive win is the Exact Edit Bench plus the retrieval
-baseline. If retrieval solves it, save the GPU budget. If not, the
-benchmark is the foundation for both tracks.
+| product | state | next action | value |
+|---|---|---|---|
+| **`cml delta`** | shipped; **56.6x** hunk, **27.8x** scattered, exact | keep; add CI log packaging | immediate |
+| **`cml chain`** (repo memory) | shipped; **40.0x** over 1,823 versions, exact, 6.5x gzip | repo-wide batch: all files, one ratio | high; 1-2 days |
+| **exact priced codec** | 32 KB prefix exact **1.074**; full proof pending | run full-length exact proof; promote **9.4x** only if exact | high; 2-3 h |
+| **CI log codec** | idea | delta repeated test logs; exact round-trip | medium; 1 day |
+| **patch verifier** | idea | apply a proposed diff, reject non-exact; no training | medium; 1 day |
+| **locator API** | paused | anchored/recall@k after E1b; not exact@1 | medium |
+| **edit compiler** | paused | only after GE1b and GC1b | the capability win |
+
+**Portfolio rule.** Every job must either ship a measured exact artifact or
+move a pre-registered gate. A job that does neither is recorded and
+stopped. Product work is CPU-only; one GPU job at a time.
+
+**Win scorecard.** A headline win is exact and ≥ 5x on a real corpus, or a
+capability gate passing on held-out data. Anything else is a diagnostic.
+
+| horizon | win | metric | state |
+|---|---|---|---|
+| now | delta product | 56.6x exact | shipped |
+| now | repo memory (5 files) | 40.0x exact, 6.5x gzip | shipped |
+| next | repo-wide memory | ≥ 20x exact, ≥ 3x gzip | planned |
+| next | exact priced codec | 9.4x exact | proof pending |
+| next | CI log codec | ≥ 10x near-identical | planned |
+| research | E1b locator | byte F1 ≥ 0.20 | control first |
+| research | C1b copy-LM | exact ≥ 0.05 on 50 | control first |
 
 ## 11. Risks and counters
 
 - **Retrieval solves it.** Harden with held-out repos, longer edits, and
   counterfactual messages; if retrieval still wins, stop.
-- **Exact match is too hard.** Pre-register test pass and edit distance as
-  secondary; do not move the goal after seeing results.
-- **Leakage.** Split by repo, deduplicate near-identical edits, never put
-  the target file in the prompt.
+- **Exact match is too hard.** Keep exact as the primary label; edit
+  distance and recall@k are secondary and pre-registered.
+- **Leakage.** Split by repo, deduplicate within a split, never put the
+  target file in the prompt.
 - **Instruction ignored.** Include counterfactual pairs: same old file,
   different messages, different targets.
 - **LZ parse is not the edit.** Track E trains on real changed spans, not
-  `delta_parse` offsets. Track C keeps the original action space; compare
-  them on the same benchmark.
-- **DPO reward hacking.** The reward is exact decode, not a learned model;
-  edit distance is only a tie-break.
-- **Action grammar errors.** Use constrained decoding or a valid-action
-  mask; invalid parses score zero.
+  `delta_parse` offsets. Track C keeps the action space.
+- **DPO reward hacking.** The reward is exact decode, not a learned model.
+- **Action grammar errors.** Constrained decoding or a valid-action mask;
+  invalid parses score zero.
 - **Compute creep.** One job at a time; small trunk; budgets, not timers.
+- **Bug vs evidence.** A failed control means a bug, not a verdict. A
+  failed gate with passed controls is evidence; record it and move on.
 
-## 12. Next-session start
+## 12. Forward plan: bank, control, then revive
 
-Read this file first, then `cml/reports/EDIT-LM.md`,
-`cml/reports/EDIT-LOCATOR.md`, and `cml/reports/EDIT-COPY.md`. G0 passed;
-GE1 and GC1 both failed.
+Phase A (CPU, no new training) runs first. Phase B is cheap diagnostics.
+Phase C is one GPU job per hypothesis. Phase D stays gated.
 
-**Stop capability training.** Ship `cml delta`: it is exact, CPU-only, and
-`56.6x` on hunk edits. Keep the Exact Edit Bench and both reports as the
-foundation. Do not train DPO, holes, or rerank from a zero-exact arm.
+**Execution order by expected value.**
 
-If the capability work resumes, change the task/data, not the schedule:
+1. A1 repo-wide memory: the 40x win becomes a repo-level product claim.
+2. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
+   next model run is a bug fix or a new hypothesis.
+3. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
+4. B controls E1-R2, C1-R1, C1-R2.
+5. C models E1b/E1c and C1b/C1c, one at a time.
+6. A3/A4 CI logs and patch verifier in leftover CPU time.
 
-1. retrieval prior or a smaller action grammar (C1 family);
-2. explicit message-to-file cross-attention (E1 family);
-3. a different edit distribution with longer, less ambiguous messages.
+### Phase A: bank exact wins
 
-Do not raise `max_diff` to make exact match easier; a gate that fails names
-the next lever, not a new goal.
+1. **Repo-wide memory.** Extend the chain runner to `--paths` (comma
+   list) or a repo manifest; process all files in `fastapi` and `pytest`;
+   report one raw/chain/gzip total. Gate: chain ≥ 20x and ≥ 3x gzip. Cost: 1-2 days
+   CPU. This is the headline product claim.
+2. **Full exact priced codec.** Run the pending full-length proof on the
+   756,752 B test. Promote `0.852` (9.4x) only if the exact decoder
+   reproduces every byte; otherwise keep `1.266` (6.3x). Cost: 2-3 h.
+3. **CI log codec.** Mine or generate repeated pytest logs; delta each run
+   against the previous; exact round-trip. Gate: ≥ 10x on near-identical
+   logs and ≥ 2x on changed logs. Cost: 1 day.
+4. **Patch verifier.** Apply a proposed diff, check bytes, reject
+   non-exact. Ship as a guard, not a compressor. Cost: 1 day.
 
-## 13. What would make the old ideas work
+### Phase B: revival controls (≤ 15 min each, no model scaling)
 
-Three cheaper revivals were tested after GE1/GC1 failed:
+Do the control before any long run. A control that fails is a bug.
+Implement each row as a `--control` flag in `cml/editlm` and write its
+result to the track report. Controls may see the answer; they are not
+benchmark results and must never be reported as a win.
 
-| idea | result |
-|---|---|
-| **V verifier rerank** | C1 `exact@8 = 0.000`; sampling never found the target |
-| **candidate-line ranking** | top-1 changed-line hit `0.109`, byte F1 `0.030` on 46 val files |
-| **anchored edits** | only `15/300` val and `21/300` test files have a message token that occurs once in `old` and inside the changed span |
+| id | track | control | pass signal | if it fails |
+|---|---|---|---|---|
+| **E1-R0** | E1 | oracle message: put the changed line/token in the message for 20 train files | byte F1 ≥ 0.50 | debug `_batch`, labels, window coverage, message padding |
+| **E1-R1** | E1 | same balanced windows in train and eval; compare zeroed-file baseline | content delta ≥ 0.10 | content path broken; inspect attention/gradients |
+| **E1-R2** | E1 | anchored subset: message token unique in `old` and inside a changed span | top-1 hit ≥ 0.50 | scope product to recall@k, not exact@1 |
+| **C1-R0** | C1 | overfit one window to exact | exact = 1, valid = 1 | teacher-forcing/label/grammar bug |
+| **C1-R1** | C1 | text grammar (decimal offsets) vs binary varints on 50 windows | valid ≥ 0.95, exact > 0 | pointer/copy head |
+| **C1-R2** | C1 | beam K = 16 plus exact verifier, temperature sweep | exact@K > 0 | target/model, not search |
 
-The blocker is the task, not the decoder. A 5M scratch LM on a commit
-subject cannot recover an edit that the message does not determine. The
-old ideas become viable only with a different input or model:
+### Phase C: revival models (one GPU job at a time, ≤ 1 GPU-h)
 
-1. **Richer context**: a failing test name, stack trace, issue text, or
-   agent conversation; the message alone is not an instruction.
-2. **Pretrained code model**: 5M scratch bytes are too small; use an
-   existing code LM with constrained decoding and the exact verifier.
-3. **Narrower product**: an anchored locator API scored by recall@k, not
-   exact@1; or repo memory that retrieves a known past patch.
-4. **Different granularity**: predict a typed edit class (rename, import,
-   version bump) and synthesize the patch, then verify exactly.
+Only run one after its control passes and its control row is recorded.
 
-Do not spend more GPU hours on the same formulation. The delta product is
-exact today; the Exact Edit Bench is the asset for the next attempt.
+- **E1b candidate locator.** Enumerate candidate lines/identifier
+  occurrences from `old`; score message-candidate pairs with a
+  cross-encoder; hard negatives from repeated tokens. Train on anchored +
+  unanchored pairs. Gate: candidate line F1 ≥ 0.30; then rerun GE1.
+- **E1c pointer locator.** Initialize from the trained 20M byte trunk
+  (`d448`); freeze blocks; train a span/copy head. Gate: byte F1 ≥ 0.20.
+- **C1b pointer copy-LM.** Replace varint offsets with a pointer head over
+  `old` (source offset, length); keep a literal head. Use the 20M trunk
+  as initialization. Gate: valid ≥ 0.95 and exact ≥ 0.05 on 50 files.
+- **C1c chunked actions.** Apply C1b to all 5,672 files with overlapping
+  action windows; exact assembly across windows. Gate: exact ≥ 0.05.
 
+### Phase D: gated capability
 
+- **E2 writer** only after GE1b passes.
+- **D/DPO** only after C1b has exact@K > 0 and a recorded SFT baseline.
+- **H/V** only after the preceding gate; V is rerank, not a rescue.
+
+## 13. Revival program: hypotheses and kill rules
+
+### E1 locator
+
+| # | hypothesis | cheap test | if true | if false |
+|---|---|---|---|---|
+| 1 | target/mask/window bug | oracle message | pipeline needs no model | debug the data path |
+| 2 | train/eval prior mismatch | identical balanced windows | fix sampling; rerun | content path broken |
+| 3 | message ambiguity | anchored subset | scope to anchored/recall@k | candidate ranking |
+| 4 | dense byte head is wrong | candidate-line cross-encoder | line F1 ≥ 0.30; E2 writer | pointer/line model |
+| 5 | capacity/init | 20M trunk, freeze + head | +0.10 byte F1 | pretrained model required |
+
+### C1 copy-LM
+
+| # | hypothesis | cheap test | if true | if false |
+|---|---|---|---|---|
+| 1 | labels/teacher forcing | one-window overfit | exact = 1 | fix alignment first |
+| 2 | varint offsets are hard | text grammar | valid ≥ 0.95 | pointer head |
+| 3 | no copy pointer | pointer head over `old` | exact > 0 on 50 | action model is wrong |
+| 4 | too little data/context | all 5,672 files, chunked | exact ≥ 0.05 | narrow the task |
+| 5 | search is weak | beam 16 + exact verifier | exact@K > 0 | DPO is not justified |
+
+**Kill rules.**
+
+1. A failed control: debug, do not scale.
+2. No signal on 50 files: stop that hypothesis, not the track.
+3. One GPU job at a time; ≤ 1 GPU-h per hypothesis.
+4. Do not change the label, split, or `max_diff` after seeing a result.
+5. A negative result with passed controls is evidence; record it in the
+   track report and move to the next hypothesis.
+6. A gate that passes names the next product; a gate that fails names the
+   next experiment.
+
+## References
 
 - `TODO8.md`: codec record; delta product and exact codec.
 - `cml/reports/DELTA.md`: 56.6x / 27.8x exact delta.
+- `cml/reports/REPO-MEMORY.md`: 40.0x exact history chain.
 - `cml/codec.py`: `DeltaArm`, `delta_parse`.
+- `cml/memory.py`: `CMLH`, chain encode/decode.
 - `cml/bytecodec.py`: `RepCopyCodec`, exact verifier.
-- `cml/pointer.py`: pointer/copy head if the action sequence is long.
+- `cml/pointer.py`: pointer/copy head for the action sequence.
 - `cml/concepts.py`: typed holes and exact realization.
-- `products/codec/README.md`: what ships today.
+- `products/codec/README.md`, `products/delta/README.md`,
+  `products/memory/README.md`: what ships today.
