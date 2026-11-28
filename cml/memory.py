@@ -802,6 +802,9 @@ def run_repo(
     global_mode: bool = False,
     update: bool = False,
     checkpoint: int = 0,
+    context: int = 0,
+    hits_json: Path | None = None,
+    max_hits: int = 50,
 ) -> int:
     """Repo-wide exact memory: chain every text file's history, or search it."""
     cfg = ChainConfig(window, min_match, cap, depth)
@@ -810,31 +813,69 @@ def run_repo(
         raise SystemExit("repo: --checkpoint needs --global")
     if checkpoint == 1:
         raise SystemExit("repo: --checkpoint must be 0 or >= 2")
+    if context < 0:
+        raise SystemExit("repo: --context must be >= 0")
+    if max_hits < 1:
+        raise SystemExit("repo: --max-hits must be >= 1")
     if search:
         manifest_path = root / "manifest.json"
         if not manifest_path.exists():
             raise SystemExit(f"repo search: missing {manifest_path}")
         manifest = json.loads(manifest_path.read_text())
         needle = search.encode()
-        hits = 0
+        hits: list[dict] = []
         shared = None
         if manifest["stats"].get("global"):
             shared = load_chain(root / "repo.cmlh")[1]
-        for row in manifest["files"]:
+        for row in sorted(manifest["files"], key=lambda r: r["path"]):
+            if len(hits) >= max_hits:
+                break
             if shared is not None:
                 last = _row_versions(shared, row)[-1]
             else:
                 last = load_chain(root / row["file"])[1][-1]
+            lines = last.split(b"\n")
+            seen: set[int] = set()
             at = last.find(needle)
-            while at >= 0 and hits < 50:
+            while at >= 0 and len(hits) < max_hits:
                 line = last.count(b"\n", 0, at) + 1
-                start = last.rfind(b"\n", 0, at) + 1
-                end = last.find(b"\n", at)
-                text = last[start : end if end >= 0 else len(last)]
-                print(f"{row['path']}:{line}: {text.decode('utf-8', 'replace')[:120]}")
-                hits += 1
+                if line not in seen:
+                    seen.add(line)
+                    start = last.rfind(b"\n", 0, at) + 1
+                    end = last.find(b"\n", at)
+                    text = last[start : end if end >= 0 else len(last)].decode(
+                        "utf-8", "replace"
+                    )
+                    hit = {"path": row["path"], "line": line, "text": text}
+                    if context:
+                        index = line - 1
+                        first = max(0, index - context)
+                        last_line = min(len(lines), index + context + 1)
+                        span = lines[first:last_line]
+                        hit["context"] = [
+                            {
+                                "line": first + i + 1,
+                                "text": value.decode("utf-8", "replace"),
+                                "hit": first + i == index,
+                            }
+                            for i, value in enumerate(span)
+                        ]
+                        for item in hit["context"]:
+                            sep = ":" if item["hit"] else "-"
+                            print(
+                                f"{row['path']}{sep}{item['line']}{sep} "
+                                f"{item['text'][:120]}"
+                            )
+                    else:
+                        print(f"{row['path']}:{line}: {text[:120]}")
+                    hits.append(hit)
                 at = last.find(needle, at + 1)
-        print(f"repo search: {hits} exact hit(s) for {search!r}")
+        if hits_json is not None:
+            _write_json(
+                hits_json,
+                {"query": search, "context": context, "hits": hits},
+            )
+        print(f"repo search: {len(hits)} exact hit(s) for {search!r}")
         return 0
     if repo is None:
         raise SystemExit("repo: pass --repo to build or --search to query")

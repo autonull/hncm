@@ -165,6 +165,64 @@ def test_repo_global_update_appends_exact(tmp_path: Path) -> None:
     assert rows["c.py"]["ranges"] == [[3, 4]]
 
 
+def test_repo_search_context_and_json(tmp_path: Path, capsys) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "a.py").write_text("one\nneedle a\nthree\nneedle b\nfive\n")
+    (repo / "b.py").write_text("needle c\nx\nneedle d\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "v1")
+    out = tmp_path / "idx"
+    _build(repo, out)
+    hits = tmp_path / "hits.json"
+    memory.run_repo(
+        None,
+        out,
+        tmp_path / "report.md",
+        tmp_path / "index.json",
+        "needle",
+        out,
+        "",
+        0,
+        65536,
+        1 << 20,
+        8,
+        256,
+        16,
+        context=1,
+        hits_json=hits,
+    )
+    text = capsys.readouterr().out
+    assert text.index("a.py:2:") < text.index("a.py:4:") < text.index("b.py:1:")
+    assert "a.py-1- one" in text and "a.py-3- three" in text
+    payload = json.loads(hits.read_text())
+    assert [hit["line"] for hit in payload["hits"][:2]] == [2, 4]
+    assert payload["hits"][0]["context"] == [
+        {"line": 1, "text": "one", "hit": False},
+        {"line": 2, "text": "needle a", "hit": True},
+        {"line": 3, "text": "three", "hit": False},
+    ]
+
+    memory.run_repo(
+        None,
+        out,
+        tmp_path / "report.md",
+        tmp_path / "index.json",
+        "needle",
+        out,
+        "",
+        0,
+        65536,
+        1 << 20,
+        8,
+        256,
+        16,
+        max_hits=2,
+    )
+    assert "repo search: 2 exact hit(s)" in capsys.readouterr().out
+
+
 def test_repo_global_checkpoints(tmp_path: Path, monkeypatch) -> None:
     repo = tmp_path / "r"
     repo.mkdir()

@@ -24,7 +24,9 @@ blob SHA.
 
 `--search` decodes the last version of every indexed file and returns exact
 `path:line` hits. It is exact text search over the stored memory, not a
-fuzzy or vector search.
+fuzzy or vector search. `--context N` adds grep-style surrounding lines,
+`--hits-json PATH` writes the ordered hits and spans, and `--max-hits`
+caps the result. Hits are deduped per line.
 
 `--update` reads the manifest HEAD and appends only new commits. A per-file
 chain is byte-identical to a full rebuild at the same HEAD; global mode
@@ -82,5 +84,7 @@ uv run cml repo --repo ~/.cache/hncm/edit/repos/tiangolo__fastapi.git \
   --out /tmp/fastapi-index --limit 80 \
   --report reports/REPO-INDEX.md --json reports/repo-index.json
 uv run cml repo --index /tmp/fastapi-index --search "FastAPI"
+uv run cml repo --index /tmp/fastapi-index --search "FastAPI" \
+  --context 1 --hits-json /tmp/hits.json
 uv run pytest tests/test_repo_memory.py
 ```

@@ -19,8 +19,9 @@ commit.
 | repo incremental | `cml repo --update` | appends new versions; per-file chains byte-identical to a full rebuild; unchanged chains are not re-encoded | `test_repo_memory.py` |
 | MCP resources | `cml mcp --index` | 5 exact tools + `repo://path[@n]` resources and a version template | `test_mcp.py` |
 | global checkpoints | `cml repo --global --checkpoint 32` | 80 files → 482,502 B = **20.4x**; 41 snapshots, access ≤31 deltas; cold latest 0.25 s vs 20.9 s full decode | `test_repo_memory.py` |
+| context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 
-`67 passed`. The bytes for the repo index are stored gzip-wrapped when
+`68 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -71,8 +72,10 @@ model work. One GPU job at a time; no new base.
    `repo://path` resource; `repo://{path}@{version}` is the template; the
    five tools are unchanged. Test: `tests/test_mcp.py`; config and limits
    in `cml/reports/MCP.md`.
-3. **repo-memory context search.** `--context N` lines, `--json` hits,
-   multi-hit ordering. Test: exact path/line on a temp repo.
+3. ~~**repo-memory context search.**~~ **Shipped.** `--context N` prints
+   grep-style context; `--hits-json PATH` writes ordered hits; hits are
+   deduped per line and capped by `--max-hits`. `--context 1` on the
+   FastAPI index returned exact surrounding lines.
 4. ~~**repo global checkpoints.**~~ **Shipped.** `--global --checkpoint K`
    writes a gzip snapshot every K versions; decode starts at the nearest
    snapshot. At K=32 the 80-file sample is 20.4x with 41 snapshots and
@@ -116,16 +119,16 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **R1/M1/R2** — incremental repo index, MCP
-resources, and global checkpoints (20.4x at K=32, access ≤31 deltas).
+Shipped this session: **R1/M1/R2 + context search** — incremental updates,
+MCP resources, global checkpoints (20.4x, access ≤31), and ordered exact
+search with context and JSON hits.
 
 Next session, one of:
 1. **L1**: real-log gate pass (≥10x near-identical, ≥2x changed). Gather
    pytest CI logs first; the synthetic 27.3x is not evidence.
 2. **B1/B2**: the ByteCopy gate, unchanged. B1 is the cheap control; run
    it before any head scaling.
-3. **repo-memory context search**: `--context N`, `--json`, multi-hit
-   ordering.
+3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -140,6 +143,8 @@ uv run cml repo --repo ~/.cache/hncm/edit/repos/tiangolo__fastapi.git \
 uv run cml repo --repo ~/.cache/hncm/edit/repos/tiangolo__fastapi.git \
   --out /tmp/fastapi-index --update
 uv run cml repo --index /tmp/fastapi-index --search "FastAPI"
+uv run cml repo --index /tmp/fastapi-index --search "FastAPI" \
+  --context 2 --max-hits 20 --hits-json /tmp/hits.json
 uv run cml repo --repo ... --out /tmp/g --global --limit 80
 uv run cml repo --repo ... --out /tmp/g --global --checkpoint 32 --limit 80
 uv run cml mcp --index /tmp/fastapi-index
