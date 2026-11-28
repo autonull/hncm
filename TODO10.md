@@ -1,8 +1,8 @@
 # TODO10 — exact memory products + ByteCopy LM
 
-Status: 2026-11-28. Continuation of `TODO9.md`. `TODO9` is the research
-record; this file is the working plan. Keep it short and update it at each
-commit.
+Status: 2026-11-28. Continuation of `TODO9.md`. **Superseded by
+`TODO11.md` as the working plan.** Keep this file as the record of
+B1/T0-T1d/TP1. `TODO9` remains the research record.
 
 ## 1. Shipped — do not regress
 

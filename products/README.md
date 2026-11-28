@@ -16,3 +16,4 @@ under `cml/` (the codec, the trunk and the CLI) but not documentation.
 | log-delta | [`log-delta/`](log-delta/README.md) | exact CI log history, 27.3x, 1.8x better than gzip |
 | pack-doctor | [`pack-doctor/`](pack-doctor/README.md) | rank spans by net bits at the measured bpb |
 | copy-lm | [`copy-lm/`](copy-lm/README.md) | byte LM with an exact copy head (research prototype) |
+| template-pack | [`template-pack/`](template-pack/README.md) | exact templates, fills, provenance, search; audit, not compression |

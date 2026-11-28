@@ -846,6 +846,8 @@ fills, 844 KB pack.
 
 ## References
 
+- `TODO11.md`: current working plan; template products and exact memory.
+- `TODO10.md`: previous plan; B1/T0-T1d/TP1 record.
 - `TODO8.md`: codec record; delta product and exact codec.
 - `cml/reports/DELTA.md`: 56.6x / 27.8x exact delta.
 - `cml/reports/REPO-MEMORY.md`: 40.0x exact history chain.
