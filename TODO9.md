@@ -834,6 +834,16 @@ at the trunk's 0.968 rate; fixed+fill coverage is 2.4% and literals are
 literal byte model: condition it on the event state (T1d), not on more
 templates.
 
+**T1d result.** A mixed event/byte stream at 2.4M parameters scores
+2.9614 literal bits/byte vs 2.9680 for an event-ablated control: +0.0067
+bpb. The event identity helps, but the literal model is still the binding
+term; the 0.03 gate needs scale or a stronger byte head.
+
+**Product: Template Pack.** `cml tpack` ships exact templates, fills,
+counts, provenance, and search as JSON. It is an audit/search and install
+artifact, not a compressor. On the `cml` source: 2,990 templates, 7,318
+fills, 844 KB pack.
+
 ## References
 
 - `TODO8.md`: codec record; delta product and exact codec.

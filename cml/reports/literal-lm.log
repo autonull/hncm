@@ -1,0 +1,65 @@
+library 300 templates, 2,451 fills; mixed 1,836,567 tokens; test bytes 97,608
+  step     0/2000 loss 8.1722 lr 6.00e-06
+  step   100/2000 loss 3.2174 lr 3.00e-04
+  step   200/2000 loss 2.4792 lr 2.98e-04
+  step   300/2000 loss 2.4761 lr 2.93e-04
+  step   400/2000 loss 2.3983 lr 2.84e-04
+  step   500/2000 loss 2.1940 lr 2.71e-04
+  step   600/2000 loss 1.9770 lr 2.56e-04
+  step   700/2000 loss 1.8273 lr 2.39e-04
+  step   800/2000 loss 1.6919 lr 2.19e-04
+  step   900/2000 loss 1.6402 lr 1.98e-04
+  step  1000/2000 loss 1.6485 lr 1.76e-04
+  step  1100/2000 loss 1.5290 lr 1.54e-04
+  step  1200/2000 loss 1.5394 lr 1.32e-04
+  step  1300/2000 loss 1.4512 lr 1.11e-04
+  step  1400/2000 loss 1.3968 lr 9.10e-05
+  step  1500/2000 loss 1.3329 lr 7.34e-05
+  step  1600/2000 loss 1.2483 lr 5.83e-05
+  step  1700/2000 loss 1.3169 lr 4.62e-05
+  step  1800/2000 loss 1.3254 lr 3.72e-05
+  step  1900/2000 loss 1.2762 lr 3.18e-05
+  step  1999/2000 loss 1.2900 lr 3.00e-05
+mixed: {'arm': 'mixed', 'literal_bpb': 2.9613568011839186, 'params': 2403840, 'seconds': 28.0}
+  step     0/2000 loss 8.1196 lr 6.00e-06
+  step   100/2000 loss 3.3341 lr 3.00e-04
+  step   200/2000 loss 2.5630 lr 2.98e-04
+  step   300/2000 loss 2.3980 lr 2.93e-04
+  step   400/2000 loss 2.2577 lr 2.84e-04
+  step   500/2000 loss 2.1221 lr 2.71e-04
+  step   600/2000 loss 1.9471 lr 2.56e-04
+  step   700/2000 loss 1.9276 lr 2.39e-04
+  step   800/2000 loss 1.8129 lr 2.19e-04
+  step   900/2000 loss 1.6881 lr 1.98e-04
+  step  1000/2000 loss 1.6108 lr 1.76e-04
+  step  1100/2000 loss 1.5721 lr 1.54e-04
+  step  1200/2000 loss 1.4987 lr 1.32e-04
+  step  1300/2000 loss 1.4545 lr 1.11e-04
+  step  1400/2000 loss 1.3529 lr 9.10e-05
+  step  1500/2000 loss 1.3463 lr 7.34e-05
+  step  1600/2000 loss 1.4089 lr 5.83e-05
+  step  1700/2000 loss 1.3289 lr 4.62e-05
+  step  1800/2000 loss 1.2584 lr 3.72e-05
+  step  1900/2000 loss 1.2524 lr 3.18e-05
+  step  1999/2000 loss 1.2673 lr 3.00e-05
+ablated: {'arm': 'ablated', 'literal_bpb': 2.9680314310946256, 'params': 2403840, 'seconds': 24.6}
+# Literal LM: event-conditioned byte fallback
+
+- code corpus `7ae9de7b4a15`, train 2,000,000 B, held-out 100,000 B
+- library 300 templates; vocab 3,010; 97,608 held-out literal bytes
+- trunk d192 x 4 layers x 4 heads, seq 256, batch 32, 2000 steps
+- mixed: template and fill ids precede each literal run; ablated: one EVENT token occupies the same positions
+
+| arm | literal bpb | params | seconds |
+|---|---:|---:|---:|
+| mixed | 2.9614 | 2,403,840 | 28.0 |
+| ablated | 2.9680 | 2,403,840 | 24.6 |
+
+## Read
+
+- event context changes literal bits by **+0.0067 bpb** (positive means the mixed arm is better).
+- gate: mixed literal bpb at least 0.03 below ablated. MISS.
+- this is a small control model, not the byte trunk; the ablation isolates the event identity at equal length and cost.
+
+Took 53 s on one GPU.
+

@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`82 passed`. The bytes for the repo index are stored gzip-wrapped when
+`85 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -174,6 +174,19 @@ coverage is only **2.4%**; literals are **97.6%**. The event codes are no
 longer the bottleneck. The binding term is the literal byte model; T1d
 conditions it on the event state.
 
+**T1d result (event-conditioned literals).** At 2.4M parameters and 2,000
+steps, the mixed stream scores **2.9614** literal bits/byte vs **2.9680**
+ablated: **+0.0067 bpb**, a real but small gain, below the 0.03 gate. The
+event identity helps; the literal model is still the binding term. Scale
+and a stronger byte head are the next terms, not more template coverage.
+
+**Product: Template Pack (`cml tpack`).** Exact templates, fills, counts,
+and provenance as a searchable JSON artifact. On the `cml` source: 2,990
+templates, 7,318 fills, 844 KB pack, 50 files. It is an audit/search and
+install artifact, not a compressor; the pack can be large. `--search "def "`
+returns exact structural hits with source files. Product doc:
+`products/template-pack/README.md`.
+
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Price a rejected proposal as a byte
 comparison, not a forward: a proposal is not an emitted copy. When a
@@ -226,7 +239,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | ~~**T1a**~~ | event LM pilot | `cml event-lm` | **signal**: 4.8% new combos vs 1.4%; bpb 1.77, fill IDs expensive | 1 GPU-h |
 | ~~**T1b**~~ | long-fill copy codec | `cml fill-copy` | **exact**: 0.148 B/B at 8 B, 0.135 at 12 B; 89 B/decision | CPU |
 | ~~**T1c**~~ | global templates + hole budget | `cml fill-copy --max-holes 2 --min-fixed 16` | **done**: 0.126 B/B at 1 bpb, 0.122 at 0.968; 97.6% literal | CPU |
-| **T1d** | event-conditioned literal model | `cml event-lm --literals` | >=0.03 bits/B literal gain, exact | 1 GPU-day |
+| ~~**T1d**~~ | event-conditioned literals | `cml literal-lm` | **+0.0067 bpb** at 2.4M; below 0.03 | 1 GPU-h |
+| ~~**TP1**~~ | Template Pack product | `cml tpack` | **shipped**: 2,990 templates, search + provenance | 1 day |
 | **T2** | library install transfer | `cml template-lm --install` | >=0.15 bpb from installation | 1 GPU-day |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
@@ -246,17 +260,15 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **T0 template probe + T1a event pilot**. The new
-unit is a template with typed holes. The event arm reaches **4.8% new-
-combination accuracy vs 1.4% for type-count**, so template context has a
-signal. Its bits/byte is 1.77 because exact fill IDs are expensive; the
-next lever is **long fills with a local copy pointer**, not a larger fill
-softmax. A 500 KB estimate puts the long-fill codec at 0.957 bpb, near
-the 0.97 byte trunk.
+Shipped this session: **T0/T1a/T1b/T1c/T1d + Template Pack**. The exact
+template codec is at size parity on the blob (0.122-0.126 B/B) and is
+compute-cheap; the event-conditioned literal model gains only +0.0067 bpb
+at 2.4M params. The working product is the **Template Pack**: exact
+templates, fills, counts, provenance, and search, installable as JSON.
 
 Next session, one of:
-1. **T1d**: event-conditioned literal model. The event state conditions
-   the byte fallback; gate >=0.03 bits/B on literals, exact output.
+1. **Template Pack MCP/diff**: expose `tpack` as `template://` resources
+   and diff two packs. This is the product path.
 2. **T2**: install a repo-A library on repo B; >=0.15 bpb.
 3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
 4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
@@ -293,6 +305,9 @@ uv run cml fill-copy --train-bytes 2000000 --test-bytes 100000 \
   --min-fill 8 --min-count 3
 uv run cml fill-copy --train-bytes 2000000 --test-bytes 100000 \
   --min-fill 16 --min-count 16 --max-n 10 --max-holes 2 --min-fixed 16
+uv run cml literal-lm --train-bytes 2000000 --test-bytes 100000 \
+  --steps 2000 --seq 256 --d 192 --layers 4 --batch 32
+uv run cml tpack --repo /home/me/hncm/cml --out /tmp/cml.tpack --search "def "
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

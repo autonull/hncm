@@ -1,0 +1,18 @@
+{
+ "rows": [
+  {
+   "arm": "mixed",
+   "literal_bpb": 2.9613568011839186,
+   "params": 2403840,
+   "seconds": 28.0
+  },
+  {
+   "arm": "ablated",
+   "literal_bpb": 2.9680314310946256,
+   "params": 2403840,
+   "seconds": 24.6
+  }
+ ],
+ "gain": 0.006674629910706997,
+ "git": "3a1121d969e443d63769d508c3464eee153433ec"
+}
