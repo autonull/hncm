@@ -39,18 +39,37 @@ The exact copy path works; the **gate is not calibrated on frozen last
 states**. At gate 0.9 it reaches 0.96x bytes/step and every accepted copy
 is exact.
 
-## Next experiment (one GPU job)
+## Joint repair loop
 
-Train the copy head **jointly with the last block**, add a relative-position
-bias and a top-2 pointer margin to the gate, and require a digest before a
-copy. The target is >90% copy precision at ≥5% coverage; at mean length 10
-that is >1.2x bytes/step, and the copied bytes are exact.
+Frozen `d448-l8`, `seq=2048` code trunk. Each run changes one term on
+2 MB of code and 100 kB held-out code.
+
+| id | change | span precision @ 0.9 | coverage | bytes/step |
+|---|---|---:|---:|---:|
+| R0 | frozen trunk, copyability gate | 51.1% | 4.2% | 0.95x |
+| R1 | joint, lr 1e-4 | no gate fire | 0% | 1.00x |
+| R2 | joint, lr 1e-3, copyability gate | 27.7% | 11.0% | 0.77x |
+| R3 | separate lrs, pointer-correctness gate | 45.8% | 5.4% | 0.93x |
+| R4 | exact-span gate | 62.0% | 5.0% | 0.96x |
+| R5 | run head at predicted source | 61.9% | 4.7% | 0.97x |
+| R6 | run head conditioned on source | 63.7% | 4.9% | 0.97x |
+
+R6 reaches **96.3% span precision at 100% source precision** at gate
+0.99, but coverage is only **0.85%** and bytes/step is 1.00x. The
+precision target exists; it is not at ≥5% coverage. The next repair is
+pointer coverage, not the run head.
+
+Report: `cml/reports/COPY-LM-JOINT.md`; repair logs in
+`cml/reports/b1-*.log`.
 
 ## Run
 
 ```bash
 uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 200
+uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
+  --train-bytes 2000000 --eval-bytes 100000 --windows 200
 ```
 
-Report: `cml/reports/COPY-LM.md`.
+Report: `cml/reports/COPY-LM.md`; joint repair:
+`cml/reports/COPY-LM-JOINT.md`.

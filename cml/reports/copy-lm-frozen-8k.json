@@ -1,0 +1,65 @@
+{
+ "run": "codec-byte-model-code-756752-d448-l8-q2048",
+ "config": {
+  "steps": 2000,
+  "batch": 128,
+  "lr": 0.001,
+  "window": 2048,
+  "min_len": 8,
+  "cap": 64,
+  "depth": 8,
+  "train_bytes": 2000000,
+  "eval_bytes": 100000,
+  "windows": 200,
+  "seed": 0,
+  "joint": true,
+  "joint_batch": 4,
+  "joint_positions": 64,
+  "block_lr": 1e-05
+ },
+ "rows": [
+  {
+   "threshold": 0.5,
+   "coverage": 0.16853841145833334,
+   "precision": 0.20315872081616637,
+   "source_precision": 0.2722229560163783,
+   "copies": 1794,
+   "speedup": 0.5953682271531927
+  },
+  {
+   "threshold": 0.7,
+   "coverage": 0.11661783854166667,
+   "precision": 0.338370720188902,
+   "source_precision": 0.4350282485875706,
+   "copies": 1235,
+   "speedup": 0.8059914525006767
+  },
+  {
+   "threshold": 0.9,
+   "coverage": 0.049072265625,
+   "precision": 0.6374207188160677,
+   "source_precision": 0.7567567567567568,
+   "copies": 513,
+   "speedup": 0.96791543940185
+  },
+  {
+   "threshold": 0.95,
+   "coverage": 0.028889973958333332,
+   "precision": 0.7215447154471545,
+   "source_precision": 0.9041095890410958,
+   "copies": 296,
+   "speedup": 0.9860308285163777
+  },
+  {
+   "threshold": 0.99,
+   "coverage": 0.008544921875,
+   "precision": 0.963302752293578,
+   "source_precision": 1.0,
+   "copies": 78,
+   "speedup": 0.9988817274261432
+  }
+ ],
+ "train_copy_rate": 0.39508056640625,
+ "seconds": 267.4,
+ "git": "71785e77a7346e7089f7af52a68eacc91efd7725"
+}
