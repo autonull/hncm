@@ -3484,6 +3484,180 @@ def run_packs(
     return 0
 
 
+def run_memory_probe(
+    oracle: bool,
+    run: str,
+    corpus_name: str,
+    nbytes: int,
+    sizes: str,
+    min_count: int,
+    cap: int,
+    scale_cap: int,
+    copy_bpb: float,
+    tag: str = "",
+) -> int:
+    """A0.0: exact-span oracle — free pack ids, charged pack bytes.
+
+    The literal arm is the frozen ~20M trunk at its own context length.  A
+    pack hit costs zero payload bits and no model call; a literal costs the
+    trunk's own bits and one call.  The pack bytes are charged once per
+    file, so `total` is comparable to the LZ copy arm (`copy_bpb`).
+    """
+    import bytecodec
+
+    if not oracle:
+        raise SystemExit("memory-probe: --oracle is the only implemented probe")
+    t0 = time.perf_counter()
+    corpus = (
+        code_scale_corpus(scale_cap)
+        if corpus_name == "code"
+        else text_corpus(corpus_name)
+    )
+    data = corpus.test[:nbytes]
+    model = bytecodec.load_model(RUNS / run / "model.pt")
+    bits = bytecodec.literal_bits(bytecodec.FastByteCodec(model), data)
+    stream = json.loads((RUNS / run / "metrics.json").read_text())
+    wanted = [int(s) for s in sizes.split(",") if s.strip()]
+    lex = _lexicon_for(corpus, max(wanted), min_count, cap)
+    rows = []
+    for active in wanted:
+        active = min(active, len(lex.units))
+        pack = codec_mod.Lexicon(lex.units[:active])
+        parse, covered = codec_mod.greedy_parse(data, pack, cap)
+        literal_bits = 0.0
+        literals = 0
+        rebuilt = bytearray()
+        i = 0
+        for sym in parse:
+            if sym < 0:
+                literal_bits += float(bits[i])
+                literals += 1
+                rebuilt.append(data[i])
+                i += 1
+                continue
+            unit = pack.units[sym]
+            rebuilt += unit
+            i += len(unit)
+        n = max(len(data), 1)
+        pack_bytes = len(pack.blob())
+        payload_bpb = literal_bits / n
+        pack_bpb = 8 * pack_bytes / n
+        total_bpb = payload_bpb + pack_bpb
+        rows.append(
+            {
+                "active": active,
+                "coverage": covered / n,
+                "literals": literals,
+                "payload_bpb": payload_bpb,
+                "pack_bytes": pack_bytes,
+                "pack_bpb": pack_bpb,
+                "total_bpb": total_bpb,
+                "copy_bpb": copy_bpb,
+                "delta_bpb": total_bpb - copy_bpb,
+                "calls_per_byte": literals / n,
+                "speedup": n / max(literals, 1),
+                "provenance": 1.0,
+                "parse_roundtrip": bytes(rebuilt) == data,
+                "pass": total_bpb < copy_bpb,
+            }
+        )
+        print(
+            f"pack {active}: coverage {rows[-1]['coverage']:.3f}, "
+            f"payload {payload_bpb:.3f} + pack {pack_bpb:.3f} = "
+            f"{total_bpb:.3f} bpb vs copy {copy_bpb:.3f} "
+            f"({'PASS' if rows[-1]['pass'] else 'FAIL'}), "
+            f"{rows[-1]['speedup']:.2f}x calls",
+            flush=True,
+        )
+    secs = time.perf_counter() - t0
+    best = min(rows, key=lambda r: r["total_bpb"])
+    passed = any(r["pass"] for r in rows)
+    kept = best["speedup"] >= 1.5 or best["provenance"] >= 1.0
+    lines = [
+        f"# A0.0: exact-span oracle on seq {model.pos.num_embeddings}",
+        "",
+        f"- run `{run}` on `{corpus_name}` sha `{corpus.sha[:12]}`, "
+        f"held-out {len(data):,} B",
+        f"- base: {stream.get('params', 0):,} params, "
+        f"seq {model.pos.num_embeddings}, "
+        f"{stream.get('payload_bpb', 0):.3f} bpb stream-only",
+        "- pack ids are free; pack bytes are charged once per file",
+        "- literal arm: the frozen trunk's own static CDF",
+        f"- reference: LZ copy arm `{copy_bpb:.3f}` bpb (TODO8, 756,752 B)",
+        "- both sides are size instruments; the exact copy arm adds ~5%",
+        "",
+        "| pack | coverage | payload bpb | pack B | pack bpb | total bpb | "
+        "delta | calls/B | speedup | round-trip | gate |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['active']} | {r['coverage']:.3f} | "
+            f"{r['payload_bpb']:.3f} | {r['pack_bytes']:,} | "
+            f"{r['pack_bpb']:.3f} | {r['total_bpb']:.3f} | "
+            f"{r['delta_bpb']:+.3f} | {r['calls_per_byte']:.3f} | "
+            f"{r['speedup']:.2f}x | "
+            f"{'OK' if r['parse_roundtrip'] else 'FAIL'} | "
+            f"{'pass' if r['pass'] else 'fail'} |"
+        )
+    lines += [
+        "",
+        "## Read",
+        "",
+        f"- best pack **{best['active']}**: total {best['total_bpb']:.3f} bpb "
+        f"vs copy {copy_bpb:.3f} ({best['delta_bpb']:+.3f}).",
+        f"- coverage {best['coverage']:.3f}; one model call per literal "
+        f"({best['calls_per_byte']:.3f} calls/B, {best['speedup']:.2f}x fewer "
+        f"calls than the stream arm).",
+        f"- provenance: every emitted byte is a tagged pack span or a neural "
+        f"literal; parse round-trip {'OK' if all(r['parse_roundtrip'] for r in rows) else 'FAIL'}.",
+        "",
+    ]
+    if passed:
+        lines += [
+            "**A0.0 pass.** The oracle beats the LZ copy arm on bits, so the "
+            "memory integration holds on this base"
+            + (
+                " and is worth the 2K base (A0.1)."
+                if model.pos.num_embeddings < 2048
+                else "."
+            )
+            + " This is an upper bound with free ids, not a trained model.",
+        ]
+    else:
+        lines += [
+            "**A0.0 bits fail.** The oracle cannot beat the LZ copy arm even "
+            "with free ids. "
+            + (
+                f"It keeps the claim alive on {best['speedup']:.2f}x decode at "
+                f"100% provenance (A0.0b), but do not train A0.1 for bits."
+                if kept
+                else "A0.0b also fails; stop the LM claim and ship the codecs."
+            ),
+        ]
+    lines += ["", f"Took {secs:.0f} s on one GPU.", ""]
+    suffix = f"-{tag}" if tag else ""
+    write_json(
+        REPORTS / f"memory-probe{suffix}.json",
+        {
+            "run": run,
+            "corpus": corpus_name,
+            "corpus_sha": corpus.sha,
+            "train_sha": corpus.train_sha,
+            "n": len(data),
+            "copy_bpb": copy_bpb,
+            "rows": rows,
+            "passed": passed,
+            "a0_0b_kept": kept,
+            "seconds": round(secs, 1),
+            "git": git_sha(),
+        },
+    )
+    write_text(REPORTS / f"MEMORY-PROBE{suffix}.md", "\n".join(lines))
+    print("\n".join(lines))
+    return 0
+
+
 def _median(values: list[float]) -> float | None:
     return float(np.median(values)) if values else None
 
@@ -5941,17 +6115,25 @@ def _lexicon_for(corpus: CodeCorpus, units: int, min_count: int, cap: int):
 
 
 def _byte_model(
-    corpus: CodeCorpus, steps: int, seed: int, d: int = 256, layers: int = 6
+    corpus: CodeCorpus,
+    steps: int,
+    seed: int,
+    d: int = 256,
+    layers: int = 6,
+    seq: int = 256,
 ):
     import bytecodec
 
-    path = CACHE / f"byte-{corpus.train_sha[:12]}-d{d}-l{layers}-s{steps}-n{seed}.pt"
+    qtag = "" if seq == 256 else f"-q{seq}"
+    path = (
+        CACHE / f"byte-{corpus.train_sha[:12]}-d{d}-l{layers}-s{steps}-n{seed}{qtag}.pt"
+    )
     if path.exists():
         try:
             return bytecodec.load_model(path)
         except RuntimeError, KeyError, ValueError:
             pass
-    cfg = bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed)
+    cfg = bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed, seq=seq)
     model, secs = bytecodec.train_byte_model(corpus.train, cfg)
     bytecodec.save_model(path, model, cfg, secs)
     return model
@@ -5969,16 +6151,19 @@ def _run_byte_model(
     proof: int,
     d: int = 256,
     layers: int = 6,
+    seq: int = 256,
 ) -> dict:
     import bytecodec
 
-    model = _byte_model(corpus, steps, seed, d, layers)
+    model = _byte_model(corpus, steps, seed, d, layers, seq)
     tag = f"-d{d}-l{layers}" if (d, layers) != (256, 6) else ""
+    if seq != 256:
+        tag += f"-q{seq}"
     out_dir = RUNS / f"codec-{arm}-{corpus_name}-{nbytes}{tag}"
     bytecodec.save_model(
         out_dir / "model.pt",
         model,
-        bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed),
+        bytecodec.ByteConfig(d=d, layers=layers, steps=steps, seed=seed, seq=seq),
         0.0,
     )
     payload = bytecodec.FastByteCodec(model).encode(data)
@@ -6222,7 +6407,18 @@ def run_codec(
         if scale_cap:
             corpus = code_scale_corpus(scale_cap)
         metrics = _run_byte_model(
-            corpus, data, arm, corpus_name, nbytes, split, steps, seed, proof, d, layers
+            corpus,
+            data,
+            arm,
+            corpus_name,
+            nbytes,
+            split,
+            steps,
+            seed,
+            proof,
+            d,
+            layers,
+            seq,
         )
         metrics["seconds"] = round(time.perf_counter() - t0, 3)
         write_json(RUNS / metrics["id"] / "metrics.json", metrics)
@@ -8227,6 +8423,17 @@ def main(argv: list[str] | None = None) -> int:
     ps.add_argument("--steps", type=int, default=8000)
     ps.add_argument("--sizes", default="128,256,512,1024")
     ps.add_argument("--seed", type=int, default=0)
+    mp = sub.add_parser("memory-probe")
+    mp.add_argument("--oracle", action="store_true")
+    mp.add_argument("--run", default="codec-byte-model-code-756752-d448-l8")
+    mp.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    mp.add_argument("--bytes", type=int, default=756_752)
+    mp.add_argument("--sizes", default="256,1024,4096")
+    mp.add_argument("--min-count", type=int, default=16)
+    mp.add_argument("--cap", type=int, default=16)
+    mp.add_argument("--scale-cap", type=int, default=48_000_000)
+    mp.add_argument("--copy-bpb", type=float, default=0.852)
+    mp.add_argument("--tag", default="")
     pf = sub.add_parser("portfolio")
     pf.add_argument("--round", type=int, default=1)
     pf.add_argument("--families", default="all")
@@ -8509,6 +8716,19 @@ def main(argv: list[str] | None = None) -> int:
         return run_breadth(a.corpus, a.bytes, a.spans, a.seed)
     if a.cmd == "packs":
         return run_packs(a.corpus, a.bytes, a.spans, a.steps, a.sizes, a.seed)
+    if a.cmd == "memory-probe":
+        return run_memory_probe(
+            a.oracle,
+            a.run,
+            a.corpus,
+            a.bytes,
+            a.sizes,
+            a.min_count,
+            a.cap,
+            a.scale_cap,
+            a.copy_bpb,
+            a.tag,
+        )
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)
     if a.cmd == "coverage":

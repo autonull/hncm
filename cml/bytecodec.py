@@ -56,6 +56,7 @@ class StaticByteCodec:
     def _cache(self) -> list[KV]:
         return new_cache(self.model)
 
+    @torch.no_grad()
     def _feed(self, cache: list[KV], sym: int) -> torch.Tensor:
         if cache[0].k.size(2) >= self.seq:
             truncate_cache(cache, self.seq - 1)

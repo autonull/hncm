@@ -9,7 +9,7 @@ are applications of the memory, not the claim.
 
 | work | state | artifact |
 |---|---|---|
-| **Track A better-LM** | **active** | **A0.0 oracle next**; then A0.1/A0.2/A1 |
+| **Track A better-LM** | **active** | **A0.0+A0.1 pass**; A0.2 gate next |
 | data + benchmark | **done** | `cml/editdata.py`; 5 repos, 12,811 edits, repo split |
 | retrieval G0 | **done** | `cml/reports/EDIT-LM.md`; exact `0.000` on 1,648 test commits |
 | E1 locator | **paused after GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
@@ -28,6 +28,38 @@ commits: exact `0.000`, valid `0.027`, output `0.991x`. Train `5,672`
 transplant cannot see the query repository's history; that is the point of
 G0. Artifacts: manifest `cml/runs/edit-manifest.json` (ignored), blob
 cache `~/.cache/hncm/edit` (308 MB). Reuse them.
+
+**A0.0 recorded 2026-11-27: pass.** On the frozen 19.5M `d448-l8`
+trunk (`seq=256`) and the 756,752 B held-out code, a 1,024-unit exact-span
+pack gives free-id payload **0.684** bpb plus **0.120** bpb pack charge =
+**0.804** bpb, against the LZ copy arm `0.852`; 3.19x fewer trunk calls and
+100% provenance. 256 units fails (1.052); 4,096 ties (0.845; the 0.482 pack
+charge cancels the coverage gain). The margin is an upper bound: ids are
+free and the literal bits are a size instrument. Artifact:
+`cml/reports/MEMORY-PROBE.md`; `cml memory-probe --oracle`. Next is A0.1.
+
+**A0.1 recorded 2026-11-27: pass.** The same 48M-train code trunk at
+`seq=2048` (20.3M params, 8,000 steps) codes the same 756,752 B test at
+**0.974** bpb, against `1.265` for the 256-byte trunk: **−0.291 bpb
+(−23%)**, proof round-trip OK on 4,096 B. The 2K base also sharpens the
+oracle: the 1,024-unit free-id pack totals **0.643** bpb, `0.209` below
+the LZ copy arm, at 3.19x fewer calls (`MEMORY-PROBE-2k.md`). A 4,096-unit
+pack still pays 0.482 bpb of charge, so pack induction (A0.2) must beat
+the 1,024 point on total bits, not on coverage. The run exposed and fixed
+a real bug: `StaticByteCodec._feed` built an autograd graph, so the KV
+cache leaked at long context. Next is A0.2.
+
+**A0.2 work order (the next session).** Use the `-q2048` base, not a new
+trunk. (1) Induce 1,024/4,096-unit packs from the 48M train; the lexicon
+and literal-bits caches make this CPU-cheap. (2) Embed each unit from the
+trunk's causal last-state readout of its preceding context, not mean
+pooling. (3) Score each candidate with a three-parameter gate
+(cosine, log count, length) and fit copy/compute on held-out spans.
+(4) Price the chosen unit id (no longer free) and report
+payload+pack+id bits against the 0.974 stream, the 0.643 free-id oracle,
+and `0.852` LZ. Gate: ≥0.1 bpb win at ≥1.5x fewer calls. (5) Run A0b by
+permuting unit ids; a cost below 0.2 bpb narrows the claim to patches.
+Do not start A1 before A0.2 and A0b are recorded.
 
 **E1/C1 are paused, not closed.** Their first runs produced no exact file,
 but the controls also exposed likely implementation and regime defects:
@@ -106,7 +138,7 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 
 | id | experiment | cost | gate |
 |---|---|---|---|
-| **A0** | on the 2K base: induce a 4k-64k exact-span pack; tied embeddings from the last-state readout; fit a 3-parameter gate; provenance tags (256 B oracle is A0.0) | 2 days, after A0.0/A0.1 | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
+| **A0** | on the 2K base: induce a 4k-64k exact-span pack; tied embeddings from the last-state readout; fit a 3-parameter gate; provenance tags (256 B oracle is A0.0) | **next** (A0.2); A0.0/A0.1 passed | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
 | **A0b** | shuffle control: permute concept ids, keep embeddings | hours | must cost ≥ 0.2 bpb, or identity is decorative and the claim narrows to patches |
 | **A1** | equal-charged-bytes: pack vs kNN vs LoRA at 64k/256k/1MB | 1 week | pack wins ≥ 2 of 3 structured domains; prose may go to LoRA |
 | **A2** | train the head: mixture NLL + charge on DP parses | 1-2 weeks | tied embeddings beat counts on held-out spans; ≥ 20% acceptance per pack byte |
@@ -114,11 +146,11 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 
 ### Efficiency audit: three fixes
 
-1. **Base context.** The frozen 20M trunk has `seq = 256` (run
-   `codec-byte-model-code-756752-d448-l8`). It cannot condition on a
-   4k-64k pack. A0 must first measure an oracle inside 256 B, or train a
-   2K-context 20M trunk (1-2 GPU-h) before any gate. Do not call the 256 B
-   trunk a long-context base.
+1. **Base context.** The frozen 20M trunk had `seq = 256` (run
+   `codec-byte-model-code-756752-d448-l8`); it could not condition on a
+   4k-64k pack. A0.0 measured the 256-byte oracle (pass) and A0.1 trained
+   the `seq=2048` 20M trunk (0.974 bpb, −23%). Use the `-q2048` run for
+   A0.2; do not train another base here.
 2. **Metric.** bpb alone duplicates the LZ copy arm (`0.852`) and the 40x
    chain. The unique claim is install, exact delete, and provenance at equal
    quality. Gate on bits-to-adapt and exact deletion first; bpb is a safety
@@ -129,9 +161,9 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 | id | probe | cost | stop rule |
 |---|---|---|---|
 | **A0-P** | pack ops on the exact chain: attach/detach/rm/diff plus provenance; exact delete | 1-2 CPU-days | cannot delete exactly → no product |
-| **A0.0** | oracle copy inside 256 B: free pack IDs, charged pack bytes; compare to the LZ copy arm | 2 h CPU | oracle ≥ copy arm → defer the LM claim |
-| **A0.0b** | if bits fail: speed/provenance upper bound on the same 256 B probe | 2 h CPU | ≥ 1.5x or 100% provenance keeps the claim alive |
-| **A0.1** | 2K-context 20M trunk on code, only if A0.0 passes | 1-2 GPU-h | quality/context fails → stop |
+| **A0.0** | oracle copy inside 256 B: free pack IDs, charged pack bytes; compare to the LZ copy arm | 2 h CPU | **done, pass**: 0.804 vs 0.852 bpb, 3.19x calls |
+| **A0.0b** | if bits fail: speed/provenance upper bound on the same 256 B probe | 2 h CPU | not needed; A0.0 passed on bits |
+| **A0.1** | 2K-context 20M trunk on code, only if A0.0 passes | 1-2 GPU-h | **done, pass**: 0.974 vs 1.265 bpb (−23%) |
 | **A0.2** | tied span embeddings + 3-parameter gate on the 2K base | 1 day | no signal over counts → stop |
 | **A0.3** | provenance, copy acceptance, structured decode on the 2K base | 1 day | gates in the A0 table |
 
@@ -370,12 +402,13 @@ Track A leads. The edit applications come after the memory has a signal.
 
 1. **Data + benchmark** (done): `cml/editdata.py`, repo split, manifest.
 2. **Exact memory substrate** (done): delta, chain, 20M byte trunk.
-3. **A0.0 oracle** (next): new `cml memory-probe --oracle` on the 256 B
-   trunk; free pack IDs, charged pack bytes, compare to the LZ copy arm.
-4. **A0.1 2K base**: extend the byte trunk to `seq=1024/2048` on code,
-   only if A0.0 passes. This is the minimum base that can read a pack.
-5. **A0.2 gate**: tied span embeddings + a three-parameter copy/compute
-   gate; first real better-LM test.
+3. **A0.0 oracle** (done): `cml memory-probe --oracle` on the 256 B
+   trunk; free pack IDs, charged pack bytes, versus the LZ copy arm.
+   Pass at 1,024 units: **0.804** vs **0.852** bpb.
+4. **A0.1 2K base** (done): extend the byte trunk to `seq=2048` on
+   code; **0.974** bpb vs **1.265** at seq 256 (−23%), proof OK.
+5. **A0.2 gate** (next): tied span embeddings + a three-parameter
+   copy/compute gate on the 2K base; first real better-LM test.
 6. **A1 equal bytes**: pack vs kNN vs LoRA at 64k/256k/1MB.
 7. **A0-P pack ops**: attach/detach/diff/rm and exact delete on the
    chain; repo-wide memory. Supporting product, CPU only.
@@ -396,9 +429,12 @@ uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
 uv run cml chain --repo ~/.cache/hncm/edit/repos/psf__requests.git \
   --path requests/models.py --out runs/models.cmlh
 
-# Track A, next (to add)
+# Track A, delivered
 uv run cml memory-probe --oracle --run codec-byte-model-code-756752-d448-l8
-uv run cml codec --arm byte-model --seq 2048 --steps 8000   # A0.1
+uv run cml memory-probe --oracle --tag 2k \
+  --run codec-byte-model-code-756752-d448-l8-q2048
+uv run cml codec --arm byte-model --seq 2048 --steps 8000 --d 448 --layers 8 \
+  --scale-cap 48000000 --bytes 756752
 
 # applications, only after Track A has a signal
 uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
@@ -418,8 +454,8 @@ A0 and A1 pass.
 
 | bucket | budget | rule |
 |---|---:|---|
-| **A0.0 oracle copy** | 2 h CPU | first; free IDs inside 256 B, compare to LZ |
-| **A0.1 2K base** | 1-2 GPU-h | only if A0.0 passes |
+| **A0.0 oracle copy** | 2 h CPU | **done, pass**; 0.804 vs 0.852 bpb at 1,024 units |
+| **A0.1 2K base** | 1-2 GPU-h | **done, pass**: 0.974 bpb at seq 2048 vs 1.265 |
 | **A0.2 tied embeddings + gate** | 1 day | first real better-LM test |
 | **A1 equal-charged-bytes** | 1 week | pack vs kNN vs LoRA |
 | **A0-P pack ops + repo memory** | 2-3 CPU-days | supporting product; never first in a report |
@@ -457,8 +493,8 @@ substitute for the architecture claim.
 
 | horizon | win | metric | state |
 |---|---|---|---|
-| now | **better-LM oracle** | A0.0 ≥ LZ copy arm, or A0.0b speed/provenance | 2 h + 2 h |
-| next | **2K base + gate** | code/JSON ≥ 0.1 bpb; ≥ 1.5x structured | A0.1/A0.2 |
+| now | **better-LM oracle** | A0.0 0.804 vs 0.852 bpb, 3.19x calls | **pass** |
+| next | **A0.2 gate** | tied embeddings + gate on the 2K base; ≥0.1 bpb win | A0.1 pass (−0.291) |
 | next | **equal-byte adapter** | pack beats kNN/LoRA on ≥ 2/3 domains | A1 |
 | research | **composition** | G4 +10 points on held-out slots | A3 |
 | supporting | delta / memory | 56.6x / 40.0x exact | shipped |
@@ -501,14 +537,14 @@ are never allowed to displace the architecture gates.
 
 **Execution order by expected value.**
 
-1. **A0.0 oracle copy** (2 h CPU): free pack IDs inside 256 B, charged
-   pack bytes, compared to the LZ copy arm. If bits fail, run **A0.0b**
-   (2 h) for speed and provenance before stopping; a better-LM claim can
-   be speed or a unique capability, not only bpb. Stop only if both fail.
-2. **A0.1 2K base** (1-2 GPU-h): only if A0.0 passes. The current trunk
-   is `seq=256` and cannot read a 4k-64k pack.
-3. **A0.2 gate + tied embeddings** (1 day): the first real better-LM
-   test; no signal over counts → stop.
+1. **A0.0 oracle copy** (done, pass): free pack IDs inside 256 B,
+   charged pack bytes. 1,024 units → 0.804 bpb vs the LZ copy arm
+   0.852, 3.19x fewer calls, 100% provenance. 256 units fails and
+   4,096 ties; the next pack point is A0.1.
+2. **A0.1 2K base** (done, pass): 0.974 bpb at `seq=2048`, −0.291
+   against the 256-byte trunk. The base can now read a longer pack.
+3. **A0.2 gate + tied embeddings** (next, 1 day): the first real
+   better-LM test; no signal over counts → stop.
 4. **A1 equal-charged-bytes** (1 week): pack vs kNN vs LoRA at 64k/256k/
    1MB. This is the adaptation claim.
 5. **A0-P pack ops + repo-wide memory** (CPU, parallel): exact delete,
