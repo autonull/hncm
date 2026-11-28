@@ -826,8 +826,13 @@ literal fallback. That is a narrow pass; the exact codec must verify it.
 **T1b codec.** `cml fill-copy` is exact (round-trip OK) and takes 89 B
 per decision at an 8 B fill gate. Size is 0.148 B/B at 8 B and 0.135 at
 12 B, against the 0.121 byte trunk: the template-id and fill-pointer
-overhead is the remaining gap, not a wrong byte. The closing levers are
-entropy coding of events and multi-line templates.
+overhead is the remaining gap, not a wrong byte. Global parsing plus a
+2-hole/16-fixed-byte budget prunes the table to 300 templates and 11,929 B.
+At a 16 B fill gate the blob is 0.126 B/B with 1 bpb literals, 0.122 B/B
+at the trunk's 0.968 rate; fixed+fill coverage is 2.4% and literals are
+97.6%. The event codes are no longer the bottleneck. The open term is the
+literal byte model: condition it on the event state (T1d), not on more
+templates.
 
 ## References
 

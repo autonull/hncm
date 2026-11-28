@@ -119,6 +119,14 @@ def tokenize(
     return out
 
 
+def tokens_all(data: bytes, min_fill: int = 8) -> list[tuple[bytes, bytes]]:
+    """One token stream over the whole slice, so templates may cross lines."""
+    out: list[tuple[bytes, bytes]] = []
+    for line in data.splitlines(keepends=True):
+        out.extend(tokenize(line, min_fill))
+    return out
+
+
 def keyof(tokens: list[tuple[bytes, bytes]]) -> tuple[bytes, ...]:
     return tuple(
         b"F" + value if kind == b"F" else b"H" + kind for kind, value in tokens
@@ -126,18 +134,22 @@ def keyof(tokens: list[tuple[bytes, bytes]]) -> tuple[bytes, ...]:
 
 
 def induce(
-    train: bytes, min_fill: int = 8, min_count: int = 3, max_n: int = 6
+    train: bytes,
+    min_fill: int = 8,
+    min_count: int = 3,
+    max_n: int = 6,
+    max_holes: int = 4,
+    min_fixed: int = 6,
 ) -> dict[tuple[bytes, ...], int]:
     counts: Counter[tuple[bytes, ...]] = Counter()
-    for line in train.splitlines(keepends=True):
-        ts = tokenize(line, min_fill)
-        for n in range(2, max_n + 1):
-            for i in range(len(ts) - n + 1):
-                win = ts[i : i + n]
-                holes = sum(1 for kind, _ in win if kind != b"F")
-                fixed = sum(len(value) for kind, value in win if kind == b"F")
-                if holes and fixed >= 6 and holes < n - 1:
-                    counts[keyof(win)] += 1
+    ts = tokens_all(train, min_fill)
+    for n in range(2, max_n + 1):
+        for i in range(len(ts) - n + 1):
+            win = ts[i : i + n]
+            holes = sum(1 for kind, _ in win if kind != b"F")
+            fixed = sum(len(value) for kind, value in win if kind == b"F")
+            if holes and holes <= max_holes and fixed >= min_fixed:
+                counts[keyof(win)] += 1
     return {key: count for key, count in counts.items() if count >= min_count}
 
 
@@ -148,25 +160,24 @@ def parse(
     max_n: int = 6,
 ) -> list[templates.Hit | templates.Lit]:
     events: list[templates.Hit | templates.Lit] = []
-    for line in data.splitlines(keepends=True):
-        ts = tokenize(line, min_fill)
-        i = 0
-        while i < len(ts):
-            found = None
-            for n in range(max_n, 1, -1):
-                if i + n > len(ts):
-                    continue
-                win = ts[i : i + n]
-                key = keyof(win)
-                if key in templates_:
-                    found = (key, tuple(value for kind, value in win if kind != b"F"))
-                    i += n
-                    break
-            if found is None:
-                events.append(templates.Lit(*ts[i]))
-                i += 1
-            else:
-                events.append(templates.Hit(*found))
+    ts = tokens_all(data, min_fill)
+    i = 0
+    while i < len(ts):
+        found = None
+        for n in range(max_n, 1, -1):
+            if i + n > len(ts):
+                continue
+            win = ts[i : i + n]
+            key = keyof(win)
+            if key in templates_:
+                found = (key, tuple(value for kind, value in win if kind != b"F"))
+                i += n
+                break
+        if found is None:
+            events.append(templates.Lit(*ts[i]))
+            i += 1
+        else:
+            events.append(templates.Hit(*found))
     return events
 
 
@@ -328,11 +339,13 @@ def run(
     min_fill: int = 8,
     min_count: int = 3,
     max_n: int = 6,
+    max_holes: int = 4,
+    min_fixed: int = 6,
 ) -> int:
     corpus = cml.code_scale_corpus(48_000_000)
     train = corpus.train[:train_bytes]
     test = corpus.test[:test_bytes]
-    templates_ = induce(train, min_fill, min_count, max_n)
+    templates_ = induce(train, min_fill, min_count, max_n, max_holes, min_fixed)
     blob, stats = encode(test, templates_, train, min_fill, max_n)
     n = len(test)
     gz = len(gzip.compress(test, 9))
@@ -355,7 +368,8 @@ def run(
             f"- code corpus `{corpus.sha[:12]}`, train {len(train):,} B, "
             f"held-out {n:,} B",
             f"- tokenizer: min fill {min_fill} B, cap 1024 B; templates "
-            f"{min_count}+ occurrences",
+            f"{min_count}+ occurrences, <= {max_holes} holes, "
+            f">= {min_fixed} fixed B",
             f"- library {stats.templates:,} templates, {stats.table_bytes:,} B table",
             "",
             "| item | bytes | bytes/byte |",

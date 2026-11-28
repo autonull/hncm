@@ -1,23 +1,23 @@
 # Fill-copy codec: long fills, exact pointers
 
 - code corpus `7ae9de7b4a15`, train 2,000,000 B, held-out 100,000 B
-- tokenizer: min fill 12 B, cap 1024 B; templates 3+ occurrences
-- library 1,638 templates, 48,933 B table
+- tokenizer: min fill 16 B, cap 1024 B; templates 16+ occurrences, <= 2 holes, >= 16 fixed B
+- library 300 templates, 11,929 B table
 
 | item | bytes | bytes/byte |
 |---|---:|---:|
-| blob | 97,047 | 0.970 |
-| blob 1 bpb literals | 13,478 | 0.135 |
-| blob + table | 145,980 | 1.460 |
+| blob | 99,331 | 0.993 |
+| blob 1 bpb literals | 12,643 | 0.126 |
+| blob + table | 111,260 | 1.113 |
 | gzip -9 | 24,954 | 0.250 |
 | byte trunk 0.97 | 12,125 | 0.121 |
 
 ## Stream
 
-- fixed 0.023, fill 0.067, literal 0.911
-- fill copy: local 0.022, pack 0.000, literal 0.044
-- templates 0.005 decisions/B; 184.50 B/decision
-- round-trip OK; table charge 48,933 B
+- fixed 0.007, fill 0.017, literal 0.976
+- fill copy: local 0.002, pack 0.000, literal 0.015
+- templates 0.001 decisions/B; 1020.41 B/decision
+- round-trip OK; table charge 11,929 B
 
 ## Read
 

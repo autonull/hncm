@@ -166,6 +166,14 @@ decision**, but the structured overhead (template ids and fill codes) is
 the gap. The levers are entropy coding and multi-line templates, not more
 pointer training. T1c gate: <=0.03 bpb regression and 100% round-trip.
 
+**T1c frontier (global templates + hole budget).** Global parsing and a
+2-hole/16-fixed-byte budget prune the table to **300 templates, 11,929 B**.
+At a 16 B fill gate the blob is **0.126 B/B** with a 1 bpb literal model,
+and **0.122 B/B** if literals run at the trunk's 0.968 bits/B. Fixed+fill
+coverage is only **2.4%**; literals are **97.6%**. The event codes are no
+longer the bottleneck. The binding term is the literal byte model; T1d
+conditions it on the event state.
+
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Price a rejected proposal as a byte
 comparison, not a forward: a proposal is not an emitted copy. When a
@@ -217,7 +225,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | ~~**T0**~~ | template-fill headroom | `cml template-probe` | **shipped**: 4.58 B/decision, 29.7% new combinations | 1 CPU-day |
 | ~~**T1a**~~ | event LM pilot | `cml event-lm` | **signal**: 4.8% new combos vs 1.4%; bpb 1.77, fill IDs expensive | 1 GPU-h |
 | ~~**T1b**~~ | long-fill copy codec | `cml fill-copy` | **exact**: 0.148 B/B at 8 B, 0.135 at 12 B; 89 B/decision | CPU |
-| **T1c** | entropy-coded events + multi-line templates | `cml fill-copy --huffman` | <=0.03 bpb regression vs trunk, exact | 1 day |
+| ~~**T1c**~~ | global templates + hole budget | `cml fill-copy --max-holes 2 --min-fixed 16` | **done**: 0.126 B/B at 1 bpb, 0.122 at 0.968; 97.6% literal | CPU |
+| **T1d** | event-conditioned literal model | `cml event-lm --literals` | >=0.03 bits/B literal gain, exact | 1 GPU-day |
 | **T2** | library install transfer | `cml template-lm --install` | >=0.15 bpb from installation | 1 GPU-day |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
@@ -246,8 +255,8 @@ softmax. A 500 KB estimate puts the long-fill codec at 0.957 bpb, near
 the 0.97 byte trunk.
 
 Next session, one of:
-1. **T1c**: entropy-code template/fill events and add multi-line
-   templates. Gate: exact, <=0.03 bpb regression vs the 0.121 trunk.
+1. **T1d**: event-conditioned literal model. The event state conditions
+   the byte fallback; gate >=0.03 bits/B on literals, exact output.
 2. **T2**: install a repo-A library on repo B; >=0.15 bpb.
 3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
 4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
@@ -282,6 +291,8 @@ uv run cml event-lm --train-bytes 2000000 --test-bytes 100000 \
   --steps 500 --seq 128 --d 192 --layers 4 --batch 32
 uv run cml fill-copy --train-bytes 2000000 --test-bytes 100000 \
   --min-fill 8 --min-count 3
+uv run cml fill-copy --train-bytes 2000000 --test-bytes 100000 \
+  --min-fill 16 --min-count 16 --max-n 10 --max-holes 2 --min-fixed 16
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

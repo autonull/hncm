@@ -8748,6 +8748,8 @@ def main(argv: list[str] | None = None) -> int:
     fc.add_argument("--min-fill", type=int, default=8)
     fc.add_argument("--min-count", type=int, default=3)
     fc.add_argument("--max-n", type=int, default=6)
+    fc.add_argument("--max-holes", type=int, default=4)
+    fc.add_argument("--min-fixed", type=int, default=6)
     cl = sub.add_parser("copy-lm")
     cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     cl.add_argument("--steps", type=int, default=300)
@@ -9151,6 +9153,8 @@ def main(argv: list[str] | None = None) -> int:
             a.min_fill,
             a.min_count,
             a.max_n,
+            a.max_holes,
+            a.min_fixed,
         )
     if a.cmd == "copy-lm":
         import copylm
