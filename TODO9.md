@@ -823,6 +823,12 @@ from local context with a pointer. A 500 KB probe estimates 0.957 bpb at
 an 8 B fill gate, 5.12 B/decision, an 11-bit local pointer, and a 1 bpb
 literal fallback. That is a narrow pass; the exact codec must verify it.
 
+**T1b codec.** `cml fill-copy` is exact (round-trip OK) and takes 89 B
+per decision at an 8 B fill gate. Size is 0.148 B/B at 8 B and 0.135 at
+12 B, against the 0.121 byte trunk: the template-id and fill-pointer
+overhead is the remaining gap, not a wrong byte. The closing levers are
+entropy coding of events and multi-line templates.
+
 ## References
 
 - `TODO8.md`: codec record; delta product and exact codec.

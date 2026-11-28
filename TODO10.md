@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`79 passed`. The bytes for the repo index are stored gzip-wrapped when
+`82 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -151,6 +151,21 @@ local copy pointer**, not a larger fill softmax. A 500 KB probe estimate:
 pointer and a 1 bpb literal fallback. That is a narrow pass; implement
 the exact codec before claiming it.
 
+**T1b codec (exact round-trip).** `cml fill-copy` encodes templates with
+long fills, local/pack pointers, and literal runs. 2 MB train, 100 KB
+held out:
+
+| min fill | fixed | fill | literal | est B/B | decisions/B |
+|---:|---:|---:|---:|---:|---:|
+| 0 | 0.180 | 0.307 | 0.513 | 0.332 | 0.037 |
+| 8 | 0.042 | 0.106 | 0.852 | 0.148 | 0.011 |
+| 12 | 0.023 | 0.067 | 0.911 | 0.135 | 0.008 |
+
+The byte trunk is 0.121 B/B. The 8 B codec is exact and takes **89 B per
+decision**, but the structured overhead (template ids and fill codes) is
+the gap. The levers are entropy coding and multi-line templates, not more
+pointer training. T1c gate: <=0.03 bpb regression and 100% round-trip.
+
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Price a rejected proposal as a byte
 comparison, not a forward: a proposal is not an emitted copy. When a
@@ -201,7 +216,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | ~~**B2**~~ | exact pack proposer | `_pack_oracle` + `repo` | **resolved; hash dominates**: 78.4% at 3.59x with a 2 MB pack | CPU |
 | ~~**T0**~~ | template-fill headroom | `cml template-probe` | **shipped**: 4.58 B/decision, 29.7% new combinations | 1 CPU-day |
 | ~~**T1a**~~ | event LM pilot | `cml event-lm` | **signal**: 4.8% new combos vs 1.4%; bpb 1.77, fill IDs expensive | 1 GPU-h |
-| **T1b** | long-fill copy codec | `cml event-lm --min-fill 8 --copy` | estimate 0.957 bpb; gate <=0.03 regression, exact | 1 GPU-day |
+| ~~**T1b**~~ | long-fill copy codec | `cml fill-copy` | **exact**: 0.148 B/B at 8 B, 0.135 at 12 B; 89 B/decision | CPU |
+| **T1c** | entropy-coded events + multi-line templates | `cml fill-copy --huffman` | <=0.03 bpb regression vs trunk, exact | 1 day |
 | **T2** | library install transfer | `cml template-lm --install` | >=0.15 bpb from installation | 1 GPU-day |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
@@ -230,8 +246,8 @@ softmax. A 500 KB estimate puts the long-fill codec at 0.957 bpb, near
 the 0.97 byte trunk.
 
 Next session, one of:
-1. **T1b**: long-fill copy codec. Gate: exact round-trip, <=0.03 bpb
-   regression, >=2x bytes/decision. This is the decisive size test.
+1. **T1c**: entropy-code template/fill events and add multi-line
+   templates. Gate: exact, <=0.03 bpb regression vs the 0.121 trunk.
 2. **T2**: install a repo-A library on repo B; >=0.15 bpb.
 3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
 4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
@@ -264,6 +280,8 @@ uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
 uv run cml template-probe --train-bytes 2000000 --test-bytes 100000
 uv run cml event-lm --train-bytes 2000000 --test-bytes 100000 \
   --steps 500 --seq 128 --d 192 --layers 4 --batch 32
+uv run cml fill-copy --train-bytes 2000000 --test-bytes 100000 \
+  --min-fill 8 --min-count 3
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

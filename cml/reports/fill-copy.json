@@ -1,0 +1,19 @@
+{
+ "stats": {
+  "templates": 1638,
+  "fills": 257,
+  "fixed_bytes": 2267,
+  "fill_bytes": 6658,
+  "literal_bytes": 91075,
+  "local_bytes": 2198,
+  "pack_bytes": 27,
+  "literal_fill_bytes": 4433,
+  "template_bits": 1534.5523743479844,
+  "decisions": 542,
+  "table_bytes": 48933,
+  "roundtrip": true,
+  "seconds": 0.1,
+  "blob_bytes": 97047
+ },
+ "git": "9d9020dd8d02ea2a4f0f37782fc01985cad479e2"
+}

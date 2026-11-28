@@ -8742,6 +8742,12 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--layers", type=int, default=4)
     ev.add_argument("--heads", type=int, default=4)
     ev.add_argument("--seed", type=int, default=0)
+    fc = sub.add_parser("fill-copy")
+    fc.add_argument("--train-bytes", type=int, default=2_000_000)
+    fc.add_argument("--test-bytes", type=int, default=100_000)
+    fc.add_argument("--min-fill", type=int, default=8)
+    fc.add_argument("--min-count", type=int, default=3)
+    fc.add_argument("--max-n", type=int, default=6)
     cl = sub.add_parser("copy-lm")
     cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     cl.add_argument("--steps", type=int, default=300)
@@ -9135,6 +9141,16 @@ def main(argv: list[str] | None = None) -> int:
             a.layers,
             a.heads,
             a.seed,
+        )
+    if a.cmd == "fill-copy":
+        import fillcopy
+
+        return fillcopy.run(
+            a.train_bytes,
+            a.test_bytes,
+            a.min_fill,
+            a.min_count,
+            a.max_n,
         )
     if a.cmd == "copy-lm":
         import copylm
