@@ -773,6 +773,46 @@ The product path is `memory-mcp`: the model queries an exact repo index and
 conditions on the bytes. ByteCopy LM is the trained-model path; the MCP
 server is the installable-memory path.
 
+## 16. Template-fill path (T0)
+
+The exact span is one event. The general unit is a token template with
+typed holes: fixed syntax is exact, atoms are fills. Probe
+(`cml template-probe`, `cml/reports/TEMPLATES.md`) on code, 2 MB train,
+100 KB held-out:
+
+| item | value |
+|---|---:|
+| templates | 18,925 |
+| fill values | 15,873 |
+| table bytes | 893,746 |
+| fixed bytes | 22.4% |
+| hole bytes | 27.8% |
+| literal fixed | 20.0% |
+| literal atom | 29.8% |
+| decisions/B | 0.218 |
+| bytes/decision | 4.58 |
+| atom in lexicon | 48.6% |
+| hole: seen slot | 12.1% |
+| hole: new combination | 29.7% |
+| hole: novel value | 58.2% |
+| round-trip | OK |
+
+The constructive result: 29.7% of hole bytes are new slot combinations
+whose fill is already in the lexicon. A flat model must learn each pair;
+a template model can share the slot. That is the capability target.
+
+Architecture: bytes -> tokenizer -> template parse -> events
+`T(key, fills)` or `L(token)`; a decoder-only transformer over event
+embeddings; template embedding from fixed tokens + hole types; fill
+embedding from content; exact lookup; byte fallback. One forward per
+event. T1 gate: 100% round-trip, <=0.03 bpb regression vs the byte
+trunk, >=+10 points exact fill accuracy on held-out combinations,
+>=2x bytes/decision. T2: install a repo-A library on repo B, >=0.15 bpb.
+
+This keeps the exactness discipline and changes the unit of computation.
+It is the first path that targets composition rather than more pointer
+capacity.
+
 ## References
 
 - `TODO8.md`: codec record; delta product and exact codec.

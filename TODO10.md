@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`73 passed`. The bytes for the repo index are stored gzip-wrapped when
+`76 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -110,6 +110,37 @@ pack plus a hash**, which `repo` memory already supplies; do not train a
 bigger pointer. The byte LM keeps the 21.6% novel bytes. The pack is
 required for the headline; do not claim 78.4% standalone.
 
+### Breakthrough path: TF-LM
+
+An exact span is one event. The broader unit is a token template with
+typed holes: fixed syntax is exact, atoms are fills. Probe
+(`cml template-probe`, `cml/reports/TEMPLATES.md`):
+
+- **22.4%** of held-out bytes is fixed syntax, **27.8%** holes,
+  **49.8%** literal; **0.218 decisions/B**, **4.58 B/decision**.
+- 18,925 templates + 15,873 fills, 894 KB table, exact round-trip.
+- Of hole bytes, **29.7% are new slot combinations with a known fill**,
+  12.1% repeat a seen slot, 58.2% are novel values. The new combinations
+  are the capability target: a flat memorizer must learn each pair; a
+  template model shares the slot.
+
+**Architecture.** Bytes -> tokenizer -> template parse -> events
+`T(key, fills)` or `L(token)`. A decoder-only transformer runs on events:
+template embedding from the fixed tokens + hole types, fill embedding
+from content, heads for next template / per-slot fill / byte fallback.
+Exact output by lookup; a digest verifies each event. One forward per
+event, not per byte.
+
+**Hyperparameters.** d512, 12 layers, 8 heads, 512 events, batch 8,
+AdamW lr 3e-4, 20k steps on 8 MB code; library 16k templates + 16k
+fills; anti-unification lifts multi-line templates after T1.
+
+**Decisive gate T1.** Hold out 20% of (template, slot, fill) pairs while
+each held-out fill still appears in other slots. Gate: 100% exact
+round-trip, <=0.03 bpb regression vs the byte trunk, >=+10 points exact
+fill accuracy on held-out combinations, >=2x bytes/decision. T2: install
+a repo-A library on repo B, empty-library control, >=0.15 bpb.
+
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Price a rejected proposal as a byte
 comparison, not a forward: a proposal is not an emitted copy. When a
@@ -158,6 +189,9 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 |---|---|---|---|---|
 | ~~**B1**~~ | joint copy head — repair loop | `cml copy-lm --joint` | **shipped; gate PASS** on verified top-8: 38.6% at 1.56x, 100% exact | 1 GPU-h |
 | ~~**B2**~~ | exact pack proposer | `_pack_oracle` + `repo` | **resolved; hash dominates**: 78.4% at 3.59x with a 2 MB pack | CPU |
+| ~~**T0**~~ | template-fill headroom | `cml template-probe` | **shipped**: 4.58 B/decision, 29.7% new combinations | 1 CPU-day |
+| **T1** | event LM, compositional split | `cml template-lm` | <=0.03 bpb, >=2x, +10 pts held-out fills | 1 GPU-day |
+| **T2** | library install transfer | `cml template-lm --install` | >=0.15 bpb from installation | 1 GPU-day |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
 | ~~**M1**~~ | MCP resources — **shipped** | `cml mcp --index` | client lists/reads resources | 1 day |
@@ -176,20 +210,19 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **B1 verified copy gate + B2 exact pack**. The
-unverified pointer stalls at 66-67% precision at ~5% (R7-R9). Propose
-top-k and verify exactly (R10): **38.6% coverage, 100% verified
-precision, 1.56x**. The exact in-window hash reaches 47.0% at 1.78x; a
-2 MB pack reaches **78.4% at 3.59x**. The learned pointer is dominated as
-an exact proposer. The product is exact pack memory + a byte LM for the
-novel 21.6%, which `repo`/`memory-mcp` already supplies.
+Shipped this session: **B1 verified copy gate + B2 exact pack + T0
+template probe**. The learned pointer is dominated by a hash for exact
+spans. The new unit is a template with typed holes: 22.4% fixed bytes,
+27.8% holes, 0.218 decisions/B, 4.58 B/decision, and **29.7% of hole
+bytes are new slot combinations with a known fill**. That is the
+capability a flat model cannot share.
 
 Next session, one of:
-1. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
-2. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
-3. **patch-guard breadth**: `git apply`, binaries, 100 random diffs.
-4. **copy-LM cleanup**: drop the run head at decode and label the gate on
-   source correctness. Small, no new experiment.
+1. **T1**: train the event LM on the compositional split. This is the
+   decisive capability test; <=0.03 bpb, >=2x, +10 pts held-out fills.
+2. **T2**: install a repo-A library on repo B; >=0.15 bpb.
+3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
+4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -216,6 +249,7 @@ uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
 uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
   --pointer-scale 2 --verify-topk 8 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 400
+uv run cml template-probe --train-bytes 2000000 --test-bytes 100000
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

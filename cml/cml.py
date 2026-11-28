@@ -8727,6 +8727,11 @@ def main(argv: list[str] | None = None) -> int:
     mp.add_argument("--scale-cap", type=int, default=48_000_000)
     mp.add_argument("--copy-bpb", type=float, default=0.852)
     mp.add_argument("--tag", default="")
+    tp = sub.add_parser("template-probe")
+    tp.add_argument("--train-bytes", type=int, default=2_000_000)
+    tp.add_argument("--test-bytes", type=int, default=100_000)
+    tp.add_argument("--min-count", type=int, default=3)
+    tp.add_argument("--max-n", type=int, default=6)
     cl = sub.add_parser("copy-lm")
     cl.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     cl.add_argument("--steps", type=int, default=300)
@@ -9103,6 +9108,10 @@ def main(argv: list[str] | None = None) -> int:
             a.samples,
             a.seed,
         )
+    if a.cmd == "template-probe":
+        import templates
+
+        return templates.run_probe(a.train_bytes, a.test_bytes, a.min_count, a.max_n)
     if a.cmd == "copy-lm":
         import copylm
 
