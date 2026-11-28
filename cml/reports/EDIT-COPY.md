@@ -1,7 +1,7 @@
 # Exact Edit Bench: C1 copy-SFT
 
-- arm **C1 copy-SFT**; split `val`; n = 200
-- seed `0`; steps `1000`; 5,175,552 params; one window ≤1024 B
+- arm **C1 copy-SFT**; split `val`; n = 50
+- seed `0`; steps `1000`; 5,175,552 params; one window ≤1024 B; samples 8
 - manifest sha256 `02c8c56542235773`
 
 ## Task
@@ -9,13 +9,14 @@
 Emit a serialized copy/literal action program that rebuilds `new`
 from `old`, given `old` and the commit message. Exact match is the
 label; an invalid program scores zero. Only files that fit one
-window are in this pilot.
+window are in this pilot. `exact@K` samples K programs and keeps
+any that assemble exactly (`K = samples`).
 
 ## Results
 
-| arm | n | exact | valid | line distance | output bytes |
-|---|---:|---:|---:|---:|---:|
-| C1 copy-SFT | 200 | 0.000 | 0.370 | 0.312 | 0.044 |
+| arm | n | exact@1 | exact@K | valid | line distance | output bytes |
+|---|---:|---:|---:|---:|---:|---:|
+| C1 copy-SFT | 50 | 0.000 | 0.000 | 0.960 | 0.228 | 0.057 |
 
 ## Gate GC1
 
@@ -28,7 +29,7 @@ full-file arm is not needed to reject this arm.
 | split | files |
 |---|---:|
 | train | 596 |
-| eval | 200 |
+| eval | 50 |
 
 ## Reading
 

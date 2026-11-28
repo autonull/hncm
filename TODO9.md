@@ -46,13 +46,14 @@ cross-attention or a different decoder), not more steps on this trunk. E2
 must not reuse this locator. C1 is independent and should run first.
 
 **C1 recorded: GC1 fail.** Pilot on files that fit one 1024 B window:
-596 train, 200 val, 1,000 steps, 5.2M causal byte LM. Exact `0.000`,
-valid program `0.370`, output `0.044x` of the new file. A 5,000-step run
-was worse (valid `0.300`, output `0.086x`). Constrained decoding keeps the
-bytes grammar-valid, but `assemble` rejects many programs and no file is
-exact. Since exact is zero, a +10-point lift over any baseline is
-impossible; the full-file arm is not needed to reject this arm. Do not
-start DPO or holes from it.
+596 train, 50 val, 1,000 steps, 5.2M causal byte LM. Exact `0.000`,
+valid program `0.960`, output `0.057x` of the new file. Sampling `K = 8`
+programs per file and keeping any exact assembly also gives `exact@8 0.000`:
+test-time search does not find the target. A 5,000-step run was worse
+(valid `0.300`, output `0.086x`). Constrained decoding keeps the bytes
+grammar-valid, but the model does not learn the edit content. Since exact
+is zero, a +10-point lift over any baseline is impossible; the full-file
+arm is not needed to reject this arm. Do not start DPO or holes from it.
 
 **Program decision.** Both funded tracks now fail their first gate: GE1
 `0.000`, GC1 `0.000`. Per §7, stop capability training and ship the delta
@@ -359,7 +360,33 @@ If the capability work resumes, change the task/data, not the schedule:
 Do not raise `max_diff` to make exact match easier; a gate that fails names
 the next lever, not a new goal.
 
-## References
+## 13. What would make the old ideas work
+
+Three cheaper revivals were tested after GE1/GC1 failed:
+
+| idea | result |
+|---|---|
+| **V verifier rerank** | C1 `exact@8 = 0.000`; sampling never found the target |
+| **candidate-line ranking** | top-1 changed-line hit `0.109`, byte F1 `0.030` on 46 val files |
+| **anchored edits** | only `15/300` val and `21/300` test files have a message token that occurs once in `old` and inside the changed span |
+
+The blocker is the task, not the decoder. A 5M scratch LM on a commit
+subject cannot recover an edit that the message does not determine. The
+old ideas become viable only with a different input or model:
+
+1. **Richer context**: a failing test name, stack trace, issue text, or
+   agent conversation; the message alone is not an instruction.
+2. **Pretrained code model**: 5M scratch bytes are too small; use an
+   existing code LM with constrained decoding and the exact verifier.
+3. **Narrower product**: an anchored locator API scored by recall@k, not
+   exact@1; or repo memory that retrieves a known past patch.
+4. **Different granularity**: predict a typed edit class (rename, import,
+   version bump) and synthesize the patch, then verify exactly.
+
+Do not spend more GPU hours on the same formulation. The delta product is
+exact today; the Exact Edit Bench is the asset for the next attempt.
+
+
 
 - `TODO8.md`: codec record; delta product and exact codec.
 - `cml/reports/DELTA.md`: 56.6x / 27.8x exact delta.

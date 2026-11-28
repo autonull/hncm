@@ -1296,7 +1296,11 @@ def train_copy(
 
 @torch.no_grad()
 def generate_actions(
-    model: CopyLM, prompt: bytes, device: torch.device, max_new: int = COPY_ACT
+    model: CopyLM,
+    prompt: bytes,
+    device: torch.device,
+    max_new: int = COPY_ACT,
+    temperature: float = 0.0,
 ) -> bytes:
     """Constrained decode: only bytes the action grammar admits."""
     seq = list(prompt)
@@ -1323,7 +1327,11 @@ def generate_actions(
         else:
             keep[:] = True
         scores = logits[0, -1].float().masked_fill(~keep, float("-inf"))
-        nxt = int(scores.argmax())
+        if temperature > 0:
+            probs = torch.softmax(scores / temperature, dim=-1)
+            nxt = int(torch.multinomial(probs, 1))
+        else:
+            nxt = int(scores.argmax())
         out.append(nxt)
         seq.append(nxt)
         if state == "tag":
@@ -1351,23 +1359,42 @@ def generate_actions(
     return bytes(out)
 
 
-def eval_copy(model: CopyLM, examples: list, device: torch.device) -> dict:
+def eval_copy(
+    model: CopyLM,
+    examples: list,
+    device: torch.device,
+    samples: int = 1,
+    temperature: float = 0.8,
+    seed: int = 0,
+) -> dict:
     items = []
     exact = valid = 0
+    exact_at_k = 0
     distance = 0.0
     output = 0.0
-    for rec, old, new, prompt, target in examples:
+    for idx, (rec, old, new, prompt, target) in enumerate(examples):
         blob = generate_actions(model, prompt, device)
         parsed = False
         try:
-            actions = load_actions(blob)
-            pred = assemble(actions, old)
+            pred = assemble(load_actions(blob), old)
             parsed = True
         except ValueError:
             pred = old
         ok = parsed and pred == new
-        valid += int(parsed)
+        any_ok = ok
+        any_valid = parsed
+        for k in range(samples):
+            torch.manual_seed(seed * 1_000_003 + idx * 97 + k)
+            blob_k = generate_actions(model, prompt, device, temperature=temperature)
+            try:
+                pred_k = assemble(load_actions(blob_k), old)
+                any_valid = True
+                any_ok = any_ok or pred_k == new
+            except ValueError:
+                pass
+        valid += int(any_valid)
         exact += int(ok)
+        exact_at_k += int(any_ok)
         distance += line_distance(pred, new)
         output += len(blob) / max(len(new), 1)
         items.append(
@@ -1376,6 +1403,7 @@ def eval_copy(model: CopyLM, examples: list, device: torch.device) -> dict:
                 "repo": rec["repo"],
                 "path": rec["path"],
                 "exact": ok,
+                "exact_at_k": any_ok,
                 "actions": len(blob),
                 "target_actions": len(target),
                 "output_ratio": round(len(blob) / max(len(new), 1), 4),
@@ -1386,9 +1414,11 @@ def eval_copy(model: CopyLM, examples: list, device: torch.device) -> dict:
     return {
         "n": n,
         "exact": exact / n,
+        "exact_at_k": exact_at_k / n,
         "valid": valid / n,
         "edit_distance": distance / n,
         "output_ratio": output / n,
+        "samples": samples,
         "items": items,
     }
 
@@ -1401,7 +1431,8 @@ def render_copy_report(result: dict) -> str:
         "",
         f"- arm **C1 copy-SFT**; split `{result['split']}`; n = {c1['n']}",
         f"- seed `{cfg['seed']}`; steps `{cfg['steps']}`; "
-        f"{cfg['params']:,} params; one window ≤{cfg['win']} B",
+        f"{cfg['params']:,} params; one window ≤{cfg['win']} B; "
+        f"samples {cfg['samples']}",
         f"- manifest sha256 `{result['manifest']['sha256'][:16]}`",
         "",
         "## Task",
@@ -1409,15 +1440,16 @@ def render_copy_report(result: dict) -> str:
         "Emit a serialized copy/literal action program that rebuilds `new`",
         "from `old`, given `old` and the commit message. Exact match is the",
         "label; an invalid program scores zero. Only files that fit one",
-        "window are in this pilot.",
+        "window are in this pilot. `exact@K` samples K programs and keeps",
+        "any that assemble exactly (`K = samples`).",
         "",
         "## Results",
         "",
-        "| arm | n | exact | valid | line distance | output bytes |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| arm | n | exact@1 | exact@K | valid | line distance | output bytes |",
+        "|---|---:|---:|---:|---:|---:|---:|",
         f"| C1 copy-SFT | {c1['n']} | {c1['exact']:.3f} | "
-        f"{c1['valid']:.3f} | {c1['edit_distance']:.3f} | "
-        f"{c1['output_ratio']:.3f} |",
+        f"{c1['exact_at_k']:.3f} | {c1['valid']:.3f} | "
+        f"{c1['edit_distance']:.3f} | {c1['output_ratio']:.3f} |",
         "",
         "## Gate GC1",
         "",
@@ -1472,6 +1504,7 @@ def run_copy(
     limit: int,
     seed: int,
     steps: int,
+    samples: int,
     report: Path,
     out: Path,
 ) -> int:
@@ -1481,13 +1514,15 @@ def run_copy(
     if not train or not queries:
         raise SystemExit("editlm: copy-SFT needs non-empty train and eval splits")
     steps = steps or 1000
+    samples = samples or 1
     model, log = train_copy(train, steps, seed, device)
-    metrics = eval_copy(model, queries, device)
+    metrics = eval_copy(model, queries, device, samples=samples, seed=seed)
     config = {
         "seed": seed,
         "steps": steps,
         "split": split,
         "limit": limit,
+        "samples": samples,
         "win": LOCATOR_WIN,
         "msg": LOCATOR_MSG,
         "params": _param_count(model),
@@ -1569,8 +1604,10 @@ def run(
     if arm == "copy":
         if mode != "sft":
             raise SystemExit("editlm: copy supports --sft in this session")
-        if base or pretrain or pairs or samples:
-            raise SystemExit("editlm: copy-SFT takes --steps, --limit, and --seed only")
+        if base or pretrain or pairs:
+            raise SystemExit(
+                "editlm: copy-SFT takes --steps, --samples, --limit, and --seed only"
+            )
         manifest = editdata.load_manifest(manifest_path)
         cache = editdata.cache_root(cache)
         return run_copy(
@@ -1581,6 +1618,7 @@ def run(
             limit,
             seed,
             steps,
+            samples,
             report or REPORTS / "EDIT-COPY.md",
             out or REPORTS / "edit-copy.json",
         )
