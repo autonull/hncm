@@ -32,6 +32,7 @@ import codec as codec_mod
 import concepts
 import editdata
 import editlm
+import memory
 import stage0
 
 ROOT = Path(__file__).resolve().parent
@@ -8307,6 +8308,20 @@ def main(argv: list[str] | None = None) -> int:
     el.add_argument("--rerank", action="store_true")
     el.add_argument("--report", type=Path)
     el.add_argument("--json", type=Path)
+    ch = sub.add_parser("chain")
+    ch.add_argument("--repo", type=Path, required=True)
+    ch.add_argument("--path", required=True)
+    ch.add_argument("--out", type=Path, required=True)
+    ch.add_argument("--report", type=Path, default=REPORTS / "REPO-MEMORY.md")
+    ch.add_argument("--json", type=Path, default=REPORTS / "repomemory.json")
+    ch.add_argument("--window", type=int, default=1 << 20)
+    ch.add_argument("--min-match", type=int, default=8)
+    ch.add_argument("--cap", type=int, default=256)
+    ch.add_argument("--depth", type=int, default=16)
+    uch = sub.add_parser("unchain")
+    uch.add_argument("blob", type=Path)
+    uch.add_argument("--out-dir", type=Path, required=True)
+    uch.add_argument("--index", type=int, default=-1)
     pf = sub.add_parser("perfile-model")
     pf.add_argument("--run", required=True)
     pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -8561,6 +8576,20 @@ def main(argv: list[str] | None = None) -> int:
             a.samples,
             mode,
         )
+    if a.cmd == "chain":
+        return memory.run_chain(
+            a.repo,
+            a.path,
+            a.out,
+            a.report,
+            a.json,
+            a.window,
+            a.min_match,
+            a.cap,
+            a.depth,
+        )
+    if a.cmd == "unchain":
+        return memory.run_unchain(a.blob, a.out_dir, a.index)
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":
