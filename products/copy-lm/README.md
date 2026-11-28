@@ -53,11 +53,18 @@ Frozen `d448-l8`, `seq=2048` code trunk. Each run changes one term on
 | R4 | exact-span gate | 62.0% | 5.0% | 0.96x |
 | R5 | run head at predicted source | 61.9% | 4.7% | 0.97x |
 | R6 | run head conditioned on source | 63.7% | 4.9% | 0.97x |
+| R7 | multi-positive pointer loss | 59.1% | 5.7% | 0.96x |
+| R8 | R7 + 2x windows and steps | 67.5% | 5.2% | 0.97x |
+| R9 | R8 + 2x pointer width | 66.1% | 5.1% | 0.97x |
 
-R6 reaches **96.3% span precision at 100% source precision** at gate
-0.99, but coverage is only **0.85%** and bytes/step is 1.00x. The
-precision target exists; it is not at ≥5% coverage. The next repair is
-pointer coverage, not the run head.
+R9 reaches **98.0% span precision at 98.1% source precision** at gate
+0.99, but coverage is only **1.2%** and bytes/step is 1.00x. At gate 0.9
+the source is 77.6% and the span is 66.1%. Three independent coverage
+repairs do not pass the gate (>90% at ≥5%, >1.2x).
+
+**Stop the B1 repair loop.** The next test is B2: put a retrieved exact
+pack in context and point into it. If B2 also misses, the interface is a
+recorded research stop.
 
 Report: `cml/reports/COPY-LM-JOINT.md`; repair logs in
 `cml/reports/b1-*.log`.
@@ -69,6 +76,9 @@ uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 200
 uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
   --train-bytes 2000000 --eval-bytes 100000 --windows 200
+uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
+  --pointer-scale 2 --train-bytes 2000000 --eval-bytes 100000 \
+  --windows 400
 ```
 
 Report: `cml/reports/COPY-LM.md`; joint repair:

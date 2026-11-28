@@ -8738,6 +8738,7 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("--joint", action="store_true")
     cl.add_argument("--lr", type=float, default=1e-4)
     cl.add_argument("--block-lr", type=float, default=1e-5)
+    cl.add_argument("--pointer-scale", type=float, default=1.0)
     mg = sub.add_parser("memory-gate")
     mg.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
     mg.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -9115,6 +9116,7 @@ def main(argv: list[str] | None = None) -> int:
             a.joint,
             a.lr,
             a.block_lr,
+            a.pointer_scale,
         )
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)

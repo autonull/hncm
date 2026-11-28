@@ -42,19 +42,21 @@ class CopyConfig:
     joint_batch: int = 4
     joint_positions: int = 64
     block_lr: float = 1e-5
+    pointer_scale: float = 1.0
 
 
 class CopyHead(nn.Module):
     """A pointer over the context, a copy gate, and a run-length head."""
 
-    def __init__(self, d: int, window: int):
+    def __init__(self, d: int, window: int, pointer_scale: float = 1.0):
         super().__init__()
-        self.wq = nn.Linear(d, d, bias=False)
-        self.wk = nn.Linear(d, d, bias=False)
+        width = max(1, int(d * pointer_scale))
+        self.wq = nn.Linear(d, width, bias=False)
+        self.wk = nn.Linear(d, width, bias=False)
         self.gate = nn.Linear(d + 1, 1)
         self.run = nn.Linear(2 * d, len(LENS))
         self.rel = nn.Parameter(torch.zeros(window))
-        self.scale = d**-0.5
+        self.scale = width**-0.5
 
     def rel_bias(self, q: torch.Tensor, t: int) -> torch.Tensor:
         j = torch.arange(t, device=q.device)[None, :]
@@ -169,11 +171,32 @@ def prepare(
     return cache
 
 
+def _valid_sources(w: bytes, idx: np.ndarray, min_len: int, width: int) -> np.ndarray:
+    """Boolean mask over pointer slots: every prior source that matches `min_len` bytes.
+
+    Slot `j` means source byte `j + 1`; a query at byte `i` accepts it when the
+    `min_len` bytes at both places are equal.  Multi-positive training then puts
+    probability mass on all exact sources, not only the longest one.
+    """
+    keys = np.lib.stride_tricks.sliding_window_view(
+        np.frombuffer(w, dtype=np.uint8), min_len
+    )
+    mask = np.zeros((len(idx), width), dtype=bool)
+    for k, at in enumerate(idx):
+        i = int(at) + 1
+        if i >= len(keys):
+            continue
+        limit = min(i, width + 1)
+        if limit > 1:
+            mask[k, : limit - 1] = (keys[1:limit] == keys[i]).all(axis=1)
+    return mask
+
+
 def train_head(
     model, cache: list[tuple[torch.Tensor, np.ndarray, np.ndarray]], cfg: CopyConfig
 ) -> CopyHead:
     d = model.tok.embedding_dim
-    head = CopyHead(d, cfg.window).cuda()
+    head = CopyHead(d, cfg.window, cfg.pointer_scale).cuda()
     opt = torch.optim.AdamW(head.parameters(), lr=cfg.lr, weight_decay=0.01)
     rng = np.random.default_rng(cfg.seed)
     for step in range(cfg.steps):
@@ -198,8 +221,6 @@ def train_head(
         )
         sel_np = (ln[idx] >= cfg.min_len) & (src[idx] >= 1)
         sel = torch.from_numpy(sel_np).cuda()
-        target = torch.full((len(idx),), -1, dtype=torch.long, device="cuda")
-        target[sel] = torch.from_numpy((src[idx][sel_np] - 1).astype(np.int64)).cuda()
         pred = logits.argmax(-1).detach().cpu().numpy()
         pred_t = torch.from_numpy(pred).long().cuda()
         run_choice = (
@@ -221,7 +242,16 @@ def train_head(
                 source_ok[k] = True
                 run_np[k] = _bucket(length)
         if bool(sel.any()):
-            loss = loss + F.cross_entropy(logits[sel], target[sel])
+            valid = torch.from_numpy(
+                _valid_sources(w, idx, cfg.min_len, cfg.window)[sel_np]
+            ).cuda()
+            spread = logits[sel] - torch.logsumexp(logits[sel], dim=-1)[:, None]
+            loss = (
+                loss
+                + (
+                    -torch.logsumexp(spread.masked_fill(~valid, -torch.inf), dim=-1)
+                ).mean()
+            )
         if source_ok.any():
             picked = torch.from_numpy(source_ok).cuda()
             buckets = torch.from_numpy(run_np[source_ok]).cuda()
@@ -260,7 +290,7 @@ def train_joint(
 ) -> CopyHead:
     """Unfreeze the last block and train it with the copy head."""
     d = model.tok.embedding_dim
-    head = CopyHead(d, cfg.window).cuda()
+    head = CopyHead(d, cfg.window, cfg.pointer_scale).cuda()
     for p in model.parameters():
         p.requires_grad_(False)
     for p in model.blocks[-1].parameters():
@@ -307,10 +337,6 @@ def train_joint(
             gate = head.gate(torch.cat((h[q - 1], margin[:, None]), dim=-1)).squeeze(-1)
             sel_np = (ln[idx] >= cfg.min_len) & (src[idx] >= 1)
             sel = torch.from_numpy(sel_np).cuda()
-            target = torch.full((len(idx),), -1, dtype=torch.long, device="cuda")
-            target[sel] = torch.from_numpy(
-                (src[idx][sel_np] - 1).astype(np.int64)
-            ).cuda()
             pred = logits.argmax(-1).detach().cpu().numpy()
             pred_t = torch.from_numpy(pred).long().cuda()
             run_choice = (
@@ -332,7 +358,16 @@ def train_joint(
                     source_ok[k] = True
                     run_np[k] = _bucket(length)
             if bool(sel.any()):
-                loss = loss + F.cross_entropy(logits[sel], target[sel])
+                valid = torch.from_numpy(
+                    _valid_sources(w, idx, cfg.min_len, cfg.window)[sel_np]
+                ).cuda()
+                spread = logits[sel] - torch.logsumexp(logits[sel], dim=-1)[:, None]
+                loss = (
+                    loss
+                    + (
+                        -torch.logsumexp(spread.masked_fill(~valid, -torch.inf), dim=-1)
+                    ).mean()
+                )
             if source_ok.any():
                 picked = torch.from_numpy(source_ok).cuda()
                 buckets = torch.from_numpy(run_np[source_ok]).cuda()
@@ -455,6 +490,7 @@ def run(
     joint: bool = False,
     lr: float = 1e-4,
     block_lr: float = 1e-5,
+    pointer_scale: float = 1.0,
 ) -> int:
     """Train and evaluate the copy head on a byte trunk."""
     import bytecodec
@@ -471,6 +507,7 @@ def run(
         seed=seed,
         joint=joint,
         block_lr=block_lr,
+        pointer_scale=pointer_scale,
     )
     corpus = cml.code_scale_corpus(48_000_000)
     model = bytecodec.load_model(cml.RUNS / run / "model.pt")
@@ -511,8 +548,9 @@ def run(
         f"{cfg.train_bytes:,} B train, {cfg.eval_bytes:,} B held-out",
         f"- self-supervised longest prior match: min {cfg.min_len} B, "
         f"cap {cfg.cap} B, depth {cfg.depth}",
-        f"- head: pointer over the context, gate with top-2 margin, "
-        f"run length conditioned on the chosen source; {trunk}",
+        f"- head: {cfg.pointer_scale:.1f}x pointer over the context, "
+        f"gate with top-2 margin, run length conditioned on the chosen "
+        f"source; {trunk}",
         "",
         "| gate | coverage | span precision | source precision | copies | bytes/step |",
         "|---:|---:|---:|---:|---:|---:|",

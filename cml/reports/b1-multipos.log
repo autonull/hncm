@@ -1,0 +1,33 @@
+train copy rate 0.395 on 16,384 positions
+  joint step 0/2000
+  joint step 200/2000
+  joint step 400/2000
+  joint step 600/2000
+  joint step 800/2000
+  joint step 1000/2000
+  joint step 1200/2000
+  joint step 1400/2000
+  joint step 1600/2000
+  joint step 1800/2000
+trained 2000 joint steps on 200 windows
+# ByteCopy LM: joint last block + margin gate
+
+- trunk `codec-byte-model-code-756752-d448-l8-q2048`; 2048 B window; 2,000,000 B train, 100,000 B held-out
+- self-supervised longest prior match: min 8 B, cap 64 B, depth 8
+- head: pointer over the context, gate with top-2 margin, run length conditioned on the chosen source; 407,494 head params; last block + head trained, rest frozen
+
+| gate | coverage | span precision | source precision | copies | bytes/step |
+|---:|---:|---:|---:|---:|---:|
+| 0.50 | 0.183 | 0.193 | 0.258 | 1,966 | 0.56x |
+| 0.70 | 0.131 | 0.330 | 0.422 | 1,373 | 0.78x |
+| 0.90 | 0.057 | 0.591 | 0.752 | 573 | 0.96x |
+| 0.95 | 0.031 | 0.705 | 0.836 | 297 | 0.98x |
+| 0.99 | 0.009 | 0.922 | 0.955 | 84 | 1.00x |
+
+## Read
+
+- best gate 0.7: copies **13.1%** of bytes at **33.0%** precision, **0.78x** bytes per sequential step.
+- a copied span is exact by construction; the trunk only samples novel bytes. This is the model-side version of the exact memory: the pointer replaces a flat span id.
+
+Took 241 s on one GPU.
+

@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`69 passed`. The bytes for the repo index are stored gzip-wrapped when
+`70 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -40,12 +40,12 @@ pack charge.
 model that delegates them to a pointer keeps capacity for novel bytes,
 gets exact recall for free, and avoids a tokenizer mismatch.
 
-**Current bottleneck.** The first B1 run (lr 1e-4) did not fire the gate;
-joint lr 1e-3 degraded the pointer. The gate now trains on exact-span
-correctness and the run head on the length at the predicted source. At
-gate 0.90 the pointer source is 75.7% and the exact span 63.7%; at 0.99
-the source is 100% and the span 96.3% at 0.85% coverage. The exact-copy
-path works; pointer precision at usable coverage is the open term.
+**Current bottleneck.** The gate trains on exact-span correctness and the
+run head on the length at the predicted source. At gate 0.90 the source
+is 77.6% and the exact span 66.1%; at 0.99 the source is 98.1% and the
+span 98.0% at 1.2% coverage. The exact-copy path works; the pointer does
+not hold 90% precision at 5% coverage. The gate cannot exceed source
+precision, so the open term is the pointer.
 
 Pass gate: **>90% exact-span precision at ≥5% coverage and >1.2x
 bytes/step**, with every copied byte exact. Trunk `-q2048`; 2 MB code,
@@ -56,23 +56,34 @@ bytes/step**, with every copied byte exact. Trunk `-q2048`; 2 MB code,
 | id | change | gate 0.9 span precision | coverage | bytes/step |
 |---|---|---:|---:|---:|
 | R0 | frozen trunk, copyability gate | 51.1% | 4.2% | 0.95x |
-| R1 | joint block, copyability gate, lr 1e-4 | 0% (no fire) | 0% | 1.00x |
-| R2 | separate lrs, pointer-correctness gate | 45.8% | 5.4% | 0.93x |
-| R3 | exact-span gate | 62.0% | 5.0% | 0.96x |
-| R4 | run head at predicted source | 61.9% | 4.7% | 0.97x |
-| R5 | run head conditioned on source | 63.7% | 4.9% | 0.97x |
+| R1 | joint, lr 1e-4 | 0% (no fire) | 0% | 1.00x |
+| R2 | joint, lr 1e-3, copyability gate | 27.7% | 11.0% | 0.77x |
+| R3 | separate lrs, pointer-correctness gate | 45.8% | 5.4% | 0.93x |
+| R4 | exact-span gate | 62.0% | 5.0% | 0.96x |
+| R5 | run head at predicted source | 61.9% | 4.7% | 0.97x |
+| R6 | run head conditioned on source | 63.7% | 4.9% | 0.97x |
 
 - R1 is an underfit/control failure, not a verdict: the head can fire at
   lr 1e-3, and the block needs a smaller rate than the head.
-- R3 gains precision by labeling the gate with the exact copy outcome.
-- R4/R5 remove the run-length gap at high confidence: at gate 0.99 the
+- R4 gains precision by labeling the gate with the exact copy outcome.
+- R5/R6 remove the run-length gap at high confidence: at gate 0.99 the
   span is 96.3% and the source is 100%, but coverage is 0.85%.
 
-**Next repair: pointer coverage.** The target precision exists at gate
-0.99, but not at ≥5% coverage. Try, in order: (a) multi-positive pointer
-loss over all exact prior matches, (b) more windows/steps, (c) wider
-pointer. Keep the run head fixed. B2 still tests the retrieval-context
-path. One GPU job at a time; no new base.
+**Repair result (R7-R9).** Three coverage repairs miss the gate:
+
+| id | change | span precision @ gate 0.9 | coverage | bytes/step |
+|---|---|---:|---:|---:|
+| R7 | multi-positive pointer loss | 59.1% | 5.7% | 0.96x |
+| R8 | R7 + 2x windows and steps | 67.5% | 5.2% | 0.97x |
+| R9 | R8 + 2x pointer width | 66.1% | 5.1% | 0.97x |
+
+At gate 0.99, R9 is 98.0% span at 98.1% source, 1.2% coverage, 1.00x.
+The operating point stalls at **66-67% precision at ~5% coverage**.
+**Stop the B1 repair loop.** Do not add terms to it.
+
+**Next: B2 retrieval context.** Put a retrieved exact pack in the model
+context and point into it. If B2 also misses (>90% at ≥5%, >1.2x), record
+the ByteCopy LM interface as a stop in `TODO9.md`. One GPU job at a time.
 
 **Repair rules.** A failed run identifies a term, not the interface.
 Change one term, record a row, rerun. Stop only after two independent
@@ -120,8 +131,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 | id | hypothesis | command | pass signal | cost |
 |---|---|---|---|---|
-| **B1** | joint copy head — repair loop | `cml copy-lm --joint` | 96.3% span at 0.85%; next: pointer at ≥5% | 1 GPU-h |
-| **B2** | pointer into a retrieved exact pack | `cml copy-lm --pack <repo-index>` | exact recall + >1.2x | 1 GPU-h |
+| ~~**B1**~~ | joint copy head — repair loop | `cml copy-lm --joint` | **done; gate missed**: 67.5% at 5.2%, 0.97x after R7-R9 | 1 GPU-h |
+| **B2** | pointer into a retrieved exact pack | `cml copy-lm --pack <repo-index>` | 90% at ≥5%, >1.2x | 1 GPU-h |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
 | ~~**M1**~~ | MCP resources — **shipped** | `cml mcp --index` | client lists/reads resources | 1 day |
@@ -140,17 +151,18 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **R1/M1/R2 + context search + L1** — incremental
-updates, MCP resources, global checkpoints (20.4x, access ≤31), ordered
-exact search with context and JSON hits, and real-log evidence. L1 is a
-recorded stop: the ratio gate passes, but gzip wins the fair baseline.
+Shipped this session: **B1 repair loop** — multi-positive pointer loss,
+2x training volume, and a `--pointer-scale` knob. R7-R9 are recorded
+negative rows: the operating point stalls at 66-67% span precision at
+~5% coverage (0.97x). B1 is a recorded stop; the source pointer is the
+binding term, not the gate or the run head.
 
 Next session, one of:
-1. **B1 repair loop**: pointer coverage at ≥5%. Try the multi-positive
-   pointer loss first; keep the run head fixed. Do not rerun the old B1.
-2. **B2**: pointer into a retrieved exact pack, after B1 reaches the gate.
-3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
-4. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
+1. **B2**: pointer into a retrieved exact pack. This is the last test
+   before the ByteCopy LM interface becomes a recorded stop.
+2. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
+3. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
+4. **patch-guard breadth**: `git apply`, binaries, 100 random diffs.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -174,6 +186,9 @@ uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 200
 uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
   --train-bytes 2000000 --eval-bytes 100000 --windows 200
+uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
+  --pointer-scale 2 --train-bytes 2000000 --eval-bytes 100000 \
+  --windows 400
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

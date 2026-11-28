@@ -1,7 +1,7 @@
 {
  "run": "codec-byte-model-code-756752-d448-l8-q2048",
  "config": {
-  "steps": 2000,
+  "steps": 3000,
   "batch": 128,
   "lr": 0.001,
   "window": 2048,
@@ -10,130 +10,57 @@
   "depth": 8,
   "train_bytes": 2000000,
   "eval_bytes": 100000,
-  "windows": 200,
+  "windows": 400,
   "seed": 0,
   "joint": true,
   "joint_batch": 4,
   "joint_positions": 64,
-  "block_lr": 1e-05
+  "block_lr": 1e-05,
+  "pointer_scale": 2.0
  },
  "rows": [
   {
    "threshold": 0.5,
-   "coverage": 0.16853841145833334,
-   "precision": 0.20315872081616637,
-   "source_precision": 0.2722229560163783,
-   "copies": 1794,
-   "speedup": 0.5953682271531927
+   "coverage": 0.17814127604166666,
+   "precision": 0.1972605208614941,
+   "source_precision": 0.27960819234194123,
+   "copies": 1822,
+   "speedup": 0.5734495920439822
   },
   {
    "threshold": 0.7,
-   "coverage": 0.11661783854166667,
-   "precision": 0.338370720188902,
-   "source_precision": 0.4350282485875706,
-   "copies": 1235,
-   "speedup": 0.8059914525006767
+   "coverage": 0.123046875,
+   "precision": 0.33848220282068503,
+   "source_precision": 0.46606040922377395,
+   "copies": 1211,
+   "speedup": 0.7981349557701837
   },
   {
    "threshold": 0.9,
-   "coverage": 0.049072265625,
-   "precision": 0.6374207188160677,
-   "source_precision": 0.7567567567567568,
-   "copies": 513,
-   "speedup": 0.96791543940185
+   "coverage": 0.05126953125,
+   "precision": 0.6610703043022036,
+   "source_precision": 0.7764876632801161,
+   "copies": 489,
+   "speedup": 0.9696730452289078
   },
   {
    "threshold": 0.95,
-   "coverage": 0.028889973958333332,
-   "precision": 0.7215447154471545,
-   "source_precision": 0.9041095890410958,
-   "copies": 296,
-   "speedup": 0.9860308285163777
+   "coverage": 0.032633463541666664,
+   "precision": 0.8183673469387756,
+   "source_precision": 0.8997214484679665,
+   "copies": 307,
+   "speedup": 0.9897355829765802
   },
   {
    "threshold": 0.99,
-   "coverage": 0.008544921875,
-   "precision": 0.963302752293578,
-   "source_precision": 1.0,
-   "copies": 78,
-   "speedup": 0.9988817274261432
+   "coverage": 0.012044270833333334,
+   "precision": 0.9801324503311258,
+   "source_precision": 0.9813084112149533,
+   "copies": 105,
+   "speedup": 0.9986888245159323
   }
  ],
  "train_copy_rate": 0.39508056640625,
- "seconds": 267.4,
- "git": "71785e77a7346e7089f7af52a68eacc91efd7725",
- "repair_log": [
-  {
-   "id": "R0",
-   "change": "frozen trunk, copyability gate",
-   "span_precision_09": 0.511,
-   "coverage_09": 0.042,
-   "speedup_09": 0.95
-  },
-  {
-   "id": "R1",
-   "change": "joint, copyability gate, lr 1e-4",
-   "span_precision_09": 0.0,
-   "coverage_09": 0.0,
-   "speedup_09": 1.0
-  },
-  {
-   "id": "R2",
-   "change": "joint, lr 1e-3, copyability gate",
-   "span_precision_09": 0.277,
-   "coverage_09": 0.11,
-   "speedup_09": 0.77
-  },
-  {
-   "id": "R3",
-   "change": "separate lrs, pointer-correctness gate",
-   "span_precision_09": 0.458,
-   "coverage_09": 0.054,
-   "speedup_09": 0.93
-  },
-  {
-   "id": "R4",
-   "change": "exact-span gate",
-   "span_precision_09": 0.62,
-   "coverage_09": 0.05,
-   "speedup_09": 0.96
-  },
-  {
-   "id": "R5",
-   "change": "run head at predicted source",
-   "span_precision_09": 0.619,
-   "coverage_09": 0.047,
-   "speedup_09": 0.97
-  },
-  {
-   "id": "R6",
-   "change": "run head conditioned on source",
-   "span_precision_09": 0.637,
-   "coverage_09": 0.049,
-   "speedup_09": 0.97
-  }
- ],
- "gate_check": {
-  "target": ">90% span precision at >=5% coverage, >1.2x bytes/step",
-  "best_at_5pct": {
-   "precision": 0.338,
-   "coverage": 0.117,
-   "speedup": 0.81
-  },
-  "max_precision": {
-   "precision": 0.963,
-   "coverage": 0.0085,
-   "speedup": 1.0
-  }
- },
- "frozen_8000": {
-  "note": "control, not B1",
-  "windows": 800,
-  "steps": 8000,
-  "gate_09": {
-   "precision": 0.684,
-   "coverage": 0.027,
-   "speedup": 0.98
-  }
- }
+ "seconds": 369.5,
+ "git": "94d3695dec7816f66544a374c9d1d0b82ff8c40d"
 }

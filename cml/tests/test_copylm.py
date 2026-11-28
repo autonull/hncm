@@ -30,3 +30,14 @@ def test_match_len_and_exact_copies() -> None:
     run = np.array([0])  # bucket 0 means length 8
     assert copylm._exact_copies(w, idx, pred, run, np.array([True]))[0]
     assert not copylm._exact_copies(w, idx, pred, run, np.array([False]))[0]
+
+
+def test_valid_sources_accept_every_exact_match() -> None:
+    w = b"abcXYZabcQQQabc"
+    idx = np.array([len(w) - 4])
+    mask = copylm._valid_sources(w, idx, 3, 32)
+    at = int(idx[0]) + 1
+    slots = np.nonzero(mask[0])[0]
+    assert slots.tolist() == [5]
+    for j in slots:
+        assert w[j + 1 : j + 1 + 3] == w[at : at + 3]

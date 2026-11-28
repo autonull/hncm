@@ -752,10 +752,15 @@ longest prior match in the context (min 8 B, cap 64 B).
 The prototype (`cml/copylm.py`, `cml/reports/COPY-LM.md`) trains a 403k
 frozen copy head on 2 MB of code. Exact copies work; the gate is not
 calibrated on frozen last states: 52.6% copy precision at gate 0.9, 0.96x
-bytes/step. Next experiment (one GPU job): train the head **jointly with
-the last block**, add a relative-position bias and a top-2 pointer margin,
-and require a digest before a copy. Target >90% precision at ≥5% coverage;
-at mean length 10 that is >1.2x bytes/step with exact copied bytes.
+bytes/step. The joint repair (R0-R9) added a relative-position bias, a
+top-2 pointer margin, an exact-span gate, a run head conditioned on the
+chosen source, a multi-positive pointer loss, 2x training volume, and a
+2x pointer. At gate 0.99 the span is 98.0% at 98.1% source, but at only
+1.2% coverage. The operating point stalls at 66-67% span precision at
+~5% coverage, 0.97x. The gate cannot exceed source precision, so the
+source pointer is the binding term; the B1 repair loop is a recorded
+stop in `TODO10.md`. The last test is B2: point into a retrieved exact
+pack.
 
 The product path is `memory-mcp`: the model queries an exact repo index and
 conditions on the bytes. ByteCopy LM is the trained-model path; the MCP
