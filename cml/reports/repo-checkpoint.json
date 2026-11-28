@@ -1,0 +1,1675 @@
+{
+ "stats": {
+  "repo": "/home/me/.cache/hncm/edit/repos/tiangolo__fastapi.git",
+  "head": "05e6df7e906c3decba377c37548019973f40bf15",
+  "files": 80,
+  "global": true,
+  "raw_bytes": 9839584,
+  "chain_bytes": 482502,
+  "gzip_bytes": 3413837,
+  "ratio": 20.392835677365067,
+  "gzip_ratio": 2.882265321982274,
+  "vs_gzip": 7.075280516971951,
+  "exact": true,
+  "seconds": 58.8,
+  "checkpoint": 32,
+  "checkpoint_bytes": 92478,
+  "config": {
+   "window": 1048576,
+   "min_match": 8,
+   "cap": 256,
+   "depth": 16
+  }
+ },
+ "files": [
+  {
+   "path": ".github/DISCUSSION_TEMPLATE/questions.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     0,
+     3
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 17229,
+   "gzip_bytes": 6124,
+   "head": "98424a341db7bbe9db28efbb726d77923538bf51",
+   "chain_bytes": 482502,
+   "ratio": 0.035707624009848664,
+   "gzip_ratio": 2.813357282821685
+  },
+  {
+   "path": ".github/DISCUSSION_TEMPLATE/translations.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     3,
+     4
+    ]
+   ],
+   "versions": 1,
+   "raw_bytes": 1694,
+   "gzip_bytes": 720,
+   "head": "16e304d9981e8cd84b24c1109f9e0d6b55ab3bda",
+   "chain_bytes": 482502,
+   "ratio": 0.0035108662762019637,
+   "gzip_ratio": 2.352777777777778
+  },
+  {
+   "path": ".github/ISSUE_TEMPLATE/config.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     4,
+     8
+    ]
+   ],
+   "versions": 4,
+   "raw_bytes": 2029,
+   "gzip_bytes": 938,
+   "head": "fd9f3b11c5830b30b1d39beb124108183c9d84af",
+   "chain_bytes": 482502,
+   "ratio": 0.004205163916418999,
+   "gzip_ratio": 2.1631130063965887
+  },
+  {
+   "path": ".github/ISSUE_TEMPLATE/privileged.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     8,
+     10
+    ]
+   ],
+   "versions": 2,
+   "raw_bytes": 1777,
+   "gzip_bytes": 870,
+   "head": "2b85eb310b30655faa6976d429c142c98de40492",
+   "chain_bytes": 482502,
+   "ratio": 0.0036828862885542445,
+   "gzip_ratio": 2.042528735632184
+  },
+  {
+   "path": ".github/dependabot.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     10,
+     19
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 4664,
+   "gzip_bytes": 1926,
+   "head": "2e0061f5e5dfaeeda49d050646d0a8c35a129f0d",
+   "chain_bytes": 482502,
+   "ratio": 0.009666281176036576,
+   "gzip_ratio": 2.421599169262721
+  },
+  {
+   "path": ".github/latest-changes.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     19,
+     20
+    ]
+   ],
+   "versions": 1,
+   "raw_bytes": 298,
+   "gzip_bytes": 172,
+   "head": "f1e99e084ebb483c577fe48100579ec13721dfd9",
+   "chain_bytes": 482502,
+   "ratio": 0.0006176140202527658,
+   "gzip_ratio": 1.7325581395348837
+  },
+  {
+   "path": ".github/pr-push.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     20,
+     22
+    ]
+   ],
+   "versions": 2,
+   "raw_bytes": 132,
+   "gzip_bytes": 136,
+   "head": "b1193b0768ce571ed61236de4ea3e9019948f3e3",
+   "chain_bytes": 482502,
+   "ratio": 0.00027357399554820495,
+   "gzip_ratio": 0.9705882352941176
+  },
+  {
+   "path": ".github/pr-submit.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     22,
+     25
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 448,
+   "gzip_bytes": 299,
+   "head": "417bbcabd57f7b2178ce376e1f16795cc258b96a",
+   "chain_bytes": 482502,
+   "ratio": 0.0009284935606484533,
+   "gzip_ratio": 1.4983277591973243
+  },
+  {
+   "path": ".github/workflows/add-to-project.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     25,
+     31
+    ]
+   ],
+   "versions": 6,
+   "raw_bytes": 2807,
+   "gzip_bytes": 1798,
+   "head": "4aceb2ea5a783265a03d0413243ca9cb239f11d2",
+   "chain_bytes": 482502,
+   "ratio": 0.005817592465937965,
+   "gzip_ratio": 1.561179087875417
+  },
+  {
+   "path": ".github/workflows/build-docs.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     31,
+     117
+    ]
+   ],
+   "versions": 86,
+   "raw_bytes": 280780,
+   "gzip_bytes": 95383,
+   "head": "e6713a87b15361c4c47902a86c75c73c4b475b4d",
+   "chain_bytes": 482502,
+   "ratio": 0.5819250490153409,
+   "gzip_ratio": 2.943711143495172
+  },
+  {
+   "path": ".github/workflows/bump-pre-commit-hooks.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     117,
+     127
+    ]
+   ],
+   "versions": 10,
+   "raw_bytes": 24952,
+   "gzip_bytes": 11122,
+   "head": "dcf4b0933e22a8e69a16daa1d0d9a7490418416d",
+   "chain_bytes": 482502,
+   "ratio": 0.05171377527968796,
+   "gzip_ratio": 2.2434813882395255
+  },
+  {
+   "path": ".github/workflows/create-draft-release.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     127,
+     137
+    ]
+   ],
+   "versions": 10,
+   "raw_bytes": 19383,
+   "gzip_bytes": 8883,
+   "head": "46f9153a8bca1e40ed85a2009d206a8e62138285",
+   "chain_bytes": 482502,
+   "ratio": 0.04017185420993074,
+   "gzip_ratio": 2.182033096926714
+  },
+  {
+   "path": ".github/workflows/deploy-docs.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     137,
+     188
+    ]
+   ],
+   "versions": 51,
+   "raw_bytes": 134655,
+   "gzip_bytes": 51402,
+   "head": "a763664ac0867216f1f364b82feb3e6461b532da",
+   "chain_bytes": 482502,
+   "ratio": 0.27907656341320863,
+   "gzip_ratio": 2.6196451499941635
+  },
+  {
+   "path": ".github/workflows/detect-conflicts.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     188,
+     193
+    ]
+   ],
+   "versions": 5,
+   "raw_bytes": 2925,
+   "gzip_bytes": 1900,
+   "head": "8d61bec7a3908f72a06f87e96f10ecafa055642e",
+   "chain_bytes": 482502,
+   "ratio": 0.006062151037715906,
+   "gzip_ratio": 1.5394736842105263
+  },
+  {
+   "path": ".github/workflows/guard-dependencies.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     193,
+     196
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 6327,
+   "gzip_bytes": 2735,
+   "head": "764fe8313af6f8bc62082c7723e2602910c791f3",
+   "chain_bytes": 482502,
+   "ratio": 0.013112899013890098,
+   "gzip_ratio": 2.313345521023766
+  },
+  {
+   "path": ".github/workflows/issue-manager.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     196,
+     218
+    ]
+   ],
+   "versions": 22,
+   "raw_bytes": 24912,
+   "gzip_bytes": 12416,
+   "head": "8d6997d2a292219bcd341bdb1d048459fadfa1d6",
+   "chain_bytes": 482502,
+   "ratio": 0.051630874068915776,
+   "gzip_ratio": 2.006443298969072
+  },
+  {
+   "path": ".github/workflows/pre-commit.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     218,
+     240
+    ]
+   ],
+   "versions": 22,
+   "raw_bytes": 78705,
+   "gzip_bytes": 31652,
+   "head": "e645ed6525e52617ea6554c95dd7557006f151ca",
+   "chain_bytes": 482502,
+   "ratio": 0.16311849484561722,
+   "gzip_ratio": 2.4865727284215846
+  },
+  {
+   "path": ".github/workflows/prepare-release.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     240,
+     251
+    ]
+   ],
+   "versions": 11,
+   "raw_bytes": 30786,
+   "gzip_bytes": 12810,
+   "head": "f84aae1a0cec30f853be0f7f62313c38cb80a407",
+   "chain_bytes": 482502,
+   "ratio": 0.0638049168708109,
+   "gzip_ratio": 2.40327868852459
+  },
+  {
+   "path": ".github/workflows/publish.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     251,
+     309
+    ]
+   ],
+   "versions": 58,
+   "raw_bytes": 63962,
+   "gzip_bytes": 28864,
+   "head": "eadfd8eaf17200fa7011c3c47465c6b8873ac23d",
+   "chain_bytes": 482502,
+   "ratio": 0.13256318108525975,
+   "gzip_ratio": 2.2159783813747227
+  },
+  {
+   "path": ".github/workflows/smokeshow.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     309,
+     356
+    ]
+   ],
+   "versions": 47,
+   "raw_bytes": 73616,
+   "gzip_bytes": 33158,
+   "head": "23a4a6897e4407704d6c7bea2283c7dfd1b045c5",
+   "chain_bytes": 482502,
+   "ratio": 0.1525713883051262,
+   "gzip_ratio": 2.2201580312443454
+  },
+  {
+   "path": ".github/workflows/sponsors.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     356,
+     379
+    ]
+   ],
+   "versions": 23,
+   "raw_bytes": 42372,
+   "gzip_bytes": 20550,
+   "head": "fd0effe8f0c02f13079ea73bb7010c0957da7d7b",
+   "chain_bytes": 482502,
+   "ratio": 0.0878172525709738,
+   "gzip_ratio": 2.061897810218978
+  },
+  {
+   "path": ".github/workflows/test-redistribute.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     379,
+     397
+    ]
+   ],
+   "versions": 18,
+   "raw_bytes": 32040,
+   "gzip_bytes": 12531,
+   "head": "95d25a8f1d8749c7b9716b3962f95b16f2958ff9",
+   "chain_bytes": 482502,
+   "ratio": 0.06640386982851884,
+   "gzip_ratio": 2.5568589897055305
+  },
+  {
+   "path": ".github/workflows/test.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     397,
+     509
+    ]
+   ],
+   "versions": 112,
+   "raw_bytes": 654264,
+   "gzip_bytes": 171303,
+   "head": "d0072dd3f73280e6fe0eda2cf03a5893094cc8e4",
+   "chain_bytes": 482502,
+   "ratio": 1.355981944116294,
+   "gzip_ratio": 3.819337664839495
+  },
+  {
+   "path": ".github/workflows/topic-repos.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     509,
+     529
+    ]
+   ],
+   "versions": 20,
+   "raw_bytes": 25831,
+   "gzip_bytes": 13610,
+   "head": "892497757739658adc75319ebb8d3758a3b40208",
+   "chain_bytes": 482502,
+   "ratio": 0.05353552938640669,
+   "gzip_ratio": 1.8979426891991182
+  },
+  {
+   "path": ".github/workflows/translate.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     529,
+     560
+    ]
+   ],
+   "versions": 31,
+   "raw_bytes": 130416,
+   "gzip_bytes": 42245,
+   "head": "7f589efdc1fe1321c96459bbf071495d9325ac9c",
+   "chain_bytes": 482502,
+   "ratio": 0.2702911076016265,
+   "gzip_ratio": 3.0871345721387145
+  },
+  {
+   "path": ".github/workflows/zizmor.yml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     560,
+     571
+    ]
+   ],
+   "versions": 11,
+   "raw_bytes": 6553,
+   "gzip_bytes": 4096,
+   "head": "575f3a0efbf23e4b4668171bfcb8adc2049513f3",
+   "chain_bytes": 482502,
+   "ratio": 0.013581290854752934,
+   "gzip_ratio": 1.599853515625
+  },
+  {
+   "path": ".pre-commit-config.yaml",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     571,
+     656
+    ]
+   ],
+   "versions": 85,
+   "raw_bytes": 112371,
+   "gzip_bytes": 40076,
+   "head": "b34658fec48b991039b7996cab7fd006ef1256c8",
+   "chain_bytes": 482502,
+   "ratio": 0.2328922988920253,
+   "gzip_ratio": 2.8039474997504743
+  },
+  {
+   "path": "README.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     656,
+     851
+    ]
+   ],
+   "versions": 195,
+   "raw_bytes": 4077812,
+   "gzip_bytes": 1356278,
+   "head": "779410e6967e72dd7e049e90154a3c92b56e82ef",
+   "chain_bytes": 482502,
+   "ratio": 8.451388802533462,
+   "gzip_ratio": 3.006619586839866
+  },
+  {
+   "path": "docs/de/docs/_llm-test.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     851,
+     860
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 114835,
+   "gzip_bytes": 44935,
+   "head": "3fec41817ed4a67eb77ae854dde3ef747afb0897",
+   "chain_bytes": 482502,
+   "ratio": 0.2379990134755918,
+   "gzip_ratio": 2.555580282630466
+  },
+  {
+   "path": "docs/de/docs/about/index.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     860,
+     862
+    ]
+   ],
+   "versions": 2,
+   "raw_bytes": 151,
+   "gzip_bytes": 176,
+   "head": "5e9c6b6a0a069b16fdb17a121ded39339b53b069",
+   "chain_bytes": 482502,
+   "ratio": 0.00031295207066499205,
+   "gzip_ratio": 0.8579545454545454
+  },
+  {
+   "path": "docs/de/docs/advanced/additional-responses.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     862,
+     875
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 130222,
+   "gzip_bytes": 37404,
+   "head": "6564750e515864fecd3aec14b7aa4285401c2bdd",
+   "chain_bytes": 482502,
+   "ratio": 0.2698890367293814,
+   "gzip_ratio": 3.4814993048871776
+  },
+  {
+   "path": "docs/de/docs/advanced/additional-status-codes.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     875,
+     884
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 24018,
+   "gzip_bytes": 10449,
+   "head": "9a990fe0b49a27d665ef8122f13179adcce1ed28",
+   "chain_bytes": 482502,
+   "ratio": 0.04977803200815748,
+   "gzip_ratio": 2.298593166810221
+  },
+  {
+   "path": "docs/de/docs/advanced/advanced-dependencies.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     884,
+     899
+    ]
+   ],
+   "versions": 15,
+   "raw_bytes": 123447,
+   "gzip_bytes": 43415,
+   "head": "06cf0e74b88a6cf6e686265ac5e9dd71ee5f4d0e",
+   "chain_bytes": 482502,
+   "ratio": 0.2558476441548429,
+   "gzip_ratio": 2.8434181734423585
+  },
+  {
+   "path": "docs/de/docs/advanced/advanced-python-types.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     899,
+     901
+    ]
+   ],
+   "versions": 2,
+   "raw_bytes": 4684,
+   "gzip_bytes": 2298,
+   "head": "d2255929c26afe8a8880aec558f7370c7121a77e",
+   "chain_bytes": 482502,
+   "ratio": 0.009707731781422667,
+   "gzip_ratio": 2.0382941688424716
+  },
+  {
+   "path": "docs/de/docs/advanced/async-tests.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     901,
+     915
+    ]
+   ],
+   "versions": 14,
+   "raw_bytes": 62838,
+   "gzip_bytes": 27222,
+   "head": "94c77f498d1c672e7535bb7499dc54c53587133e",
+   "chain_bytes": 482502,
+   "ratio": 0.1302336570625614,
+   "gzip_ratio": 2.3083535375798987
+  },
+  {
+   "path": "docs/de/docs/advanced/behind-a-proxy.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     915,
+     928
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 213694,
+   "gzip_bytes": 72023,
+   "head": "90535b09e44883d862ddd32fa664b09a7e493dff",
+   "chain_bytes": 482502,
+   "ratio": 0.4428872833687736,
+   "gzip_ratio": 2.9670244227538425
+  },
+  {
+   "path": "docs/de/docs/advanced/custom-response.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     928,
+     939
+    ]
+   ],
+   "versions": 11,
+   "raw_bytes": 151145,
+   "gzip_bytes": 49913,
+   "head": "9cd949224224f0503e006d6b4fa2a9fff6a47482",
+   "chain_bytes": 482502,
+   "ratio": 0.31325258755404123,
+   "gzip_ratio": 3.028169014084507
+  },
+  {
+   "path": "docs/de/docs/advanced/dataclasses.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     939,
+     952
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 63546,
+   "gzip_bytes": 26166,
+   "head": "2bb4050fe2f31de766fb18b7ec139589f43fd363",
+   "chain_bytes": 482502,
+   "ratio": 0.13170100849322905,
+   "gzip_ratio": 2.4285714285714284
+  },
+  {
+   "path": "docs/de/docs/advanced/events.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     952,
+     966
+    ]
+   ],
+   "versions": 14,
+   "raw_bytes": 133687,
+   "gzip_bytes": 51025,
+   "head": "3dc5ecb5f31ed2d960aee0ad5060106e530b2008",
+   "chain_bytes": 482502,
+   "ratio": 0.2770703541125218,
+   "gzip_ratio": 2.620029397354238
+  },
+  {
+   "path": "docs/de/docs/advanced/generate-clients.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     966,
+     983
+    ]
+   ],
+   "versions": 17,
+   "raw_bytes": 197547,
+   "gzip_bytes": 72974,
+   "head": "124ad282ee0d7742476197dba36f2e14010f1432",
+   "chain_bytes": 482502,
+   "ratio": 0.4094221371103125,
+   "gzip_ratio": 2.7070874558061777
+  },
+  {
+   "path": "docs/de/docs/advanced/index.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     983,
+     988
+    ]
+   ],
+   "versions": 5,
+   "raw_bytes": 8232,
+   "gzip_bytes": 4118,
+   "head": "3886e963a616d1d60f08e76a05d8aec971e2e48c",
+   "chain_bytes": 482502,
+   "ratio": 0.017061069176915328,
+   "gzip_ratio": 1.999028654686741
+  },
+  {
+   "path": "docs/de/docs/advanced/json-base64-bytes.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     988,
+     991
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 8405,
+   "gzip_bytes": 3791,
+   "head": "adcfb0841465b43c4d1dafbe8115c30653ce4499",
+   "chain_bytes": 482502,
+   "ratio": 0.01741961691350502,
+   "gzip_ratio": 2.217093115273015
+  },
+  {
+   "path": "docs/de/docs/advanced/middleware.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     991,
+     1004
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 62562,
+   "gzip_bytes": 26901,
+   "head": "06c0cb15349ae9194479f380cb3856ab56fe8202",
+   "chain_bytes": 482502,
+   "ratio": 0.12966163870823333,
+   "gzip_ratio": 2.3256384521021523
+  },
+  {
+   "path": "docs/de/docs/advanced/openapi-callbacks.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1004,
+     1016
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 109784,
+   "gzip_bytes": 40523,
+   "head": "1b535a6a59cdd513ecdb1632f1da789599510435",
+   "chain_bytes": 482502,
+   "ratio": 0.22753066308533437,
+   "gzip_ratio": 2.709177504133455
+  },
+  {
+   "path": "docs/de/docs/advanced/openapi-webhooks.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1016,
+     1026
+    ]
+   ],
+   "versions": 10,
+   "raw_bytes": 35098,
+   "gzip_bytes": 16429,
+   "head": "509aea8e01d68e87f7cea0d9af47dc55e943e045",
+   "chain_bytes": 482502,
+   "ratio": 0.07274166739205226,
+   "gzip_ratio": 2.136344269279932
+  },
+  {
+   "path": "docs/de/docs/advanced/opentelemetry.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1026,
+     1029
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 27645,
+   "gzip_bytes": 11140,
+   "head": "d463fb0ad7bded6b9ad8207920401639e65512d5",
+   "chain_bytes": 482502,
+   "ratio": 0.057295099294925204,
+   "gzip_ratio": 2.4815978456014363
+  },
+  {
+   "path": "docs/de/docs/advanced/path-operation-advanced-configuration.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1029,
+     1042
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 112545,
+   "gzip_bytes": 40316,
+   "head": "3739da6f9a347254b1253ae7fa500f2cbf33a0aa",
+   "chain_bytes": 482502,
+   "ratio": 0.23325291915888433,
+   "gzip_ratio": 2.7915715844825875
+  },
+  {
+   "path": "docs/de/docs/advanced/response-change-status-code.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1042,
+     1051
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 17827,
+   "gzip_bytes": 8681,
+   "head": "3453a71436547d40b44f717a30444ad2d40f5d89",
+   "chain_bytes": 482502,
+   "ratio": 0.036946997110892804,
+   "gzip_ratio": 2.053565257458818
+  },
+  {
+   "path": "docs/de/docs/advanced/response-cookies.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1051,
+     1064
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 34501,
+   "gzip_bytes": 15493,
+   "head": "c747fa5e9869c727094a6a45178dab0b9b54a30a",
+   "chain_bytes": 482502,
+   "ratio": 0.07150436682127742,
+   "gzip_ratio": 2.226876653972762
+  },
+  {
+   "path": "docs/de/docs/advanced/response-directly.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1064,
+     1076
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 48011,
+   "gzip_bytes": 19998,
+   "head": "35f80799d449c79127056bb397eed3dc834c873f",
+   "chain_bytes": 482502,
+   "ratio": 0.09950425075958234,
+   "gzip_ratio": 2.400790079007901
+  },
+  {
+   "path": "docs/de/docs/advanced/response-headers.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1076,
+     1089
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 35443,
+   "gzip_bytes": 16438,
+   "head": "3fe659f6ec5bf1c7d0d28681d5371b69939ce54d",
+   "chain_bytes": 482502,
+   "ratio": 0.07345669033496234,
+   "gzip_ratio": 2.1561625501885873
+  },
+  {
+   "path": "docs/de/docs/advanced/security/http-basic-auth.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1089,
+     1098
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 58367,
+   "gzip_bytes": 23447,
+   "head": "feccba239f7823f0ff6efed7b96e4729a515ddb5",
+   "chain_bytes": 482502,
+   "ratio": 0.12096737422850061,
+   "gzip_ratio": 2.489316330447392
+  },
+  {
+   "path": "docs/de/docs/advanced/security/index.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1098,
+     1103
+    ]
+   ],
+   "versions": 5,
+   "raw_bytes": 4049,
+   "gzip_bytes": 2247,
+   "head": "9884f2c1b76a8a1e6e320a78b208965b3c8e8ba6",
+   "chain_bytes": 482502,
+   "ratio": 0.008391675060414258,
+   "gzip_ratio": 1.8019581664441477
+  },
+  {
+   "path": "docs/de/docs/advanced/security/oauth2-scopes.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1103,
+     1114
+    ]
+   ],
+   "versions": 11,
+   "raw_bytes": 203498,
+   "gzip_bytes": 61173,
+   "head": "eb4939ed305c6cfb742fad57852528723f460ff8",
+   "chain_bytes": 482502,
+   "ratio": 0.4217557647429441,
+   "gzip_ratio": 3.3265983358671307
+  },
+  {
+   "path": "docs/de/docs/advanced/settings.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1114,
+     1128
+    ]
+   ],
+   "versions": 14,
+   "raw_bytes": 212039,
+   "gzip_bytes": 71873,
+   "head": "e20b21bcfb8e429afd56aa3d0b27cac38f101cbd",
+   "chain_bytes": 482502,
+   "ratio": 0.4394572457730745,
+   "gzip_ratio": 2.9501899183281624
+  },
+  {
+   "path": "docs/de/docs/advanced/stream-data.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1128,
+     1132
+    ]
+   ],
+   "versions": 4,
+   "raw_bytes": 24436,
+   "gzip_bytes": 10107,
+   "head": "3f66b9cb6201acb5e9160e1a7c351400dd2b8a48",
+   "chain_bytes": 482502,
+   "ratio": 0.0506443496607268,
+   "gzip_ratio": 2.4177302859404373
+  },
+  {
+   "path": "docs/de/docs/advanced/strict-content-type.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1132,
+     1135
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 11127,
+   "gzip_bytes": 5158,
+   "head": "e961be851e2913eb58347664f80670bb811ac1dc",
+   "chain_bytes": 482502,
+   "ratio": 0.023061044306552096,
+   "gzip_ratio": 2.1572314850717333
+  },
+  {
+   "path": "docs/de/docs/advanced/sub-applications.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1135,
+     1144
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 30141,
+   "gzip_bytes": 12655,
+   "head": "1a4d7ea9801c80f9756d8ab1065064e6ca8be239",
+   "chain_bytes": 482502,
+   "ratio": 0.06246813484710944,
+   "gzip_ratio": 2.381746345318056
+  },
+  {
+   "path": "docs/de/docs/advanced/templates.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1144,
+     1157
+    ]
+   ],
+   "versions": 13,
+   "raw_bytes": 55183,
+   "gzip_bytes": 24593,
+   "head": "ff88f5970fbe4aee355652bce2c63a6520984412",
+   "chain_bytes": 482502,
+   "ratio": 0.11436843785103482,
+   "gzip_ratio": 2.2438498759809704
+  },
+  {
+   "path": "docs/de/docs/advanced/testing-dependencies.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1157,
+     1164
+    ]
+   ],
+   "versions": 7,
+   "raw_bytes": 23919,
+   "gzip_bytes": 9365,
+   "head": "f7cefc99742d59d251f9ddb3a9aec58a3de5e3c0",
+   "chain_bytes": 482502,
+   "ratio": 0.049572851511496326,
+   "gzip_ratio": 2.55408435664709
+  },
+  {
+   "path": "docs/de/docs/advanced/testing-events.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1164,
+     1173
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 5258,
+   "gzip_bytes": 3433,
+   "head": "5325ccd35fb0715cfaab22a47106dd0c48365bf9",
+   "chain_bytes": 482502,
+   "ratio": 0.010897364156003498,
+   "gzip_ratio": 1.5316050101951646
+  },
+  {
+   "path": "docs/de/docs/advanced/testing-websockets.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1173,
+     1185
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 6099,
+   "gzip_bytes": 4081,
+   "head": "5a3365a6b05337d4f81bcf3170b586ca55d2d50e",
+   "chain_bytes": 482502,
+   "ratio": 0.012640362112488653,
+   "gzip_ratio": 1.4944866454300416
+  },
+  {
+   "path": "docs/de/docs/advanced/using-request-directly.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1185,
+     1197
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 31476,
+   "gzip_bytes": 14643,
+   "head": "96e608ea56a37ffb392e2dd0966dab4f7e8fd7bc",
+   "chain_bytes": 482502,
+   "ratio": 0.06523496275663106,
+   "gzip_ratio": 2.149559516492522
+  },
+  {
+   "path": "docs/de/docs/advanced/websockets.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1197,
+     1211
+    ]
+   ],
+   "versions": 14,
+   "raw_bytes": 92288,
+   "gzip_bytes": 36309,
+   "head": "ba8607c2492d08b6b19846fe054c7f6b7019cbdc",
+   "chain_bytes": 482502,
+   "ratio": 0.19126967349358137,
+   "gzip_ratio": 2.5417389627915945
+  },
+  {
+   "path": "docs/de/docs/advanced/wsgi.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1211,
+     1223
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 19367,
+   "gzip_bytes": 9787,
+   "head": "01f6a7ed18a76743dc026d72d33b0b824c42ac0c",
+   "chain_bytes": 482502,
+   "ratio": 0.040138693725621864,
+   "gzip_ratio": 1.9788494942270358
+  },
+  {
+   "path": "docs/de/docs/agent-banner.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1223,
+     1224
+    ]
+   ],
+   "versions": 1,
+   "raw_bytes": 252,
+   "gzip_bytes": 216,
+   "head": "d35b0f8cd517275b29cafe0d32198c1fa329a5a6",
+   "chain_bytes": 482502,
+   "ratio": 0.000522277627864755,
+   "gzip_ratio": 1.1666666666666667
+  },
+  {
+   "path": "docs/de/docs/ai-development.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1224,
+     1225
+    ]
+   ],
+   "versions": 1,
+   "raw_bytes": 2702,
+   "gzip_bytes": 1211,
+   "head": "8a2a9d41e4cf81badd443e4e67e971b3d30f3c1f",
+   "chain_bytes": 482502,
+   "ratio": 0.005599976787660984,
+   "gzip_ratio": 2.23121387283237
+  },
+  {
+   "path": "docs/de/docs/alternatives.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1225,
+     1236
+    ]
+   ],
+   "versions": 11,
+   "raw_bytes": 300262,
+   "gzip_bytes": 103375,
+   "head": "35944da171c3a14a9a14d26b073276749fddb866",
+   "chain_bytes": 482502,
+   "ratio": 0.6223020837219327,
+   "gzip_ratio": 2.904590084643289
+  },
+  {
+   "path": "docs/de/docs/async.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1236,
+     1245
+    ]
+   ],
+   "versions": 9,
+   "raw_bytes": 249225,
+   "gzip_bytes": 86558,
+   "head": "1e122227e43602bdc4a0fb7e6a25ff4ce3a4fa7b",
+   "chain_bytes": 482502,
+   "ratio": 0.5165263563674347,
+   "gzip_ratio": 2.879283255158391
+  },
+  {
+   "path": "docs/de/docs/benchmarks.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1245,
+     1249
+    ]
+   ],
+   "versions": 4,
+   "raw_bytes": 16288,
+   "gzip_bytes": 6966,
+   "head": "9421f80105194e8aeb43ac3b1cdcf46700eed184",
+   "chain_bytes": 482502,
+   "ratio": 0.03375737302643305,
+   "gzip_ratio": 2.3382141831754235
+  },
+  {
+   "path": "docs/de/docs/deployment/cloud.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1249,
+     1257
+    ]
+   ],
+   "versions": 8,
+   "raw_bytes": 10336,
+   "gzip_bytes": 5613,
+   "head": "3d42ca28ccb4fd420ab21fad6ade7316c66f3985",
+   "chain_bytes": 482502,
+   "ratio": 0.021421672863532172,
+   "gzip_ratio": 1.8414395154106538
+  },
+  {
+   "path": "docs/de/docs/deployment/concepts.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1257,
+     1265
+    ]
+   ],
+   "versions": 8,
+   "raw_bytes": 172418,
+   "gzip_bytes": 61737,
+   "head": "487ad6392892457e55630139907602eb2e8377c4",
+   "chain_bytes": 482502,
+   "ratio": 0.3573415239729576,
+   "gzip_ratio": 2.792782286149311
+  },
+  {
+   "path": "docs/de/docs/deployment/docker.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1265,
+     1277
+    ]
+   ],
+   "versions": 12,
+   "raw_bytes": 429784,
+   "gzip_bytes": 138710,
+   "head": "d6530166d964063338aba7bda51481b3a07220f3",
+   "chain_bytes": 482502,
+   "ratio": 0.890740349262801,
+   "gzip_ratio": 3.0984355850335232
+  },
+  {
+   "path": "docs/de/docs/deployment/fastapicloud.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1277,
+     1281
+    ]
+   ],
+   "versions": 4,
+   "raw_bytes": 8033,
+   "gzip_bytes": 4142,
+   "head": "d8827c8dadf8dfdeacee59d8167282e310a83b75",
+   "chain_bytes": 482502,
+   "ratio": 0.016648635653323716,
+   "gzip_ratio": 1.9394012554321585
+  },
+  {
+   "path": "docs/de/docs/deployment/https.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1281,
+     1289
+    ]
+   ],
+   "versions": 8,
+   "raw_bytes": 121032,
+   "gzip_bytes": 44020,
+   "head": "b4c49ff4dd7afe7ff96e599b7e1312d11e439590",
+   "chain_bytes": 482502,
+   "ratio": 0.2508424835544723,
+   "gzip_ratio": 2.749477510222626
+  },
+  {
+   "path": "docs/de/docs/deployment/index.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1289,
+     1294
+    ]
+   ],
+   "versions": 5,
+   "raw_bytes": 8493,
+   "gzip_bytes": 4595,
+   "head": "dc3a92ba8e49656345bd5f049ebb451e47ba6e8c",
+   "chain_bytes": 482502,
+   "ratio": 0.017601999577203827,
+   "gzip_ratio": 1.8483133841131665
+  },
+  {
+   "path": "docs/de/docs/deployment/manually.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1294,
+     1304
+    ]
+   ],
+   "versions": 10,
+   "raw_bytes": 66781,
+   "gzip_bytes": 27168,
+   "head": "4f023e254d19d680af974b42133ee61ac473bb45",
+   "chain_bytes": 482502,
+   "ratio": 0.13840564391442936,
+   "gzip_ratio": 2.4580756772673733
+  },
+  {
+   "path": "docs/de/docs/deployment/server-workers.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1304,
+     1312
+    ]
+   ],
+   "versions": 8,
+   "raw_bytes": 74382,
+   "gzip_bytes": 22145,
+   "head": "73d35bf3bb0951ad1d84f776f08ca08c64f9f6cc",
+   "chain_bytes": 482502,
+   "ratio": 0.1541589464914135,
+   "gzip_ratio": 3.3588620456084897
+  },
+  {
+   "path": "docs/de/docs/deployment/versions.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1312,
+     1317
+    ]
+   ],
+   "versions": 5,
+   "raw_bytes": 20286,
+   "gzip_bytes": 8536,
+   "head": "e4af5ad964cb4becc6c24fc5b2bac9e98a446049",
+   "chain_bytes": 482502,
+   "ratio": 0.04204334904311278,
+   "gzip_ratio": 2.376522961574508
+  },
+  {
+   "path": "docs/de/docs/editor-support.md",
+   "file": "repo.cmlh",
+   "ranges": [
+    [
+     1317,
+     1320
+    ]
+   ],
+   "versions": 3,
+   "raw_bytes": 8456,
+   "gzip_bytes": 4149,
+   "head": "07b14d5dfe1c42799b1faacc816345a9c0111805",
+   "chain_bytes": 482502,
+   "ratio": 0.017525315957239555,
+   "gzip_ratio": 2.0380814654133528
+  }
+ ],
+ "checkpoints": [
+  {
+   "index": 32,
+   "file": "ckpt/000032.gz",
+   "bytes": 544,
+   "sha": "2c5c4ece4d382cbbacac798dfe081d6ac98213cf923ab6ee8d439bf067d7d71d",
+   "raw_bytes": 1283
+  },
+  {
+   "index": 64,
+   "file": "ckpt/000064.gz",
+   "bytes": 1152,
+   "sha": "3b28884d78fa2f2e589f79d11a9730fc517a17511001cf5169d63182906da327",
+   "raw_bytes": 3402
+  },
+  {
+   "index": 96,
+   "file": "ckpt/000096.gz",
+   "bytes": 1112,
+   "sha": "81c7561d62129b13126590cf8b5aa347ed7f769876bc70db3bf1241b2f49f185",
+   "raw_bytes": 3334
+  },
+  {
+   "index": 128,
+   "file": "ckpt/000128.gz",
+   "bytes": 934,
+   "sha": "f588749dec5bd0086bd15f4fbe7f8835f375ce75117e7cb669b246880f7c1e56",
+   "raw_bytes": 2020
+  },
+  {
+   "index": 160,
+   "file": "ckpt/000160.gz",
+   "bytes": 1037,
+   "sha": "371d2b126c06c5b8ac05727bb7b1af30c3e0343c4d26dc0b813e6b57dd47281a",
+   "raw_bytes": 2703
+  },
+  {
+   "index": 192,
+   "file": "ckpt/000192.gz",
+   "bytes": 369,
+   "sha": "23ac12616b52dfcd32cebbc5ed4f89ade469d4f803f9c6170f0362613bc83720",
+   "raw_bytes": 580
+  },
+  {
+   "index": 224,
+   "file": "ckpt/000224.gz",
+   "bytes": 1438,
+   "sha": "2b4976dbc43226d75fc2a7f443c2811e9dcc16bbdbd52576489b49a1b2abc130",
+   "raw_bytes": 3450
+  },
+  {
+   "index": 256,
+   "file": "ckpt/000256.gz",
+   "bytes": 423,
+   "sha": "4cb4a8b54af31d910dd8fcd28983b151dccb7cc71c062b73de3dbe04da21ed16",
+   "raw_bytes": 1063
+  },
+  {
+   "index": 288,
+   "file": "ckpt/000288.gz",
+   "bytes": 481,
+   "sha": "ced63e9b390060911145babc6ff68fe591ef5826cba0de0d049e792de365481e",
+   "raw_bytes": 1075
+  },
+  {
+   "index": 320,
+   "file": "ckpt/000320.gz",
+   "bytes": 550,
+   "sha": "66b7d2cecdfa2614ee4a1b29a8882589f355c94f11f6675d42f84ce4a0a85115",
+   "raw_bytes": 1176
+  },
+  {
+   "index": 352,
+   "file": "ckpt/000352.gz",
+   "bytes": 936,
+   "sha": "c91bd8a79f5b3dd71a65ccdcf5b0798629025e8aa36303c7c4fc6f00d449a04a",
+   "raw_bytes": 2051
+  },
+  {
+   "index": 384,
+   "file": "ckpt/000384.gz",
+   "bytes": 698,
+   "sha": "e7c30882cd488b34929e85f496a3bc0d997808a7f424ed5f9828e5dada37983c",
+   "raw_bytes": 1872
+  },
+  {
+   "index": 416,
+   "file": "ckpt/000416.gz",
+   "bytes": 892,
+   "sha": "0b911ecfaae0de2b8308c897b77cad8c4259194ff7a039859c0d3a3f5df5128a",
+   "raw_bytes": 2624
+  },
+  {
+   "index": 448,
+   "file": "ckpt/000448.gz",
+   "bytes": 1204,
+   "sha": "5d687c6505b1177ccade975e72ffe64d9f15c466e2f46c364aaf9129021d470f",
+   "raw_bytes": 4686
+  },
+  {
+   "index": 480,
+   "file": "ckpt/000480.gz",
+   "bytes": 2303,
+   "sha": "4eb31dcad6e0e0a8be1a758ed05ca06ec8bbe603101d9223b2e9f832369f0205",
+   "raw_bytes": 8558
+  },
+  {
+   "index": 512,
+   "file": "ckpt/000512.gz",
+   "bytes": 530,
+   "sha": "30bef9160e7e73246d32a9a56f744d126a0406f764ded823aa2dad685f1c49e1",
+   "raw_bytes": 1021
+  },
+  {
+   "index": 544,
+   "file": "ckpt/000544.gz",
+   "bytes": 1500,
+   "sha": "9297ce40954f072419be02ff5a23dc9545810b4d109840a297e034a314557d2b",
+   "raw_bytes": 4670
+  },
+  {
+   "index": 576,
+   "file": "ckpt/000576.gz",
+   "bytes": 503,
+   "sha": "5b70d4b9ac27affacebe514ae56505278a03caaa6cd57d9cd10a765dbc7e1745",
+   "raw_bytes": 1364
+  },
+  {
+   "index": 608,
+   "file": "ckpt/000608.gz",
+   "bytes": 339,
+   "sha": "49ce18abf5de10a3efd553c2895c596690a9326d3d1fedc5158fef9c9f129c3f",
+   "raw_bytes": 734
+  },
+  {
+   "index": 640,
+   "file": "ckpt/000640.gz",
+   "bytes": 655,
+   "sha": "07461ac9d4606cec99f6af67b90ae16ecf576ae1defaff4565ad6ea61d9c1f4c",
+   "raw_bytes": 2263
+  },
+  {
+   "index": 672,
+   "file": "ckpt/000672.gz",
+   "bytes": 4724,
+   "sha": "b795dfed53082be2b22dc0a256390b66a444f4bca28aa764d74ea618e079fac3",
+   "raw_bytes": 13735
+  },
+  {
+   "index": 704,
+   "file": "ckpt/000704.gz",
+   "bytes": 6417,
+   "sha": "eb19f93497d7a388802d80963cb003a4257c5b1e6f1ad5e86d55ee1590cfbfe8",
+   "raw_bytes": 18885
+  },
+  {
+   "index": 736,
+   "file": "ckpt/000736.gz",
+   "bytes": 6877,
+   "sha": "efb903e95593a958d7379839ee4a737425d2f31b3c79c7edf0d83b6563dcd9f4",
+   "raw_bytes": 20590
+  },
+  {
+   "index": 768,
+   "file": "ckpt/000768.gz",
+   "bytes": 7567,
+   "sha": "1b59bb44bc76696c6d1a5fe0ff150d23ea51389ac0a812f27d75e00143dcb6c7",
+   "raw_bytes": 23374
+  },
+  {
+   "index": 800,
+   "file": "ckpt/000800.gz",
+   "bytes": 7735,
+   "sha": "5c697553fa71499a8e6d7e373178d3471dfe1afb0c79506094522a1690115fb3",
+   "raw_bytes": 24047
+  },
+  {
+   "index": 832,
+   "file": "ckpt/000832.gz",
+   "bytes": 8061,
+   "sha": "92d9831df4291afd3f34a16eee57ca67b946528c7114fbeb86082ec70e8df21e",
+   "raw_bytes": 24062
+  },
+  {
+   "index": 864,
+   "file": "ckpt/000864.gz",
+   "bytes": 2740,
+   "sha": "37a0f2de1e96deca77a3db4aff8b089f472d8ba88232927f4e376334ce9dcd7d",
+   "raw_bytes": 9791
+  },
+  {
+   "index": 896,
+   "file": "ckpt/000896.gz",
+   "bytes": 3709,
+   "sha": "af97b76138fc1032aaa119dd1d53f006e9032dd1d91be89d0512f5f340ef07b8",
+   "raw_bytes": 10546
+  },
+  {
+   "index": 928,
+   "file": "ckpt/000928.gz",
+   "bytes": 4485,
+   "sha": "becc82712309c8b01bb6c9131f62f13426ad1efac65ec24146a33d005058a88a",
+   "raw_bytes": 13812
+  },
+  {
+   "index": 960,
+   "file": "ckpt/000960.gz",
+   "bytes": 3754,
+   "sha": "1dc730579658db5a17af2f53e4bacb3c76bfb866f796d641fef6319ff0aa5f79",
+   "raw_bytes": 9768
+  },
+  {
+   "index": 992,
+   "file": "ckpt/000992.gz",
+   "bytes": 1940,
+   "sha": "365b911a1f1a9d5d4d2414feb739e7467cd9f85ca9b810dd98d3f968ba25d381",
+   "raw_bytes": 4543
+  },
+  {
+   "index": 1024,
+   "file": "ckpt/001024.gz",
+   "bytes": 1688,
+   "sha": "9b89984c88093fa426b8056028f876b4dbdffce49aee0573e0a1a1722998a95c",
+   "raw_bytes": 3593
+  },
+  {
+   "index": 1056,
+   "file": "ckpt/001056.gz",
+   "bytes": 1235,
+   "sha": "da6c3f6b6004b4195110212ae83b95f4ace4c0b15488b62fe8e940fd8725c2ee",
+   "raw_bytes": 2737
+  },
+  {
+   "index": 1088,
+   "file": "ckpt/001088.gz",
+   "bytes": 1250,
+   "sha": "16d0e445ca9d7a85995e0392d3ab70004bda26fef423aa366a30e3427cc496c6",
+   "raw_bytes": 2672
+  },
+  {
+   "index": 1120,
+   "file": "ckpt/001120.gz",
+   "bytes": 5067,
+   "sha": "533661fb94c013a17dfd0e7361446ef53fa78447f9529f036473332085e01899",
+   "raw_bytes": 14507
+  },
+  {
+   "index": 1152,
+   "file": "ckpt/001152.gz",
+   "bytes": 1978,
+   "sha": "a3dd4d549326a214ed55a164ecf51a96ae63f6d4dfdb1ded2ffdf8a874cae0f0",
+   "raw_bytes": 4377
+  },
+  {
+   "index": 1184,
+   "file": "ckpt/001184.gz",
+   "bytes": 303,
+   "sha": "21c18d44d5649b6947b13cbe51405549a696aa80199fc83a8a45057d839bdaa9",
+   "raw_bytes": 461
+  },
+  {
+   "index": 1216,
+   "file": "ckpt/001216.gz",
+   "bytes": 950,
+   "sha": "3518aeb21feb1e4d23cd113baccff1204c98d0f398ff58757b4e78f5d237a596",
+   "raw_bytes": 1932
+  },
+  {
+   "index": 1248,
+   "file": "ckpt/001248.gz",
+   "bytes": 1717,
+   "sha": "48d7ea5bda6b46f3d385da97243f42002ca93570ca57e00fb4235d7828d8dd36",
+   "raw_bytes": 4059
+  },
+  {
+   "index": 1280,
+   "file": "ckpt/001280.gz",
+   "bytes": 997,
+   "sha": "f45ad37f45551616f871ab34c217d8e87c1757e8683dd4f3717469d5fe111394",
+   "raw_bytes": 1862
+  },
+  {
+   "index": 1312,
+   "file": "ckpt/001312.gz",
+   "bytes": 1684,
+   "sha": "e24c35cb701ed61171ed2d32ff8adeba5d06c2389ce360e7be6c5606d6043cee",
+   "raw_bytes": 3998
+  }
+ ]
+}

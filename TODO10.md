@@ -18,8 +18,9 @@ commit.
 | repo global mode | `cml repo --global` | 80 files → 390,024 B = **25.2x**, 8.8x per-file gzip | manual |
 | repo incremental | `cml repo --update` | appends new versions; per-file chains byte-identical to a full rebuild; unchanged chains are not re-encoded | `test_repo_memory.py` |
 | MCP resources | `cml mcp --index` | 5 exact tools + `repo://path[@n]` resources and a version template | `test_mcp.py` |
+| global checkpoints | `cml repo --global --checkpoint 32` | 80 files → 482,502 B = **20.4x**; 41 snapshots, access ≤31 deltas; cold latest 0.25 s vs 20.9 s full decode | `test_repo_memory.py` |
 
-`65 passed`. The bytes for the repo index are stored gzip-wrapped when
+`67 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -72,9 +73,11 @@ model work. One GPU job at a time; no new base.
    in `cml/reports/MCP.md`.
 3. **repo-memory context search.** `--context N` lines, `--json` hits,
    multi-hit ordering. Test: exact path/line on a temp repo.
-4. **repo global checkpoints.** `--global --checkpoint K` (K=16/32),
-   trade size for random access. Measured: K=16 → 10.8x, K=32 → 16.6x;
-   target ≥20x with a checkpoint policy or a shared dictionary.
+4. ~~**repo global checkpoints.**~~ **Shipped.** `--global --checkpoint K`
+   writes a gzip snapshot every K versions; decode starts at the nearest
+   snapshot. At K=32 the 80-file sample is 20.4x with 41 snapshots and
+   access ≤31 deltas. Rebuilding an index with `--update --checkpoint K`
+   adds snapshots without re-encoding the chain.
 5. **log-delta on real logs.** Mine or generate pytest CI logs; gate
    ≥10x on near-identical and ≥2x on changed logs. Synthetic sample is
    27.3x; this is the real test.
@@ -96,7 +99,7 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | **B1** | joint last block + margin gate calibrates copy | `cml copy-lm --joint` | >90% precision at ≥5%, >1.2x | 1 GPU-h |
 | **B2** | pointer into a retrieved exact pack | `cml copy-lm --pack <repo-index>` | exact recall + >1.2x | 1 GPU-h |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
-| **R2** | global checkpoints | `cml repo --global --checkpoint 32` | ≥20x, access ≤K | 1 day |
+| ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
 | ~~**M1**~~ | MCP resources — **shipped** | `cml mcp --index` | client lists/reads resources | 1 day |
 | **L1** | real CI logs | `cml logdelta --dir <logs>` | ≥10x near-identical | 1 day |
 | **P1** | fitted pack pays | `cml pack fit` + `memory-probe` | priced total < stream | 3 h |
@@ -113,17 +116,16 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **R1/M1** — incremental repo index + MCP resources,
-with tests and an OpenCode config (`cml/reports/MCP.md`).
+Shipped this session: **R1/M1/R2** — incremental repo index, MCP
+resources, and global checkpoints (20.4x at K=32, access ≤31 deltas).
 
 Next session, one of:
-1. **R2**: global checkpoints at ≥20x with access ≤K. Start from the
-   measured K=16 (10.8x) and K=32 (16.6x) rows; try a shared dictionary
-   before a new container format.
-2. **L1**: real-log gate pass (≥10x near-identical, ≥2x changed). Gather
+1. **L1**: real-log gate pass (≥10x near-identical, ≥2x changed). Gather
    pytest CI logs first; the synthetic 27.3x is not evidence.
-3. **B1/B2**: the ByteCopy gate, unchanged. B1 is the cheap control; run
+2. **B1/B2**: the ByteCopy gate, unchanged. B1 is the cheap control; run
    it before any head scaling.
+3. **repo-memory context search**: `--context N`, `--json`, multi-hit
+   ordering.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -139,6 +141,7 @@ uv run cml repo --repo ~/.cache/hncm/edit/repos/tiangolo__fastapi.git \
   --out /tmp/fastapi-index --update
 uv run cml repo --index /tmp/fastapi-index --search "FastAPI"
 uv run cml repo --repo ... --out /tmp/g --global --limit 80
+uv run cml repo --repo ... --out /tmp/g --global --checkpoint 32 --limit 80
 uv run cml mcp --index /tmp/fastapi-index
 uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
   --eval-bytes 100000 --windows 200
@@ -154,5 +157,6 @@ uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh
 - `products/copy-lm/README.md`: ByteCopy LM design and prototype.
 - `cml/reports/COPY-LM.md`, `cml/reports/MEMORY-GATE.md`.
 - `cml/reports/REPO-INDEX.md`, `cml/reports/REPO-GLOBAL.md`,
-  `cml/reports/LOG-DELTA.md`, `cml/reports/PACK-FIT.md`.
+  `cml/reports/REPO-CHECKPOINT.md`, `cml/reports/LOG-DELTA.md`,
+  `cml/reports/PACK-FIT.md`.
 - `cml/reports/MCP.md`: tools, resources, OpenCode config, and limits.

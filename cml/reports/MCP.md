@@ -58,5 +58,8 @@ index returned one resource per file and exact bytes for `@0`.
 
 ## Limit
 
-A read replays the prefix of that file's chain, so the latest version costs
-the whole chain. Random access is bounded by one file, not the repo.
+Without checkpoints a read replays the prefix of that file's chain, so the
+latest version costs the whole chain. Build the global index with
+`--checkpoint 32` to bound access: the server decodes from the nearest
+snapshot and replays at most 31 deltas. Per-file indexes keep one chain per
+file, so the bound is that file's version count.

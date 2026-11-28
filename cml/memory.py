@@ -14,6 +14,7 @@ import gzip
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import time
@@ -151,6 +152,51 @@ def _row_versions(versions: list[bytes], row: dict) -> list[bytes]:
     return [versions[i] for start, end in row["ranges"] for i in range(start, end)]
 
 
+def _checkpoint_name(index: int) -> str:
+    return f"ckpt/{index:06d}.gz"
+
+
+def sync_checkpoints(
+    out: Path,
+    versions: list[bytes],
+    header: dict,
+    interval: int,
+    existing: list[dict] = (),
+) -> list[dict]:
+    """Write one gzip snapshot every `interval` versions; reuse valid ones."""
+    ckpt_dir = out / "ckpt"
+    if not interval:
+        if ckpt_dir.exists():
+            shutil.rmtree(ckpt_dir)
+        return []
+    by_index = {c["index"]: c for c in existing}
+    rows = []
+    for i in range(interval, len(versions), interval):
+        old = by_index.get(i)
+        if old is not None and old["sha"] == header["shas"][i]:
+            rows.append(old)
+            continue
+        data = gzip.compress(versions[i], 9)
+        name = _checkpoint_name(i)
+        write_chain(out / name, data)
+        rows.append(
+            {
+                "index": i,
+                "file": name,
+                "bytes": len(data),
+                "sha": header["shas"][i],
+                "raw_bytes": len(versions[i]),
+            }
+        )
+    live = {row["file"] for row in rows}
+    ckpt_dir = out / "ckpt"
+    if ckpt_dir.exists():
+        for path in ckpt_dir.glob("*.gz"):
+            if str(path.relative_to(out)) not in live:
+                path.unlink()
+    return rows
+
+
 def decode_chain(blob: bytes) -> tuple[dict, list[bytes]]:
     if blob[:4] != MAGIC:
         raise ValueError("chain: bad magic")
@@ -179,6 +225,61 @@ def decode_chain(blob: bytes) -> tuple[dict, list[bytes]]:
     if at != len(blob):
         raise ValueError("chain: trailing bytes")
     return header, versions
+
+
+def payload_offset(blob: bytes, index: int) -> int:
+    """Byte offset of payload `index`; scans only u32 lengths, no deltas."""
+    n_head = struct.unpack_from("<I", blob, 4)[0]
+    at = 8 + n_head
+    for _ in range(index):
+        (n,) = struct.unpack_from("<I", blob, at)
+        at += 4 + n
+    return at
+
+
+def decode_slice(
+    blob: bytes, start: int, stop: int, seed: bytes | None = None
+) -> list[bytes]:
+    """Decode versions `start..stop` inclusive, from a seed when `start > 0`."""
+    if blob[:4] != MAGIC:
+        raise ValueError("chain: bad magic")
+    n_head = struct.unpack_from("<I", blob, 4)[0]
+    header = json.loads(blob[8 : 8 + n_head])
+    n_versions = len(header["sizes"])
+    if not 0 <= start <= stop < n_versions:
+        raise ValueError(f"chain: range {start}..{stop} outside {n_versions}")
+    cfg = ChainConfig(**{k: header[k] for k in ChainConfig.__annotations__})
+    at = payload_offset(blob, start)
+    (n,) = struct.unpack_from("<I", blob, at)
+    at += 4
+    if seed is None:
+        if start != 0:
+            raise ValueError("chain: a nonzero slice needs a seed")
+        seed = blob[at : at + n]
+    at += n
+    if (
+        len(seed) != header["sizes"][start]
+        or hashlib.sha256(seed).hexdigest() != header["shas"][start]
+    ):
+        raise ValueError(f"chain: seed digest mismatch at {start}")
+    out = [seed]
+    prev = seed
+    for i in range(start + 1, stop + 1):
+        (n,) = struct.unpack_from("<I", blob, at)
+        at += 4
+        payload = blob[at : at + n]
+        at += n
+        new = _arm(cfg, len(prev), header["sizes"][i]).decode(
+            payload, header["sizes"][i], prev
+        )
+        if (
+            len(new) != header["sizes"][i]
+            or hashlib.sha256(new).hexdigest() != header["shas"][i]
+        ):
+            raise ValueError(f"chain: digest mismatch at {i}")
+        out.append(new)
+        prev = new
+    return out
 
 
 def load_chain(path: Path) -> tuple[dict, list[bytes]]:
@@ -368,6 +469,8 @@ def _finalize(
     cfg: ChainConfig,
     secs: float,
     head: str,
+    checkpoint: int = 0,
+    checkpoints: list[dict] | None = None,
 ) -> int:
     raw = sum(r["raw_bytes"] for r in rows)
     if global_mode:
@@ -378,6 +481,7 @@ def _finalize(
     ratio = raw / max(chain, 1)
     gzip_ratio = raw / max(gz, 1)
     vs_gzip = gz / max(chain, 1)
+    ckpt_bytes = sum(c["bytes"] for c in checkpoints or [])
     stats = {
         "repo": str(repo),
         "head": head,
@@ -391,11 +495,26 @@ def _finalize(
         "vs_gzip": vs_gzip,
         "exact": True,
         "seconds": round(secs, 1),
+        "checkpoint": checkpoint,
+        "checkpoint_bytes": ckpt_bytes,
         "config": asdict(cfg),
     }
-    _write_json(out / "manifest.json", {"stats": stats, "files": rows})
-    _write_json(data_out, {"stats": stats, "files": rows})
+    payload = {
+        "stats": stats,
+        "files": rows,
+        "checkpoints": checkpoints or [],
+    }
+    _write_json(out / "manifest.json", payload)
+    _write_json(data_out, payload)
     top = sorted(rows, key=lambda r: -r["raw_bytes"])[:20]
+    ckpt_line = (
+        [
+            f"- checkpoints every {checkpoint} versions: {len(checkpoints or [])} "
+            f"snapshots, {ckpt_bytes:,} B; access replays ≤{checkpoint - 1} deltas",
+        ]
+        if checkpoint
+        else []
+    )
     lines = [
         "# Repo memory: exact history index",
         "",
@@ -403,6 +522,7 @@ def _finalize(
         f"{'one global chain' if global_mode else 'one chain per file'}",
         f"- chain **{chain:,} B = {ratio:.1f}x**; gzip {gz:,} B "
         f"({gzip_ratio:.1f}x); the chain is **{vs_gzip:.1f}x better than gzip**",
+        *ckpt_line,
         f"- every file decoded and every SHA-256 checked; {secs:.1f} s on CPU",
         "",
         "## Largest files",
@@ -543,7 +663,9 @@ def _update_global(
     cand: list[tuple[str, int]],
     old_rows: dict[str, dict],
     cfg: ChainConfig,
-) -> list[dict]:
+    interval: int,
+    existing: list[dict],
+) -> tuple[list[dict], list[dict]]:
     old_blob = (out / "repo.cmlh").read_bytes()
     raw = gzip.decompress(old_blob) if old_blob[:2] == b"\x1f\x8b" else old_blob
     _, old_payloads = read_container(out / "repo.cmlh")
@@ -595,11 +717,13 @@ def _update_global(
     stored = gzip.compress(blob, 9)
     data = stored if len(stored) < len(blob) else blob
     write_chain(out / "repo.cmlh", data)
+    checkpoints = sync_checkpoints(out, flat, header, interval, existing)
+    total = len(data) + sum(c["bytes"] for c in checkpoints)
     for row in rows:
-        row["chain_bytes"] = len(data)
-        row["ratio"] = row["raw_bytes"] / max(len(data), 1)
+        row["chain_bytes"] = total
+        row["ratio"] = row["raw_bytes"] / max(total, 1)
         row["gzip_ratio"] = row["raw_bytes"] / max(row["gzip_bytes"], 1)
-    return rows
+    return rows, checkpoints
 
 
 def _run_update(
@@ -611,6 +735,7 @@ def _run_update(
     limit: int,
     max_file: int,
     global_mode: bool,
+    checkpoint: int,
 ) -> int:
     manifest_path = root / "manifest.json"
     if not manifest_path.exists():
@@ -619,21 +744,45 @@ def _run_update(
     stats = manifest["stats"]
     if bool(stats.get("global")) != global_mode:
         raise SystemExit("repo update: --global does not match the index")
+    if checkpoint and not global_mode:
+        raise SystemExit("repo update: --checkpoint needs --global")
+    interval = stats.get("checkpoint", 0)
+    if checkpoint and interval and checkpoint != interval:
+        raise SystemExit(
+            f"repo update: index uses --checkpoint {interval}, not {checkpoint}"
+        )
+    if checkpoint and not interval:
+        interval = checkpoint
     cfg = ChainConfig(**{k: stats["config"][k] for k in ChainConfig.__annotations__})
     head = _git(repo, ["rev-parse", "HEAD"]).decode().strip()
-    if stats.get("head") == head:
+    if stats.get("head") == head and interval == stats.get("checkpoint", 0):
         print(f"repo: up to date at {head[:12]}; nothing to append")
         return 0
     cand = _candidates(repo, paths, limit, max_file)
     old_rows = {row["path"]: row for row in manifest["files"]}
+    existing = manifest.get("checkpoints", [])
     t0 = time.perf_counter()
     if global_mode:
-        rows = _update_global(repo, root, cand, old_rows, cfg)
+        rows, checkpoints = _update_global(
+            repo, root, cand, old_rows, cfg, interval, existing
+        )
     else:
-        rows = _update_files(repo, root, cand, old_rows, cfg)
+        rows, checkpoints = _update_files(repo, root, cand, old_rows, cfg), []
     secs = time.perf_counter() - t0
     print(f"repo: appended history up to {head[:12]} in {secs:.1f} s", flush=True)
-    return _finalize(root, report, data_out, repo, rows, global_mode, cfg, secs, head)
+    return _finalize(
+        root,
+        report,
+        data_out,
+        repo,
+        rows,
+        global_mode,
+        cfg,
+        secs,
+        head,
+        interval,
+        checkpoints,
+    )
 
 
 def run_repo(
@@ -652,10 +801,15 @@ def run_repo(
     depth: int,
     global_mode: bool = False,
     update: bool = False,
+    checkpoint: int = 0,
 ) -> int:
     """Repo-wide exact memory: chain every text file's history, or search it."""
     cfg = ChainConfig(window, min_match, cap, depth)
     root = index or out
+    if checkpoint and not global_mode:
+        raise SystemExit("repo: --checkpoint needs --global")
+    if checkpoint == 1:
+        raise SystemExit("repo: --checkpoint must be 0 or >= 2")
     if search:
         manifest_path = root / "manifest.json"
         if not manifest_path.exists():
@@ -686,7 +840,15 @@ def run_repo(
         raise SystemExit("repo: pass --repo to build or --search to query")
     if update:
         return _run_update(
-            repo, root, report, data_out, paths, limit, max_file, global_mode
+            repo,
+            root,
+            report,
+            data_out,
+            paths,
+            limit,
+            max_file,
+            global_mode,
+            checkpoint,
         )
     wanted = [p for p in paths.split(",") if p]
     cand = [(p, 0) for p in wanted] if wanted else head_paths(repo, max_file)
@@ -708,11 +870,9 @@ def run_repo(
         )
     if global_mode:
         flat: list[bytes] = []
-        flat_commits: list[str] = []
         for path, commits, shas, versions in collected:
             start = len(flat)
             flat.extend(versions)
-            flat_commits.extend(commits)
             rows.append(
                 {
                     "path": path,
@@ -731,11 +891,14 @@ def run_repo(
         stored = gzip.compress(blob, 9)
         data = stored if len(stored) < len(blob) else blob
         write_chain(out / "repo.cmlh", data)
+        checkpoints = sync_checkpoints(out, flat, header, checkpoint)
+        total = len(data) + sum(c["bytes"] for c in checkpoints)
         for row in rows:
-            row["chain_bytes"] = len(data)
-            row["ratio"] = row["raw_bytes"] / max(len(data), 1)
+            row["chain_bytes"] = total
+            row["ratio"] = row["raw_bytes"] / max(total, 1)
             row["gzip_ratio"] = row["raw_bytes"] / max(row["gzip_bytes"], 1)
     else:
+        checkpoints = []
         for path, commits, shas, versions in collected:
             blob = encode_chain(versions, path, commits, cfg)
             header, back = decode_chain(blob)
@@ -768,4 +931,16 @@ def run_repo(
             )
     secs = time.perf_counter() - t0
     head = _git(repo, ["rev-parse", "HEAD"]).decode().strip()
-    return _finalize(out, report, data_out, repo, rows, global_mode, cfg, secs, head)
+    return _finalize(
+        out,
+        report,
+        data_out,
+        repo,
+        rows,
+        global_mode,
+        cfg,
+        secs,
+        head,
+        checkpoint,
+        checkpoints,
+    )

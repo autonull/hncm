@@ -8,6 +8,7 @@ SHA-verified, per-file random access, and exact span search with
 uv run cml repo --repo /path/to/repo.git --out repo-index --limit 80
 uv run cml repo --repo /path/to/repo.git --out repo-index --update
 uv run cml repo --repo /path/to/repo.git --out repo-archive --global
+uv run cml repo --repo /path/to/repo.git --out repo-live --global --checkpoint 32
 uv run cml repo --index repo-index --search "def routing"
 uv run cml mcp --index repo-index
 ```
@@ -55,8 +56,14 @@ search. The index is the access layer; global gzip is a different unit.
 8.8x smaller than per-file gzip. It is the archive mode; random access is
 a prefix replay, so use the per-file mode for a live index.
 
+`--global --checkpoint K` writes a gzip snapshot every K versions. At K=32
+the FastAPI sample is **482,502 B = 20.4x** with 41 snapshots (92,478 B);
+any version decodes from its nearest snapshot, so access replays ≤31
+deltas. The snapshot files are `ckpt/*.gz` and are counted in the total.
+A cold latest read took 0.25 s instead of a 20.9 s full-chain decode.
+
 Build and verify: 34 s on CPU for the 80-file per-file sample; 48 s for
-the global chain.
+the global chain; 59 s with K=32 checkpoints.
 
 ## Use it when
 

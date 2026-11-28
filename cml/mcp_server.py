@@ -9,6 +9,7 @@ Run: `uv run cml mcp --index <repo-index>`.
 from __future__ import annotations
 
 import difflib
+import gzip
 import json
 import sys
 from pathlib import Path
@@ -77,7 +78,29 @@ class Index:
         self.root = root
         self.manifest = json.loads((root / "manifest.json").read_text())
         self.rows = {row["path"]: row for row in self.manifest["files"]}
+        self.checkpoints = {c["index"]: c for c in self.manifest.get("checkpoints", [])}
         self._shared = None
+        self._blob = None
+
+    @staticmethod
+    def _indices(row: dict) -> list[int]:
+        return [i for start, end in row["ranges"] for i in range(start, end)]
+
+    def _raw(self) -> bytes:
+        if self._blob is None:
+            blob = (self.root / "repo.cmlh").read_bytes()
+            self._blob = gzip.decompress(blob) if blob[:2] == b"\x1f\x8b" else blob
+        return self._blob
+
+    def _global_at(self, index: int) -> bytes:
+        if self._shared is not None:
+            return self._shared[1][index]
+        checkpoint = max((i for i in self.checkpoints if i <= index), default=None)
+        if checkpoint is None:
+            return memory.decode_slice(self._raw(), 0, index)[-1]
+        item = self.checkpoints[checkpoint]
+        seed = gzip.decompress((self.root / item["file"]).read_bytes())
+        return memory.decode_slice(self._raw(), checkpoint, index, seed)[-1]
 
     def versions(self, path: str) -> tuple[dict, list[bytes]]:
         row = self.rows.get(path)
@@ -88,7 +111,7 @@ class Index:
         if self._shared is None:
             self._shared = memory.load_chain(self.root / "repo.cmlh")
         header, versions = self._shared
-        indices = [i for start, end in row["ranges"] for i in range(start, end)]
+        indices = self._indices(row)
         head = dict(header)
         head["shas"] = [header["shas"][i] for i in indices]
         head["sizes"] = [header["sizes"][i] for i in indices]
@@ -97,8 +120,26 @@ class Index:
         )
         return head, [versions[i] for i in indices]
 
+    def version(self, path: str, version: int) -> bytes:
+        row = self.rows.get(path)
+        if row is None:
+            raise KeyError(path)
+        if not self.manifest["stats"].get("global"):
+            versions = self.versions(path)[1]
+            if version < 0:
+                version += len(versions)
+            if not 0 <= version < len(versions):
+                raise ValueError(f"version {version} out of range")
+            return versions[version]
+        indices = self._indices(row)
+        if version < 0:
+            version += len(indices)
+        if not 0 <= version < len(indices):
+            raise ValueError(f"version {version} out of range")
+        return self._global_at(indices[version])
+
     def latest(self, path: str) -> bytes:
-        return self.versions(path)[1][-1]
+        return self.version(path, -1)
 
 
 def _text(content: str, error: bool = False) -> dict:
@@ -154,12 +195,7 @@ def resource_templates() -> dict:
 
 def read_resource(index: Index, uri: str) -> dict:
     path, version = _parse_uri(uri)
-    _, versions = index.versions(path)
-    if version < 0:
-        version = len(versions) - 1
-    if not 0 <= version < len(versions):
-        raise ValueError(f"resource version {version} out of range")
-    text = versions[version].decode("utf-8", "replace")
+    text = index.version(path, version).decode("utf-8", "replace")
     return {"contents": [{"uri": uri, "mimeType": "text/plain", "text": text}]}
 
 
@@ -176,7 +212,7 @@ def call(index: Index, name: str, args: dict) -> dict:
         for path in sorted(index.rows):
             if len(hits) >= limit:
                 break
-            last = index.latest(path)
+            last = index.versions(path)[1][-1]
             at = last.find(needle)
             while at >= 0 and len(hits) < limit:
                 line = last.count(b"\n", 0, at) + 1
@@ -189,12 +225,7 @@ def call(index: Index, name: str, args: dict) -> dict:
     if name == "repo_read":
         path = str(args.get("path", ""))
         version = int(args.get("version", -1))
-        header, versions = index.versions(path)
-        if version < 0:
-            version = len(versions) - 1
-        if not 0 <= version < len(versions):
-            return _text(f"repo_read: version {version} out of range", True)
-        return _text(versions[version].decode("utf-8", "replace"))
+        return _text(index.version(path, version).decode("utf-8", "replace"))
     if name == "repo_versions":
         path = str(args.get("path", ""))
         header, versions = index.versions(path)
@@ -207,14 +238,11 @@ def call(index: Index, name: str, args: dict) -> dict:
         path = str(args.get("path", ""))
         before = int(args.get("before", 0))
         after = int(args.get("after", -1))
-        header, versions = index.versions(path)
-        if after < 0:
-            after = len(versions) - 1
-        if not (0 <= before < len(versions) and 0 <= after < len(versions)):
-            return _text("repo_diff: version out of range", True)
+        first = index.version(path, before)
+        second = index.version(path, after)
         diff = difflib.unified_diff(
-            versions[before].decode("utf-8", "replace").splitlines(),
-            versions[after].decode("utf-8", "replace").splitlines(),
+            first.decode("utf-8", "replace").splitlines(),
+            second.decode("utf-8", "replace").splitlines(),
             fromfile=f"{path}@{before}",
             tofile=f"{path}@{after}",
             lineterm="",
