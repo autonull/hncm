@@ -2,7 +2,7 @@
 
 - repo `/home/me/.cache/hncm/edit/repos/tiangolo__fastapi.git`; 80 files, 9,839,584 B raw; one global chain
 - chain **390,024 B = 25.2x**; gzip 3,413,837 B (2.9x); the chain is **8.8x better than gzip**
-- every file decoded and every SHA-256 checked; 50.8 s on CPU
+- every file decoded and every SHA-256 checked; 48.9 s on CPU
 
 ## Largest files
 
@@ -33,9 +33,11 @@
 
 ```bash
 uv run cml repo --repo /path/to/repo.git --out repo-index --limit 50
+uv run cml repo --repo /path/to/repo.git --out repo-index --update
 uv run cml repo --index repo-index --search 'def routing'
 ```
 
 The index is exact: each `.cmlh` replays to the same bytes and the
-manifest carries the HEAD blob SHA. Search decodes the last version
-and reports path, line, and the exact matching text.
+manifest carries the HEAD commit and blob SHA. Search decodes the last
+version and reports path, line, and the exact matching text. `--update`
+appends new versions in place; unchanged chains are not re-encoded.

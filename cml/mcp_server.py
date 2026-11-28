@@ -1,6 +1,7 @@
 """Minimal MCP stdio server for an exact repo-memory index.
 
 Tools: repo_files, repo_search, repo_read, repo_versions, repo_diff.
+Resources: every file as `repo://<path>` (latest) or `repo://<path>@<n>`.
 Every read decodes the exact chain and checks its SHA; search is exact text.
 Run: `uv run cml mcp --index <repo-index>`.
 """
@@ -11,6 +12,7 @@ import difflib
 import json
 import sys
 from pathlib import Path
+from urllib.parse import quote, unquote
 
 import memory
 
@@ -86,12 +88,14 @@ class Index:
         if self._shared is None:
             self._shared = memory.load_chain(self.root / "repo.cmlh")
         header, versions = self._shared
+        indices = [i for start, end in row["ranges"] for i in range(start, end)]
         head = dict(header)
-        head["path"] = path
-        head["shas"] = header["shas"][row["start"] : row["end"]]
-        head["sizes"] = header["sizes"][row["start"] : row["end"]]
-        head["commits"] = header["commits"][row["start"] : row["end"]]
-        return head, versions[row["start"] : row["end"]]
+        head["shas"] = [header["shas"][i] for i in indices]
+        head["sizes"] = [header["sizes"][i] for i in indices]
+        head["commits"] = (
+            [header["commits"][i] for i in indices] if header["commits"] else []
+        )
+        return head, [versions[i] for i in indices]
 
     def latest(self, path: str) -> bytes:
         return self.versions(path)[1][-1]
@@ -102,6 +106,61 @@ def _text(content: str, error: bool = False) -> dict:
         "content": [{"type": "text", "text": content}],
         "isError": error,
     }
+
+
+def _uri(path: str) -> str:
+    return "repo://" + quote(path, safe="/")
+
+
+def _parse_uri(uri: str) -> tuple[str, int]:
+    if not uri.startswith("repo://"):
+        raise ValueError(f"resource uri: {uri!r}")
+    rest = unquote(uri[len("repo://") :])
+    path, sep, tail = rest.rpartition("@")
+    if sep and tail.isdigit():
+        return path, int(tail)
+    return rest, -1
+
+
+def resources(index: Index) -> dict:
+    return {
+        "resources": [
+            {
+                "uri": _uri(path),
+                "name": path,
+                "mimeType": "text/plain",
+                "description": (
+                    f"exact latest version of {path} "
+                    f"({index.rows[path]['versions']} versions)"
+                ),
+            }
+            for path in sorted(index.rows)
+        ]
+    }
+
+
+def resource_templates() -> dict:
+    return {
+        "resourceTemplates": [
+            {
+                "uriTemplate": "repo://{path}@{version}",
+                "name": "repo-file-version",
+                "mimeType": "text/plain",
+                "description": "One exact version of a file, checked by SHA-256.",
+            }
+        ]
+    }
+
+
+def read_resource(index: Index, uri: str) -> dict:
+    path, version = _parse_uri(uri)
+    _, versions = index.versions(path)
+    if version < 0:
+        version = len(versions) - 1
+    if not 0 <= version < len(versions):
+        raise ValueError(f"resource version {version} out of range")
+    text = versions[version].decode("utf-8", "replace")
+    return {"contents": [{"uri": uri, "mimeType": "text/plain", "text": text}]}
 
 
 def call(index: Index, name: str, args: dict) -> dict:
@@ -173,12 +232,34 @@ def handle(index: Index, req: dict) -> dict | None:
             "id": rid,
             "result": {
                 "protocolVersion": PROTOCOL,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "repo-memory", "version": "0.1"},
+                "capabilities": {
+                    "tools": {},
+                    "resources": {"subscribe": False, "listChanged": False},
+                },
+                "serverInfo": {"name": "repo-memory", "version": "0.2"},
             },
         }
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": rid, "result": {"tools": TOOLS}}
+    if method == "resources/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": resources(index)}
+    if method == "resources/templates/list":
+        return {
+            "jsonrpc": "2.0",
+            "id": rid,
+            "result": resource_templates(),
+        }
+    if method == "resources/read":
+        params = req.get("params") or {}
+        try:
+            result = read_resource(index, str(params.get("uri", "")))
+        except (KeyError, ValueError) as exc:
+            return {
+                "jsonrpc": "2.0",
+                "id": rid,
+                "error": {"code": -32602, "message": str(exc)},
+            }
+        return {"jsonrpc": "2.0", "id": rid, "result": result}
     if method == "tools/call":
         params = req.get("params") or {}
         try:

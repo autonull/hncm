@@ -8851,6 +8851,7 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--search", default="")
     rp.add_argument("--index", type=Path)
     rp.add_argument("--global", dest="global_mode", action="store_true")
+    rp.add_argument("--update", action="store_true")
     rp.add_argument("--window", type=int, default=1 << 20)
     rp.add_argument("--min-match", type=int, default=8)
     rp.add_argument("--cap", type=int, default=256)
@@ -9202,6 +9203,7 @@ def main(argv: list[str] | None = None) -> int:
             a.cap,
             a.depth,
             a.global_mode,
+            a.update,
         )
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)

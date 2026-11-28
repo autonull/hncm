@@ -1,7 +1,9 @@
 {
  "stats": {
   "repo": "/home/me/.cache/hncm/edit/repos/tiangolo__fastapi.git",
+  "head": "05e6df7e906c3decba377c37548019973f40bf15",
   "files": 80,
+  "global": false,
   "raw_bytes": 9839584,
   "chain_bytes": 476080,
   "gzip_bytes": 3413837,
@@ -9,7 +11,7 @@
   "gzip_ratio": 2.882265321982274,
   "vs_gzip": 7.170721307343304,
   "exact": true,
-  "seconds": 34.3,
+  "seconds": 34.9,
   "config": {
    "window": 1048576,
    "min_match": 8,

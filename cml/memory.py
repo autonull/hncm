@@ -81,18 +81,9 @@ def _arm(cfg: ChainConfig, old: int, new: int) -> codec.DeltaArm:
     )
 
 
-def encode_chain(
-    versions: list[bytes], path: str, commits: list[str], cfg: ChainConfig
+def _header(
+    path: str, commits: list[str], versions: list[bytes], cfg: ChainConfig
 ) -> bytes:
-    if not versions:
-        raise ValueError("chain needs at least one version")
-    payloads = [versions[0]]
-    for i in range(1, len(versions)):
-        old, new = versions[i - 1], versions[i]
-        tokens = codec.delta_parse(
-            new, old, cfg.window, cfg.min_match, cfg.cap, cfg.depth
-        )
-        payloads.append(_arm(cfg, len(old), len(new)).encode(new, old, tokens))
     header = {
         "path": path,
         "commits": commits,
@@ -100,14 +91,64 @@ def encode_chain(
         "shas": [hashlib.sha256(v).hexdigest() for v in versions],
         **asdict(cfg),
     }
-    head = json.dumps(header, separators=(",", ":")).encode()
-    out = bytearray(MAGIC)
-    out += struct.pack("<I", len(head))
-    out += head
-    for payload in payloads:
+    return json.dumps(header, separators=(",", ":")).encode()
+
+
+def _container(header: bytes, payloads: bytes) -> bytes:
+    return MAGIC + struct.pack("<I", len(header)) + header + payloads
+
+
+def _payloads(
+    cfg: ChainConfig,
+    versions: list[bytes],
+    start: int = 0,
+    prev: bytes | None = None,
+) -> bytes:
+    """Encode payloads from `start`; earlier payloads are reused by the caller.
+
+    With `prev=None` the stream is a fresh chain; with `prev` set the first
+    payload deltas against `prev` (a global chain appends after another file).
+    """
+    out = bytearray()
+    i = start
+    if prev is None and i == 0:
+        out += struct.pack("<I", len(versions[0]))
+        out += versions[0]
+        i = 1
+    for j in range(i, len(versions)):
+        old = prev if j == start and prev is not None else versions[j - 1]
+        new = versions[j]
+        tokens = codec.delta_parse(
+            new, old, cfg.window, cfg.min_match, cfg.cap, cfg.depth
+        )
+        payload = _arm(cfg, len(old), len(new)).encode(new, old, tokens)
         out += struct.pack("<I", len(payload))
         out += payload
     return bytes(out)
+
+
+def encode_chain(
+    versions: list[bytes], path: str, commits: list[str], cfg: ChainConfig
+) -> bytes:
+    if not versions:
+        raise ValueError("chain needs at least one version")
+    return _container(_header(path, commits, versions, cfg), _payloads(cfg, versions))
+
+
+def read_container(path: Path) -> tuple[dict, bytes]:
+    """Return the JSON header and the raw length-prefixed payload section."""
+    blob = path.read_bytes()
+    if blob[:2] == b"\x1f\x8b":
+        blob = gzip.decompress(blob)
+    if blob[:4] != MAGIC:
+        raise ValueError(f"{path}: bad magic")
+    n_head = struct.unpack_from("<I", blob, 4)[0]
+    header = json.loads(blob[8 : 8 + n_head])
+    return header, blob[8 + n_head :]
+
+
+def _row_versions(versions: list[bytes], row: dict) -> list[bytes]:
+    return [versions[i] for start, end in row["ranges"] for i in range(start, end)]
 
 
 def decode_chain(blob: bytes) -> tuple[dict, list[bytes]]:
@@ -317,6 +358,284 @@ def _safe_name(path: str) -> str:
     return path.replace("..", "_").replace("/", "__") + ".cmlh"
 
 
+def _finalize(
+    out: Path,
+    report: Path,
+    data_out: Path,
+    repo: Path,
+    rows: list[dict],
+    global_mode: bool,
+    cfg: ChainConfig,
+    secs: float,
+    head: str,
+) -> int:
+    raw = sum(r["raw_bytes"] for r in rows)
+    if global_mode:
+        chain = rows[0]["chain_bytes"] if rows else 0
+    else:
+        chain = sum(r["chain_bytes"] for r in rows)
+    gz = sum(r["gzip_bytes"] for r in rows)
+    ratio = raw / max(chain, 1)
+    gzip_ratio = raw / max(gz, 1)
+    vs_gzip = gz / max(chain, 1)
+    stats = {
+        "repo": str(repo),
+        "head": head,
+        "files": len(rows),
+        "global": global_mode,
+        "raw_bytes": raw,
+        "chain_bytes": chain,
+        "gzip_bytes": gz,
+        "ratio": ratio,
+        "gzip_ratio": gzip_ratio,
+        "vs_gzip": vs_gzip,
+        "exact": True,
+        "seconds": round(secs, 1),
+        "config": asdict(cfg),
+    }
+    _write_json(out / "manifest.json", {"stats": stats, "files": rows})
+    _write_json(data_out, {"stats": stats, "files": rows})
+    top = sorted(rows, key=lambda r: -r["raw_bytes"])[:20]
+    lines = [
+        "# Repo memory: exact history index",
+        "",
+        f"- repo `{repo}`; {len(rows)} files, {raw:,} B raw; "
+        f"{'one global chain' if global_mode else 'one chain per file'}",
+        f"- chain **{chain:,} B = {ratio:.1f}x**; gzip {gz:,} B "
+        f"({gzip_ratio:.1f}x); the chain is **{vs_gzip:.1f}x better than gzip**",
+        f"- every file decoded and every SHA-256 checked; {secs:.1f} s on CPU",
+        "",
+        "## Largest files",
+        "",
+    ]
+    if global_mode:
+        lines += ["| path | versions | raw B |", "|---|---:|---:|"]
+        for r in top:
+            lines.append(f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} |")
+    else:
+        lines += [
+            "| path | versions | raw B | chain B | ratio |",
+            "|---|---:|---:|---:|---:|",
+        ]
+        for r in top:
+            lines.append(
+                f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} | "
+                f"{r['chain_bytes']:,} | {r['ratio']:.1f}x |"
+            )
+    lines += [
+        "",
+        "## Use",
+        "",
+        "```bash",
+        "uv run cml repo --repo /path/to/repo.git --out repo-index --limit 50",
+        "uv run cml repo --repo /path/to/repo.git --out repo-index --update",
+        "uv run cml repo --index repo-index --search 'def routing'",
+        "```",
+        "",
+        "The index is exact: each `.cmlh` replays to the same bytes and the",
+        "manifest carries the HEAD commit and blob SHA. Search decodes the last",
+        "version and reports path, line, and the exact matching text. `--update`",
+        "appends new versions in place; unchanged chains are not re-encoded.",
+    ]
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text("\n".join(lines) + "\n")
+    print(
+        f"repo: {len(rows)} files, {raw:,} B -> {chain:,} B "
+        f"({ratio:.1f}x, {vs_gzip:.1f}x better than gzip), "
+        f"{secs:.1f} s, exact"
+    )
+    print(f"repo: {out}")
+    print(f"repo: {report}")
+    return 0
+
+
+def _candidates(
+    repo: Path, paths: str, limit: int, max_file: int
+) -> list[tuple[str, int]]:
+    wanted = [p for p in paths.split(",") if p]
+    cand = [(p, 0) for p in wanted] if wanted else head_paths(repo, max_file)
+    return cand[:limit] if limit else cand
+
+
+def _file_row(
+    out: Path,
+    path: str,
+    commits: list[str],
+    shas: list[str],
+    versions: list[bytes],
+    cfg: ChainConfig,
+    old: dict | None,
+) -> dict:
+    name = _safe_name(path)
+    if old is not None:
+        old_header, old_payloads = read_container(out / name)
+        n_old = len(old_header["sizes"])
+        if (
+            len(versions) < n_old
+            or commits[:n_old] != old_header["commits"]
+            or [hashlib.sha256(v).hexdigest() for v in versions[:n_old]]
+            != old_header["shas"]
+        ):
+            raise SystemExit(f"repo update: history rewritten for {path}; rebuild")
+        if len(versions) == n_old:
+            return old
+        blob = _container(
+            _header(path, commits, versions, cfg),
+            old_payloads + _payloads(cfg, versions, n_old),
+        )
+    else:
+        blob = encode_chain(versions, path, commits, cfg)
+    header, back = decode_chain(blob)
+    if back != versions:
+        raise SystemExit(f"repo update: round-trip failed for {path}")
+    raw = sum(len(v) for v in versions)
+    gz = sum(len(gzip.compress(v, 9)) for v in versions)
+    stored = gzip.compress(blob, 9)
+    compressed = len(stored) < len(blob)
+    data = stored if compressed else blob
+    write_chain(out / name, data)
+    row = {
+        "path": path,
+        "file": name,
+        "versions": len(versions),
+        "raw_bytes": raw,
+        "chain_bytes": len(data),
+        "compressed": compressed,
+        "gzip_bytes": gz,
+        "ratio": raw / max(len(data), 1),
+        "gzip_ratio": raw / max(gz, 1),
+        "head": shas[-1],
+    }
+    print(
+        f"  {path}: {len(versions)} v, {raw:,} B -> {len(data):,} B "
+        f"({row['ratio']:.1f}x)",
+        flush=True,
+    )
+    return row
+
+
+def _update_files(
+    repo: Path,
+    out: Path,
+    cand: list[tuple[str, int]],
+    old_rows: dict[str, dict],
+    cfg: ChainConfig,
+) -> list[dict]:
+    rows = []
+    for path, _ in cand:
+        try:
+            commits, shas, versions = git_versions(repo, path)
+        except RuntimeError, SystemExit:
+            continue
+        rows.append(
+            _file_row(out, path, commits, shas, versions, cfg, old_rows.get(path))
+        )
+    live = {row["path"] for row in rows}
+    for path, row in old_rows.items():
+        if path not in live:
+            (out / row["file"]).unlink(missing_ok=True)
+    return rows
+
+
+def _update_global(
+    repo: Path,
+    out: Path,
+    cand: list[tuple[str, int]],
+    old_rows: dict[str, dict],
+    cfg: ChainConfig,
+) -> list[dict]:
+    old_blob = (out / "repo.cmlh").read_bytes()
+    raw = gzip.decompress(old_blob) if old_blob[:2] == b"\x1f\x8b" else old_blob
+    _, old_payloads = read_container(out / "repo.cmlh")
+    _, flat = decode_chain(raw)
+    payloads = bytearray(old_payloads)
+    rows = []
+    for path, _ in cand:
+        try:
+            commits, shas, versions = git_versions(repo, path)
+        except RuntimeError, SystemExit:
+            continue
+        old = old_rows.get(path)
+        if old is None:
+            start = len(flat)
+            payloads += _payloads(cfg, versions, prev=flat[-1] if flat else None)
+            flat.extend(versions)
+            ranges = [[start, len(flat)]]
+        else:
+            old_versions = _row_versions(flat, old)
+            n_old = len(old_versions)
+            if len(versions) < n_old or versions[:n_old] != old_versions:
+                raise SystemExit(f"repo update: history rewritten for {path}; rebuild")
+            ranges = list(old["ranges"])
+            if len(versions) > n_old:
+                start = len(flat)
+                payloads += _payloads(cfg, versions, n_old, prev=flat[-1])
+                flat.extend(versions[n_old:])
+                ranges.append([start, len(flat)])
+            else:
+                rows.append(old)
+                continue
+        raw_bytes = sum(len(v) for v in versions)
+        gz = sum(len(gzip.compress(v, 9)) for v in versions)
+        rows.append(
+            {
+                "path": path,
+                "file": "repo.cmlh",
+                "ranges": ranges,
+                "versions": len(versions),
+                "raw_bytes": raw_bytes,
+                "gzip_bytes": gz,
+                "head": shas[-1],
+            }
+        )
+    blob = _container(_header("repo", [], flat, cfg), bytes(payloads))
+    header, back = decode_chain(blob)
+    if back != flat:
+        raise SystemExit("repo update: global round-trip failed")
+    stored = gzip.compress(blob, 9)
+    data = stored if len(stored) < len(blob) else blob
+    write_chain(out / "repo.cmlh", data)
+    for row in rows:
+        row["chain_bytes"] = len(data)
+        row["ratio"] = row["raw_bytes"] / max(len(data), 1)
+        row["gzip_ratio"] = row["raw_bytes"] / max(row["gzip_bytes"], 1)
+    return rows
+
+
+def _run_update(
+    repo: Path,
+    root: Path,
+    report: Path,
+    data_out: Path,
+    paths: str,
+    limit: int,
+    max_file: int,
+    global_mode: bool,
+) -> int:
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        raise SystemExit(f"repo update: missing {manifest_path}; build it first")
+    manifest = json.loads(manifest_path.read_text())
+    stats = manifest["stats"]
+    if bool(stats.get("global")) != global_mode:
+        raise SystemExit("repo update: --global does not match the index")
+    cfg = ChainConfig(**{k: stats["config"][k] for k in ChainConfig.__annotations__})
+    head = _git(repo, ["rev-parse", "HEAD"]).decode().strip()
+    if stats.get("head") == head:
+        print(f"repo: up to date at {head[:12]}; nothing to append")
+        return 0
+    cand = _candidates(repo, paths, limit, max_file)
+    old_rows = {row["path"]: row for row in manifest["files"]}
+    t0 = time.perf_counter()
+    if global_mode:
+        rows = _update_global(repo, root, cand, old_rows, cfg)
+    else:
+        rows = _update_files(repo, root, cand, old_rows, cfg)
+    secs = time.perf_counter() - t0
+    print(f"repo: appended history up to {head[:12]} in {secs:.1f} s", flush=True)
+    return _finalize(root, report, data_out, repo, rows, global_mode, cfg, secs, head)
+
+
 def run_repo(
     repo: Path | None,
     out: Path,
@@ -332,6 +651,7 @@ def run_repo(
     cap: int,
     depth: int,
     global_mode: bool = False,
+    update: bool = False,
 ) -> int:
     """Repo-wide exact memory: chain every text file's history, or search it."""
     cfg = ChainConfig(window, min_match, cap, depth)
@@ -348,7 +668,7 @@ def run_repo(
             shared = load_chain(root / "repo.cmlh")[1]
         for row in manifest["files"]:
             if shared is not None:
-                last = shared[row["end"] - 1]
+                last = _row_versions(shared, row)[-1]
             else:
                 last = load_chain(root / row["file"])[1][-1]
             at = last.find(needle)
@@ -364,6 +684,10 @@ def run_repo(
         return 0
     if repo is None:
         raise SystemExit("repo: pass --repo to build or --search to query")
+    if update:
+        return _run_update(
+            repo, root, report, data_out, paths, limit, max_file, global_mode
+        )
     wanted = [p for p in paths.split(",") if p]
     cand = [(p, 0) for p in wanted] if wanted else head_paths(repo, max_file)
     if limit:
@@ -393,8 +717,7 @@ def run_repo(
                 {
                     "path": path,
                     "file": "repo.cmlh",
-                    "start": start,
-                    "end": len(flat),
+                    "ranges": [[start, len(flat)]],
                     "versions": len(versions),
                     "raw_bytes": sum(len(v) for v in versions),
                     "gzip_bytes": sum(len(gzip.compress(v, 9)) for v in versions),
@@ -444,79 +767,5 @@ def run_repo(
                 flush=True,
             )
     secs = time.perf_counter() - t0
-    raw = sum(r["raw_bytes"] for r in rows)
-    chain = (
-        sum(r["chain_bytes"] for r in rows)
-        if not global_mode
-        else rows[0]["chain_bytes"]
-    )
-    gz = sum(r["gzip_bytes"] for r in rows)
-    ratio = raw / max(chain, 1)
-    gzip_ratio = raw / max(gz, 1)
-    vs_gzip = gz / max(chain, 1)
-    stats = {
-        "repo": str(repo),
-        "files": len(rows),
-        "global": global_mode,
-        "raw_bytes": raw,
-        "chain_bytes": chain,
-        "gzip_bytes": gz,
-        "ratio": ratio,
-        "gzip_ratio": gzip_ratio,
-        "vs_gzip": vs_gzip,
-        "exact": True,
-        "seconds": round(secs, 1),
-        "config": asdict(cfg),
-    }
-    _write_json(out / "manifest.json", {"stats": stats, "files": rows})
-    _write_json(data_out, {"stats": stats, "files": rows})
-    top = sorted(rows, key=lambda r: -r["raw_bytes"])[:20]
-    lines = [
-        "# Repo memory: exact history index",
-        "",
-        f"- repo `{repo}`; {len(rows)} files, {raw:,} B raw; "
-        f"{'one global chain' if global_mode else 'one chain per file'}",
-        f"- chain **{chain:,} B = {ratio:.1f}x**; gzip {gz:,} B "
-        f"({gzip_ratio:.1f}x); the chain is **{vs_gzip:.1f}x better than gzip**",
-        f"- every file decoded and every SHA-256 checked; {secs:.1f} s on CPU",
-        "",
-        "## Largest files",
-        "",
-    ]
-    if global_mode:
-        lines += ["| path | versions | raw B |", "|---|---:|---:|"]
-        for r in top:
-            lines.append(f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} |")
-    else:
-        lines += [
-            "| path | versions | raw B | chain B | ratio |",
-            "|---|---:|---:|---:|---:|",
-        ]
-        for r in top:
-            lines.append(
-                f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} | "
-                f"{r['chain_bytes']:,} | {r['ratio']:.1f}x |"
-            )
-    lines += [
-        "",
-        "## Use",
-        "",
-        "```bash",
-        "uv run cml repo --repo /path/to/repo.git --out repo-index --limit 50",
-        "uv run cml repo --index repo-index --search 'def routing'",
-        "```",
-        "",
-        "The index is exact: each `.cmlh` replays to the same bytes and the",
-        "manifest carries the HEAD blob SHA. Search decodes the last version",
-        "and reports path, line, and the exact matching text.",
-    ]
-    report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text("\n".join(lines) + "\n")
-    print(
-        f"repo: {len(rows)} files, {raw:,} B -> {chain:,} B "
-        f"({ratio:.1f}x, {vs_gzip:.1f}x better than gzip), "
-        f"{secs:.1f} s, exact"
-    )
-    print(f"repo: {out}")
-    print(f"repo: {report}")
-    return 0
+    head = _git(repo, ["rev-parse", "HEAD"]).decode().strip()
+    return _finalize(out, report, data_out, repo, rows, global_mode, cfg, secs, head)

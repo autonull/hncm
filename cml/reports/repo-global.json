@@ -1,6 +1,7 @@
 {
  "stats": {
   "repo": "/home/me/.cache/hncm/edit/repos/tiangolo__fastapi.git",
+  "head": "05e6df7e906c3decba377c37548019973f40bf15",
   "files": 80,
   "global": true,
   "raw_bytes": 9839584,
@@ -10,7 +11,7 @@
   "gzip_ratio": 2.882265321982274,
   "vs_gzip": 8.752889565770312,
   "exact": true,
-  "seconds": 50.8,
+  "seconds": 48.9,
   "config": {
    "window": 1048576,
    "min_match": 8,
@@ -22,8 +23,12 @@
   {
    "path": ".github/DISCUSSION_TEMPLATE/questions.yml",
    "file": "repo.cmlh",
-   "start": 0,
-   "end": 3,
+   "ranges": [
+    [
+     0,
+     3
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 17229,
    "gzip_bytes": 6124,
@@ -35,8 +40,12 @@
   {
    "path": ".github/DISCUSSION_TEMPLATE/translations.yml",
    "file": "repo.cmlh",
-   "start": 3,
-   "end": 4,
+   "ranges": [
+    [
+     3,
+     4
+    ]
+   ],
    "versions": 1,
    "raw_bytes": 1694,
    "gzip_bytes": 720,
@@ -48,8 +57,12 @@
   {
    "path": ".github/ISSUE_TEMPLATE/config.yml",
    "file": "repo.cmlh",
-   "start": 4,
-   "end": 8,
+   "ranges": [
+    [
+     4,
+     8
+    ]
+   ],
    "versions": 4,
    "raw_bytes": 2029,
    "gzip_bytes": 938,
@@ -61,8 +74,12 @@
   {
    "path": ".github/ISSUE_TEMPLATE/privileged.yml",
    "file": "repo.cmlh",
-   "start": 8,
-   "end": 10,
+   "ranges": [
+    [
+     8,
+     10
+    ]
+   ],
    "versions": 2,
    "raw_bytes": 1777,
    "gzip_bytes": 870,
@@ -74,8 +91,12 @@
   {
    "path": ".github/dependabot.yml",
    "file": "repo.cmlh",
-   "start": 10,
-   "end": 19,
+   "ranges": [
+    [
+     10,
+     19
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 4664,
    "gzip_bytes": 1926,
@@ -87,8 +108,12 @@
   {
    "path": ".github/latest-changes.yml",
    "file": "repo.cmlh",
-   "start": 19,
-   "end": 20,
+   "ranges": [
+    [
+     19,
+     20
+    ]
+   ],
    "versions": 1,
    "raw_bytes": 298,
    "gzip_bytes": 172,
@@ -100,8 +125,12 @@
   {
    "path": ".github/pr-push.yml",
    "file": "repo.cmlh",
-   "start": 20,
-   "end": 22,
+   "ranges": [
+    [
+     20,
+     22
+    ]
+   ],
    "versions": 2,
    "raw_bytes": 132,
    "gzip_bytes": 136,
@@ -113,8 +142,12 @@
   {
    "path": ".github/pr-submit.yml",
    "file": "repo.cmlh",
-   "start": 22,
-   "end": 25,
+   "ranges": [
+    [
+     22,
+     25
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 448,
    "gzip_bytes": 299,
@@ -126,8 +159,12 @@
   {
    "path": ".github/workflows/add-to-project.yml",
    "file": "repo.cmlh",
-   "start": 25,
-   "end": 31,
+   "ranges": [
+    [
+     25,
+     31
+    ]
+   ],
    "versions": 6,
    "raw_bytes": 2807,
    "gzip_bytes": 1798,
@@ -139,8 +176,12 @@
   {
    "path": ".github/workflows/build-docs.yml",
    "file": "repo.cmlh",
-   "start": 31,
-   "end": 117,
+   "ranges": [
+    [
+     31,
+     117
+    ]
+   ],
    "versions": 86,
    "raw_bytes": 280780,
    "gzip_bytes": 95383,
@@ -152,8 +193,12 @@
   {
    "path": ".github/workflows/bump-pre-commit-hooks.yml",
    "file": "repo.cmlh",
-   "start": 117,
-   "end": 127,
+   "ranges": [
+    [
+     117,
+     127
+    ]
+   ],
    "versions": 10,
    "raw_bytes": 24952,
    "gzip_bytes": 11122,
@@ -165,8 +210,12 @@
   {
    "path": ".github/workflows/create-draft-release.yml",
    "file": "repo.cmlh",
-   "start": 127,
-   "end": 137,
+   "ranges": [
+    [
+     127,
+     137
+    ]
+   ],
    "versions": 10,
    "raw_bytes": 19383,
    "gzip_bytes": 8883,
@@ -178,8 +227,12 @@
   {
    "path": ".github/workflows/deploy-docs.yml",
    "file": "repo.cmlh",
-   "start": 137,
-   "end": 188,
+   "ranges": [
+    [
+     137,
+     188
+    ]
+   ],
    "versions": 51,
    "raw_bytes": 134655,
    "gzip_bytes": 51402,
@@ -191,8 +244,12 @@
   {
    "path": ".github/workflows/detect-conflicts.yml",
    "file": "repo.cmlh",
-   "start": 188,
-   "end": 193,
+   "ranges": [
+    [
+     188,
+     193
+    ]
+   ],
    "versions": 5,
    "raw_bytes": 2925,
    "gzip_bytes": 1900,
@@ -204,8 +261,12 @@
   {
    "path": ".github/workflows/guard-dependencies.yml",
    "file": "repo.cmlh",
-   "start": 193,
-   "end": 196,
+   "ranges": [
+    [
+     193,
+     196
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 6327,
    "gzip_bytes": 2735,
@@ -217,8 +278,12 @@
   {
    "path": ".github/workflows/issue-manager.yml",
    "file": "repo.cmlh",
-   "start": 196,
-   "end": 218,
+   "ranges": [
+    [
+     196,
+     218
+    ]
+   ],
    "versions": 22,
    "raw_bytes": 24912,
    "gzip_bytes": 12416,
@@ -230,8 +295,12 @@
   {
    "path": ".github/workflows/pre-commit.yml",
    "file": "repo.cmlh",
-   "start": 218,
-   "end": 240,
+   "ranges": [
+    [
+     218,
+     240
+    ]
+   ],
    "versions": 22,
    "raw_bytes": 78705,
    "gzip_bytes": 31652,
@@ -243,8 +312,12 @@
   {
    "path": ".github/workflows/prepare-release.yml",
    "file": "repo.cmlh",
-   "start": 240,
-   "end": 251,
+   "ranges": [
+    [
+     240,
+     251
+    ]
+   ],
    "versions": 11,
    "raw_bytes": 30786,
    "gzip_bytes": 12810,
@@ -256,8 +329,12 @@
   {
    "path": ".github/workflows/publish.yml",
    "file": "repo.cmlh",
-   "start": 251,
-   "end": 309,
+   "ranges": [
+    [
+     251,
+     309
+    ]
+   ],
    "versions": 58,
    "raw_bytes": 63962,
    "gzip_bytes": 28864,
@@ -269,8 +346,12 @@
   {
    "path": ".github/workflows/smokeshow.yml",
    "file": "repo.cmlh",
-   "start": 309,
-   "end": 356,
+   "ranges": [
+    [
+     309,
+     356
+    ]
+   ],
    "versions": 47,
    "raw_bytes": 73616,
    "gzip_bytes": 33158,
@@ -282,8 +363,12 @@
   {
    "path": ".github/workflows/sponsors.yml",
    "file": "repo.cmlh",
-   "start": 356,
-   "end": 379,
+   "ranges": [
+    [
+     356,
+     379
+    ]
+   ],
    "versions": 23,
    "raw_bytes": 42372,
    "gzip_bytes": 20550,
@@ -295,8 +380,12 @@
   {
    "path": ".github/workflows/test-redistribute.yml",
    "file": "repo.cmlh",
-   "start": 379,
-   "end": 397,
+   "ranges": [
+    [
+     379,
+     397
+    ]
+   ],
    "versions": 18,
    "raw_bytes": 32040,
    "gzip_bytes": 12531,
@@ -308,8 +397,12 @@
   {
    "path": ".github/workflows/test.yml",
    "file": "repo.cmlh",
-   "start": 397,
-   "end": 509,
+   "ranges": [
+    [
+     397,
+     509
+    ]
+   ],
    "versions": 112,
    "raw_bytes": 654264,
    "gzip_bytes": 171303,
@@ -321,8 +414,12 @@
   {
    "path": ".github/workflows/topic-repos.yml",
    "file": "repo.cmlh",
-   "start": 509,
-   "end": 529,
+   "ranges": [
+    [
+     509,
+     529
+    ]
+   ],
    "versions": 20,
    "raw_bytes": 25831,
    "gzip_bytes": 13610,
@@ -334,8 +431,12 @@
   {
    "path": ".github/workflows/translate.yml",
    "file": "repo.cmlh",
-   "start": 529,
-   "end": 560,
+   "ranges": [
+    [
+     529,
+     560
+    ]
+   ],
    "versions": 31,
    "raw_bytes": 130416,
    "gzip_bytes": 42245,
@@ -347,8 +448,12 @@
   {
    "path": ".github/workflows/zizmor.yml",
    "file": "repo.cmlh",
-   "start": 560,
-   "end": 571,
+   "ranges": [
+    [
+     560,
+     571
+    ]
+   ],
    "versions": 11,
    "raw_bytes": 6553,
    "gzip_bytes": 4096,
@@ -360,8 +465,12 @@
   {
    "path": ".pre-commit-config.yaml",
    "file": "repo.cmlh",
-   "start": 571,
-   "end": 656,
+   "ranges": [
+    [
+     571,
+     656
+    ]
+   ],
    "versions": 85,
    "raw_bytes": 112371,
    "gzip_bytes": 40076,
@@ -373,8 +482,12 @@
   {
    "path": "README.md",
    "file": "repo.cmlh",
-   "start": 656,
-   "end": 851,
+   "ranges": [
+    [
+     656,
+     851
+    ]
+   ],
    "versions": 195,
    "raw_bytes": 4077812,
    "gzip_bytes": 1356278,
@@ -386,8 +499,12 @@
   {
    "path": "docs/de/docs/_llm-test.md",
    "file": "repo.cmlh",
-   "start": 851,
-   "end": 860,
+   "ranges": [
+    [
+     851,
+     860
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 114835,
    "gzip_bytes": 44935,
@@ -399,8 +516,12 @@
   {
    "path": "docs/de/docs/about/index.md",
    "file": "repo.cmlh",
-   "start": 860,
-   "end": 862,
+   "ranges": [
+    [
+     860,
+     862
+    ]
+   ],
    "versions": 2,
    "raw_bytes": 151,
    "gzip_bytes": 176,
@@ -412,8 +533,12 @@
   {
    "path": "docs/de/docs/advanced/additional-responses.md",
    "file": "repo.cmlh",
-   "start": 862,
-   "end": 875,
+   "ranges": [
+    [
+     862,
+     875
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 130222,
    "gzip_bytes": 37404,
@@ -425,8 +550,12 @@
   {
    "path": "docs/de/docs/advanced/additional-status-codes.md",
    "file": "repo.cmlh",
-   "start": 875,
-   "end": 884,
+   "ranges": [
+    [
+     875,
+     884
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 24018,
    "gzip_bytes": 10449,
@@ -438,8 +567,12 @@
   {
    "path": "docs/de/docs/advanced/advanced-dependencies.md",
    "file": "repo.cmlh",
-   "start": 884,
-   "end": 899,
+   "ranges": [
+    [
+     884,
+     899
+    ]
+   ],
    "versions": 15,
    "raw_bytes": 123447,
    "gzip_bytes": 43415,
@@ -451,8 +584,12 @@
   {
    "path": "docs/de/docs/advanced/advanced-python-types.md",
    "file": "repo.cmlh",
-   "start": 899,
-   "end": 901,
+   "ranges": [
+    [
+     899,
+     901
+    ]
+   ],
    "versions": 2,
    "raw_bytes": 4684,
    "gzip_bytes": 2298,
@@ -464,8 +601,12 @@
   {
    "path": "docs/de/docs/advanced/async-tests.md",
    "file": "repo.cmlh",
-   "start": 901,
-   "end": 915,
+   "ranges": [
+    [
+     901,
+     915
+    ]
+   ],
    "versions": 14,
    "raw_bytes": 62838,
    "gzip_bytes": 27222,
@@ -477,8 +618,12 @@
   {
    "path": "docs/de/docs/advanced/behind-a-proxy.md",
    "file": "repo.cmlh",
-   "start": 915,
-   "end": 928,
+   "ranges": [
+    [
+     915,
+     928
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 213694,
    "gzip_bytes": 72023,
@@ -490,8 +635,12 @@
   {
    "path": "docs/de/docs/advanced/custom-response.md",
    "file": "repo.cmlh",
-   "start": 928,
-   "end": 939,
+   "ranges": [
+    [
+     928,
+     939
+    ]
+   ],
    "versions": 11,
    "raw_bytes": 151145,
    "gzip_bytes": 49913,
@@ -503,8 +652,12 @@
   {
    "path": "docs/de/docs/advanced/dataclasses.md",
    "file": "repo.cmlh",
-   "start": 939,
-   "end": 952,
+   "ranges": [
+    [
+     939,
+     952
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 63546,
    "gzip_bytes": 26166,
@@ -516,8 +669,12 @@
   {
    "path": "docs/de/docs/advanced/events.md",
    "file": "repo.cmlh",
-   "start": 952,
-   "end": 966,
+   "ranges": [
+    [
+     952,
+     966
+    ]
+   ],
    "versions": 14,
    "raw_bytes": 133687,
    "gzip_bytes": 51025,
@@ -529,8 +686,12 @@
   {
    "path": "docs/de/docs/advanced/generate-clients.md",
    "file": "repo.cmlh",
-   "start": 966,
-   "end": 983,
+   "ranges": [
+    [
+     966,
+     983
+    ]
+   ],
    "versions": 17,
    "raw_bytes": 197547,
    "gzip_bytes": 72974,
@@ -542,8 +703,12 @@
   {
    "path": "docs/de/docs/advanced/index.md",
    "file": "repo.cmlh",
-   "start": 983,
-   "end": 988,
+   "ranges": [
+    [
+     983,
+     988
+    ]
+   ],
    "versions": 5,
    "raw_bytes": 8232,
    "gzip_bytes": 4118,
@@ -555,8 +720,12 @@
   {
    "path": "docs/de/docs/advanced/json-base64-bytes.md",
    "file": "repo.cmlh",
-   "start": 988,
-   "end": 991,
+   "ranges": [
+    [
+     988,
+     991
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 8405,
    "gzip_bytes": 3791,
@@ -568,8 +737,12 @@
   {
    "path": "docs/de/docs/advanced/middleware.md",
    "file": "repo.cmlh",
-   "start": 991,
-   "end": 1004,
+   "ranges": [
+    [
+     991,
+     1004
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 62562,
    "gzip_bytes": 26901,
@@ -581,8 +754,12 @@
   {
    "path": "docs/de/docs/advanced/openapi-callbacks.md",
    "file": "repo.cmlh",
-   "start": 1004,
-   "end": 1016,
+   "ranges": [
+    [
+     1004,
+     1016
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 109784,
    "gzip_bytes": 40523,
@@ -594,8 +771,12 @@
   {
    "path": "docs/de/docs/advanced/openapi-webhooks.md",
    "file": "repo.cmlh",
-   "start": 1016,
-   "end": 1026,
+   "ranges": [
+    [
+     1016,
+     1026
+    ]
+   ],
    "versions": 10,
    "raw_bytes": 35098,
    "gzip_bytes": 16429,
@@ -607,8 +788,12 @@
   {
    "path": "docs/de/docs/advanced/opentelemetry.md",
    "file": "repo.cmlh",
-   "start": 1026,
-   "end": 1029,
+   "ranges": [
+    [
+     1026,
+     1029
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 27645,
    "gzip_bytes": 11140,
@@ -620,8 +805,12 @@
   {
    "path": "docs/de/docs/advanced/path-operation-advanced-configuration.md",
    "file": "repo.cmlh",
-   "start": 1029,
-   "end": 1042,
+   "ranges": [
+    [
+     1029,
+     1042
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 112545,
    "gzip_bytes": 40316,
@@ -633,8 +822,12 @@
   {
    "path": "docs/de/docs/advanced/response-change-status-code.md",
    "file": "repo.cmlh",
-   "start": 1042,
-   "end": 1051,
+   "ranges": [
+    [
+     1042,
+     1051
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 17827,
    "gzip_bytes": 8681,
@@ -646,8 +839,12 @@
   {
    "path": "docs/de/docs/advanced/response-cookies.md",
    "file": "repo.cmlh",
-   "start": 1051,
-   "end": 1064,
+   "ranges": [
+    [
+     1051,
+     1064
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 34501,
    "gzip_bytes": 15493,
@@ -659,8 +856,12 @@
   {
    "path": "docs/de/docs/advanced/response-directly.md",
    "file": "repo.cmlh",
-   "start": 1064,
-   "end": 1076,
+   "ranges": [
+    [
+     1064,
+     1076
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 48011,
    "gzip_bytes": 19998,
@@ -672,8 +873,12 @@
   {
    "path": "docs/de/docs/advanced/response-headers.md",
    "file": "repo.cmlh",
-   "start": 1076,
-   "end": 1089,
+   "ranges": [
+    [
+     1076,
+     1089
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 35443,
    "gzip_bytes": 16438,
@@ -685,8 +890,12 @@
   {
    "path": "docs/de/docs/advanced/security/http-basic-auth.md",
    "file": "repo.cmlh",
-   "start": 1089,
-   "end": 1098,
+   "ranges": [
+    [
+     1089,
+     1098
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 58367,
    "gzip_bytes": 23447,
@@ -698,8 +907,12 @@
   {
    "path": "docs/de/docs/advanced/security/index.md",
    "file": "repo.cmlh",
-   "start": 1098,
-   "end": 1103,
+   "ranges": [
+    [
+     1098,
+     1103
+    ]
+   ],
    "versions": 5,
    "raw_bytes": 4049,
    "gzip_bytes": 2247,
@@ -711,8 +924,12 @@
   {
    "path": "docs/de/docs/advanced/security/oauth2-scopes.md",
    "file": "repo.cmlh",
-   "start": 1103,
-   "end": 1114,
+   "ranges": [
+    [
+     1103,
+     1114
+    ]
+   ],
    "versions": 11,
    "raw_bytes": 203498,
    "gzip_bytes": 61173,
@@ -724,8 +941,12 @@
   {
    "path": "docs/de/docs/advanced/settings.md",
    "file": "repo.cmlh",
-   "start": 1114,
-   "end": 1128,
+   "ranges": [
+    [
+     1114,
+     1128
+    ]
+   ],
    "versions": 14,
    "raw_bytes": 212039,
    "gzip_bytes": 71873,
@@ -737,8 +958,12 @@
   {
    "path": "docs/de/docs/advanced/stream-data.md",
    "file": "repo.cmlh",
-   "start": 1128,
-   "end": 1132,
+   "ranges": [
+    [
+     1128,
+     1132
+    ]
+   ],
    "versions": 4,
    "raw_bytes": 24436,
    "gzip_bytes": 10107,
@@ -750,8 +975,12 @@
   {
    "path": "docs/de/docs/advanced/strict-content-type.md",
    "file": "repo.cmlh",
-   "start": 1132,
-   "end": 1135,
+   "ranges": [
+    [
+     1132,
+     1135
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 11127,
    "gzip_bytes": 5158,
@@ -763,8 +992,12 @@
   {
    "path": "docs/de/docs/advanced/sub-applications.md",
    "file": "repo.cmlh",
-   "start": 1135,
-   "end": 1144,
+   "ranges": [
+    [
+     1135,
+     1144
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 30141,
    "gzip_bytes": 12655,
@@ -776,8 +1009,12 @@
   {
    "path": "docs/de/docs/advanced/templates.md",
    "file": "repo.cmlh",
-   "start": 1144,
-   "end": 1157,
+   "ranges": [
+    [
+     1144,
+     1157
+    ]
+   ],
    "versions": 13,
    "raw_bytes": 55183,
    "gzip_bytes": 24593,
@@ -789,8 +1026,12 @@
   {
    "path": "docs/de/docs/advanced/testing-dependencies.md",
    "file": "repo.cmlh",
-   "start": 1157,
-   "end": 1164,
+   "ranges": [
+    [
+     1157,
+     1164
+    ]
+   ],
    "versions": 7,
    "raw_bytes": 23919,
    "gzip_bytes": 9365,
@@ -802,8 +1043,12 @@
   {
    "path": "docs/de/docs/advanced/testing-events.md",
    "file": "repo.cmlh",
-   "start": 1164,
-   "end": 1173,
+   "ranges": [
+    [
+     1164,
+     1173
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 5258,
    "gzip_bytes": 3433,
@@ -815,8 +1060,12 @@
   {
    "path": "docs/de/docs/advanced/testing-websockets.md",
    "file": "repo.cmlh",
-   "start": 1173,
-   "end": 1185,
+   "ranges": [
+    [
+     1173,
+     1185
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 6099,
    "gzip_bytes": 4081,
@@ -828,8 +1077,12 @@
   {
    "path": "docs/de/docs/advanced/using-request-directly.md",
    "file": "repo.cmlh",
-   "start": 1185,
-   "end": 1197,
+   "ranges": [
+    [
+     1185,
+     1197
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 31476,
    "gzip_bytes": 14643,
@@ -841,8 +1094,12 @@
   {
    "path": "docs/de/docs/advanced/websockets.md",
    "file": "repo.cmlh",
-   "start": 1197,
-   "end": 1211,
+   "ranges": [
+    [
+     1197,
+     1211
+    ]
+   ],
    "versions": 14,
    "raw_bytes": 92288,
    "gzip_bytes": 36309,
@@ -854,8 +1111,12 @@
   {
    "path": "docs/de/docs/advanced/wsgi.md",
    "file": "repo.cmlh",
-   "start": 1211,
-   "end": 1223,
+   "ranges": [
+    [
+     1211,
+     1223
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 19367,
    "gzip_bytes": 9787,
@@ -867,8 +1128,12 @@
   {
    "path": "docs/de/docs/agent-banner.md",
    "file": "repo.cmlh",
-   "start": 1223,
-   "end": 1224,
+   "ranges": [
+    [
+     1223,
+     1224
+    ]
+   ],
    "versions": 1,
    "raw_bytes": 252,
    "gzip_bytes": 216,
@@ -880,8 +1145,12 @@
   {
    "path": "docs/de/docs/ai-development.md",
    "file": "repo.cmlh",
-   "start": 1224,
-   "end": 1225,
+   "ranges": [
+    [
+     1224,
+     1225
+    ]
+   ],
    "versions": 1,
    "raw_bytes": 2702,
    "gzip_bytes": 1211,
@@ -893,8 +1162,12 @@
   {
    "path": "docs/de/docs/alternatives.md",
    "file": "repo.cmlh",
-   "start": 1225,
-   "end": 1236,
+   "ranges": [
+    [
+     1225,
+     1236
+    ]
+   ],
    "versions": 11,
    "raw_bytes": 300262,
    "gzip_bytes": 103375,
@@ -906,8 +1179,12 @@
   {
    "path": "docs/de/docs/async.md",
    "file": "repo.cmlh",
-   "start": 1236,
-   "end": 1245,
+   "ranges": [
+    [
+     1236,
+     1245
+    ]
+   ],
    "versions": 9,
    "raw_bytes": 249225,
    "gzip_bytes": 86558,
@@ -919,8 +1196,12 @@
   {
    "path": "docs/de/docs/benchmarks.md",
    "file": "repo.cmlh",
-   "start": 1245,
-   "end": 1249,
+   "ranges": [
+    [
+     1245,
+     1249
+    ]
+   ],
    "versions": 4,
    "raw_bytes": 16288,
    "gzip_bytes": 6966,
@@ -932,8 +1213,12 @@
   {
    "path": "docs/de/docs/deployment/cloud.md",
    "file": "repo.cmlh",
-   "start": 1249,
-   "end": 1257,
+   "ranges": [
+    [
+     1249,
+     1257
+    ]
+   ],
    "versions": 8,
    "raw_bytes": 10336,
    "gzip_bytes": 5613,
@@ -945,8 +1230,12 @@
   {
    "path": "docs/de/docs/deployment/concepts.md",
    "file": "repo.cmlh",
-   "start": 1257,
-   "end": 1265,
+   "ranges": [
+    [
+     1257,
+     1265
+    ]
+   ],
    "versions": 8,
    "raw_bytes": 172418,
    "gzip_bytes": 61737,
@@ -958,8 +1247,12 @@
   {
    "path": "docs/de/docs/deployment/docker.md",
    "file": "repo.cmlh",
-   "start": 1265,
-   "end": 1277,
+   "ranges": [
+    [
+     1265,
+     1277
+    ]
+   ],
    "versions": 12,
    "raw_bytes": 429784,
    "gzip_bytes": 138710,
@@ -971,8 +1264,12 @@
   {
    "path": "docs/de/docs/deployment/fastapicloud.md",
    "file": "repo.cmlh",
-   "start": 1277,
-   "end": 1281,
+   "ranges": [
+    [
+     1277,
+     1281
+    ]
+   ],
    "versions": 4,
    "raw_bytes": 8033,
    "gzip_bytes": 4142,
@@ -984,8 +1281,12 @@
   {
    "path": "docs/de/docs/deployment/https.md",
    "file": "repo.cmlh",
-   "start": 1281,
-   "end": 1289,
+   "ranges": [
+    [
+     1281,
+     1289
+    ]
+   ],
    "versions": 8,
    "raw_bytes": 121032,
    "gzip_bytes": 44020,
@@ -997,8 +1298,12 @@
   {
    "path": "docs/de/docs/deployment/index.md",
    "file": "repo.cmlh",
-   "start": 1289,
-   "end": 1294,
+   "ranges": [
+    [
+     1289,
+     1294
+    ]
+   ],
    "versions": 5,
    "raw_bytes": 8493,
    "gzip_bytes": 4595,
@@ -1010,8 +1315,12 @@
   {
    "path": "docs/de/docs/deployment/manually.md",
    "file": "repo.cmlh",
-   "start": 1294,
-   "end": 1304,
+   "ranges": [
+    [
+     1294,
+     1304
+    ]
+   ],
    "versions": 10,
    "raw_bytes": 66781,
    "gzip_bytes": 27168,
@@ -1023,8 +1332,12 @@
   {
    "path": "docs/de/docs/deployment/server-workers.md",
    "file": "repo.cmlh",
-   "start": 1304,
-   "end": 1312,
+   "ranges": [
+    [
+     1304,
+     1312
+    ]
+   ],
    "versions": 8,
    "raw_bytes": 74382,
    "gzip_bytes": 22145,
@@ -1036,8 +1349,12 @@
   {
    "path": "docs/de/docs/deployment/versions.md",
    "file": "repo.cmlh",
-   "start": 1312,
-   "end": 1317,
+   "ranges": [
+    [
+     1312,
+     1317
+    ]
+   ],
    "versions": 5,
    "raw_bytes": 20286,
    "gzip_bytes": 8536,
@@ -1049,8 +1366,12 @@
   {
    "path": "docs/de/docs/editor-support.md",
    "file": "repo.cmlh",
-   "start": 1317,
-   "end": 1320,
+   "ranges": [
+    [
+     1317,
+     1320
+    ]
+   ],
    "versions": 3,
    "raw_bytes": 8456,
    "gzip_bytes": 4149,

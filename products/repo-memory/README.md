@@ -6,8 +6,10 @@ SHA-verified, per-file random access, and exact span search with
 
 ```bash
 uv run cml repo --repo /path/to/repo.git --out repo-index --limit 80
+uv run cml repo --repo /path/to/repo.git --out repo-index --update
 uv run cml repo --repo /path/to/repo.git --out repo-archive --global
 uv run cml repo --index repo-index --search "def routing"
+uv run cml mcp --index repo-index
 ```
 
 ## What it is
@@ -22,6 +24,16 @@ blob SHA.
 `--search` decodes the last version of every indexed file and returns exact
 `path:line` hits. It is exact text search over the stored memory, not a
 fuzzy or vector search.
+
+`--update` reads the manifest HEAD and appends only new commits. A per-file
+chain is byte-identical to a full rebuild at the same HEAD; global mode
+appends at the tail and records multiple ranges, so it stays exact but can
+compress worse than a rebuild. An unchanged HEAD is a no-op. A history
+rewrite stops with a clear error instead of silently mixing versions.
+
+`cml mcp --index repo-index` serves the same bytes over MCP: five tools and
+one `repo://path[@version]` resource per file. See
+`cml/reports/MCP.md` for the OpenCode config.
 
 ## Numbers
 
