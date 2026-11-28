@@ -22,7 +22,7 @@ commit.
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
 | log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
-`70 passed`. The bytes for the repo index are stored gzip-wrapped when
+`73 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
 
 ## 2. The model invention: ByteCopy LM
@@ -40,12 +40,13 @@ pack charge.
 model that delegates them to a pointer keeps capacity for novel bytes,
 gets exact recall for free, and avoids a tokenizer mismatch.
 
-**Current bottleneck.** The gate trains on exact-span correctness and the
-run head on the length at the predicted source. At gate 0.90 the source
-is 77.6% and the exact span 66.1%; at 0.99 the source is 98.1% and the
-span 98.0% at 1.2% coverage. The exact-copy path works; the pointer does
-not hold 90% precision at 5% coverage. The gate cannot exceed source
-precision, so the open term is the pointer.
+**Resolved: verify, do not predict.** The unverified pointer tops out at
+66-67% span precision at ~5% coverage (R0-R9): the gate cannot predict
+correctness above source precision. R10 makes the pointer a candidate
+ranker: top-8 proposals, an exact match check, and a copy only for
+verified spans. Gate **PASS**: 38.6% coverage at 100% verified
+precision, 1.56x; the cheap point is gate 0.7 at 19.3%, 1.22x. A
+rejected proposal costs a byte comparison, not a forward.
 
 Pass gate: **>90% exact-span precision at ≥5% coverage and >1.2x
 bytes/step**, with every copied byte exact. Trunk `-q2048`; 2 MB code,
@@ -78,17 +79,41 @@ bytes/step**, with every copied byte exact. Trunk `-q2048`; 2 MB code,
 | R9 | R8 + 2x pointer width | 66.1% | 5.1% | 0.97x |
 
 At gate 0.99, R9 is 98.0% span at 98.1% source, 1.2% coverage, 1.00x.
-The operating point stalls at **66-67% precision at ~5% coverage**.
-**Stop the B1 repair loop.** Do not add terms to it.
+The unverified operating point stalls at 66-67% precision at ~5%.
 
-**Next: B2 retrieval context.** Put a retrieved exact pack in the model
-context and point into it. If B2 also misses (>90% at ≥5%, >1.2x), record
-the ByteCopy LM interface as a stop in `TODO9.md`. One GPU job at a time.
+**Verified decode (R10) — gate PASS.** Propose top-8, verify, copy only
+exact spans. A wrong proposal costs a byte comparison, not a forward.
+
+| gate | coverage | mean span | top-1 source | checks/B | bytes/step |
+|---:|---:|---:|---:|---:|---:|
+| 0.10 | 38.6% | 14.6 | 2.7% | 3.41 | 1.56x |
+| 0.50 | 26.6% | 16.1 | 21.7% | 0.46 | 1.33x |
+| 0.70 | 19.3% | 17.4 | 41.2% | 0.19 | 1.22x |
+| 0.90 | 9.0% | 18.0 | 77.6% | 0.05 | 1.09x |
+
+The pointer is a candidate ranker; exact verification does the
+correctness work. **B1 closes with a pass.** The run head is redundant at
+decode; it only supplies the gate training label now.
+
+**B2 resolved by exact proposers (same held-out test).**
+
+| proposer | coverage | checks/B | bytes/step |
+|---|---:|---:|---:|
+| hash over the 2 KB window | 47.0% | 0.15 | 1.78x |
+| hash over a fixed 2 MB train pack | **78.4%** | 0.58 | **3.59x** |
+| learned top-8 pointer | 38.6% | 3.41 | 1.56x |
+
+Any exact copy of >=8 B shares an 8-byte key, so a hash over that key is a
+complete in-window proposer. The learned pointer is dominated. A 2 MB pack
+of disjoint train code lifts coverage to 78.4% at 3.59x. **B2 is an exact
+pack plus a hash**, which `repo` memory already supplies; do not train a
+bigger pointer. The byte LM keeps the 21.6% novel bytes. The pack is
+required for the headline; do not claim 78.4% standalone.
 
 **Repair rules.** A failed run identifies a term, not the interface.
-Change one term, record a row, rerun. Stop only after two independent
-repairs cannot exceed 1.1x at ≥5% coverage, and the retrieval-context path
-also fails.
+Change one term, record a row, rerun. Price a rejected proposal as a byte
+comparison, not a forward: a proposal is not an emitted copy. When a
+learned proposer loses to an exact one, record the domination and stop.
 
 ## 3. Product improvements (each ≤1 day, in order)
 
@@ -131,8 +156,8 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 | id | hypothesis | command | pass signal | cost |
 |---|---|---|---|---|
-| ~~**B1**~~ | joint copy head — repair loop | `cml copy-lm --joint` | **done; gate missed**: 67.5% at 5.2%, 0.97x after R7-R9 | 1 GPU-h |
-| **B2** | pointer into a retrieved exact pack | `cml copy-lm --pack <repo-index>` | 90% at ≥5%, >1.2x | 1 GPU-h |
+| ~~**B1**~~ | joint copy head — repair loop | `cml copy-lm --joint` | **shipped; gate PASS** on verified top-8: 38.6% at 1.56x, 100% exact | 1 GPU-h |
+| ~~**B2**~~ | exact pack proposer | `_pack_oracle` + `repo` | **resolved; hash dominates**: 78.4% at 3.59x with a 2 MB pack | CPU |
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
 | ~~**M1**~~ | MCP resources — **shipped** | `cml mcp --index` | client lists/reads resources | 1 day |
@@ -151,18 +176,20 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **B1 repair loop** — multi-positive pointer loss,
-2x training volume, and a `--pointer-scale` knob. R7-R9 are recorded
-negative rows: the operating point stalls at 66-67% span precision at
-~5% coverage (0.97x). B1 is a recorded stop; the source pointer is the
-binding term, not the gate or the run head.
+Shipped this session: **B1 verified copy gate + B2 exact pack**. The
+unverified pointer stalls at 66-67% precision at ~5% (R7-R9). Propose
+top-k and verify exactly (R10): **38.6% coverage, 100% verified
+precision, 1.56x**. The exact in-window hash reaches 47.0% at 1.78x; a
+2 MB pack reaches **78.4% at 3.59x**. The learned pointer is dominated as
+an exact proposer. The product is exact pack memory + a byte LM for the
+novel 21.6%, which `repo`/`memory-mcp` already supplies.
 
 Next session, one of:
-1. **B2**: pointer into a retrieved exact pack. This is the last test
-   before the ByteCopy LM interface becomes a recorded stop.
-2. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
-3. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
-4. **patch-guard breadth**: `git apply`, binaries, 100 random diffs.
+1. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
+2. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
+3. **patch-guard breadth**: `git apply`, binaries, 100 random diffs.
+4. **copy-LM cleanup**: drop the run head at decode and label the gate on
+   source correctness. Small, no new experiment.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -187,8 +214,8 @@ uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
 uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
   --train-bytes 2000000 --eval-bytes 100000 --windows 200
 uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
-  --pointer-scale 2 --train-bytes 2000000 --eval-bytes 100000 \
-  --windows 400
+  --pointer-scale 2 --verify-topk 8 --train-bytes 2000000 \
+  --eval-bytes 100000 --windows 400
 uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
   --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
 uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh

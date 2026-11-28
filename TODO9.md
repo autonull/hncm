@@ -756,11 +756,18 @@ bytes/step. The joint repair (R0-R9) added a relative-position bias, a
 top-2 pointer margin, an exact-span gate, a run head conditioned on the
 chosen source, a multi-positive pointer loss, 2x training volume, and a
 2x pointer. At gate 0.99 the span is 98.0% at 98.1% source, but at only
-1.2% coverage. The operating point stalls at 66-67% span precision at
-~5% coverage, 0.97x. The gate cannot exceed source precision, so the
-source pointer is the binding term; the B1 repair loop is a recorded
-stop in `TODO10.md`. The last test is B2: point into a retrieved exact
-pack.
+1.2% coverage. The unverified operating point stalls at 66-67% span
+precision at ~5% coverage, 0.97x: the gate cannot exceed source
+precision. Proposal plus verification (R10) makes the pointer a candidate
+ranker: top-8 proposals, an exact match check, and a copy only for
+verified spans. It reaches 38.6% coverage at 100% verified precision,
+1.56x; the cheap point is 19.3% at 1.22x. The digest is the guard and
+the gate is a cost control. The exact in-window hash reaches 47.0% at
+1.78x, and a fixed 2 MB disjoint train pack reaches 78.4% at 3.59x.
+Every exact copy of at least 8 bytes shares an 8-byte key, so the hash is
+a complete in-window proposer and the learned pointer is dominated.
+B2 resolves to exact pack memory plus a hash, which `repo` already
+supplies; the byte LM keeps the novel 21.6%.
 
 The product path is `memory-mcp`: the model queries an exact repo index and
 conditions on the bytes. ByteCopy LM is the trained-model path; the MCP

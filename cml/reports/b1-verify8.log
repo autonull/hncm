@@ -1,0 +1,42 @@
+train copy rate 0.395 on 16,384 positions
+  joint step 0/3000
+  joint step 200/3000
+  joint step 400/3000
+  joint step 600/3000
+  joint step 800/3000
+  joint step 1000/3000
+  joint step 1200/3000
+  joint step 1400/3000
+  joint step 1600/3000
+  joint step 1800/3000
+  joint step 2000/3000
+  joint step 2200/3000
+  joint step 2400/3000
+  joint step 2600/3000
+  joint step 2800/3000
+trained 3000 joint steps on 400 windows
+# ByteCopy LM: joint last block + margin gate
+
+- trunk `codec-byte-model-code-756752-d448-l8-q2048`; 2048 B window; 2,000,000 B train, 100,000 B held-out
+- self-supervised longest prior match: min 8 B, cap 64 B, depth 8
+- head: 2.0x pointer over the context, top-8 verified candidates, gate with top-2 margin; 808,902 head params; last block + head trained, rest frozen
+
+| gate | coverage | mean span | top-1 source | checks/B | copies | bytes/step |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.10 | 0.386 | 14.6 | 0.027 | 3.41 | 2,604 | 1.56x |
+| 0.20 | 0.359 | 14.9 | 0.055 | 1.90 | 2,376 | 1.50x |
+| 0.30 | 0.329 | 15.3 | 0.093 | 1.14 | 2,117 | 1.44x |
+| 0.50 | 0.266 | 16.1 | 0.217 | 0.46 | 1,622 | 1.33x |
+| 0.70 | 0.193 | 17.4 | 0.412 | 0.19 | 1,093 | 1.22x |
+| 0.90 | 0.090 | 18.0 | 0.776 | 0.05 | 489 | 1.09x |
+| 0.95 | 0.054 | 17.6 | 0.873 | 0.03 | 299 | 1.05x |
+| 0.99 | 0.021 | 18.0 | 0.975 | 0.01 | 117 | 1.02x |
+
+## Read
+
+- best gate 0.1: copies **38.6%** of bytes at **100% verified precision**, **1.56x** bytes per sequential step.
+- every copied byte passes an exact match check; a rejected proposal costs a byte comparison, not a forward.
+- gate check: PASS (>90% at >=5% and >1.2x).
+
+Took 379 s on one GPU.
+

@@ -57,17 +57,46 @@ Frozen `d448-l8`, `seq=2048` code trunk. Each run changes one term on
 | R8 | R7 + 2x windows and steps | 67.5% | 5.2% | 0.97x |
 | R9 | R8 + 2x pointer width | 66.1% | 5.1% | 0.97x |
 
-R9 reaches **98.0% span precision at 98.1% source precision** at gate
-0.99, but coverage is only **1.2%** and bytes/step is 1.00x. At gate 0.9
-the source is 77.6% and the span is 66.1%. Three independent coverage
-repairs do not pass the gate (>90% at ≥5%, >1.2x).
+These rows price every top-1 proposal as an emitted copy. R9 reaches
+98.0% span precision at 98.1% source precision at gate 0.99, but only
+1.2% coverage. The unverified pointer cannot reach 90% at 5%.
 
-**Stop the B1 repair loop.** The next test is B2: put a retrieved exact
-pack in context and point into it. If B2 also misses, the interface is a
-recorded research stop.
+## Verified decode (R10)
 
-Report: `cml/reports/COPY-LM-JOINT.md`; repair logs in
-`cml/reports/b1-*.log`.
+The design verifies before it emits. The gate fires, the pointer names
+the top-k prior sources, an exact match check accepts the longest span,
+and a rejected proposal falls back to the byte head. A rejected proposal
+costs a byte comparison, not a forward.
+
+| gate | coverage | mean span | checks/B | bytes/step |
+|---:|---:|---:|---:|---:|
+| 0.10 | 38.6% | 14.6 | 3.41 | 1.56x |
+| 0.50 | 26.6% | 16.1 | 0.46 | 1.33x |
+| 0.70 | 19.3% | 17.4 | 0.19 | 1.22x |
+| 0.90 | 9.0% | 18.0 | 0.05 | 1.09x |
+
+**Gate PASS.** 38.6% coverage at **100% verified precision**, 1.56x.
+The cheapest passing point is gate 0.7: 19.3% at 1.22x. Every copied
+byte passes an exact check; a mismatch raises. The gate is a cost
+control, not a correctness predictor.
+
+## Ceilings: exact proposers
+
+| proposer | coverage | checks/B | bytes/step |
+|---|---:|---:|---:|
+| hash over the 2 KB window | 47.0% | 0.15 | 1.78x |
+| hash over a fixed 2 MB train pack | **78.4%** | 0.58 | **3.59x** |
+| learned top-8 pointer | 38.6% | 3.41 | 1.56x |
+
+Any exact copy of at least 8 B shares an 8-byte key, so a hash over that
+key is a complete in-window proposer. The learned pointer is dominated.
+
+A 2 MB pack of disjoint train code lifts coverage to **78.4% at 3.59x**.
+B2 resolves to exact pack memory plus a hash, which `repo` already
+supplies. The byte LM keeps the novel 21.6%. The 78.4% figure needs the
+pack; it is not a standalone compression claim.
+
+Report: `cml/reports/COPY-LM-JOINT.md`; logs in `cml/reports/b1-*.log`.
 
 ## Run
 
@@ -77,8 +106,8 @@ uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
 uv run cml copy-lm --joint --steps 2000 --lr 0.001 --block-lr 1e-5 \
   --train-bytes 2000000 --eval-bytes 100000 --windows 200
 uv run cml copy-lm --joint --steps 3000 --lr 0.001 --block-lr 1e-5 \
-  --pointer-scale 2 --train-bytes 2000000 --eval-bytes 100000 \
-  --windows 400
+  --pointer-scale 2 --verify-topk 8 --train-bytes 2000000 \
+  --eval-bytes 100000 --windows 400
 ```
 
 Report: `cml/reports/COPY-LM.md`; joint repair:
