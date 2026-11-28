@@ -7,3 +7,4 @@ under `cml/` (the codec, the trunk and the CLI) but not documentation.
 | product | directory | one line |
 |---|---|---|
 | codec | [`codec/`](codec/README.md) | lossless byte codec for code, 6.3x exact, 9.4x frontier |
+| delta | [`delta/`](delta/README.md) | exact version compression, 56.6x on hunk edits, CPU-only |

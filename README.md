@@ -5,6 +5,7 @@
 | product | what | status |
 |---|---|---|
 | [`products/codec`](products/codec/README.md) | a lossless byte codec for code: `cml compress` / `cml decompress` | exact **1.266 bpb (6.3x)**; priced-parse frontier **0.852** |
+| [`products/delta`](products/delta/README.md) | exact version compression from an old file: `cml delta` / `cml undelta` | exact **56.6x** on hunk edits, **27.8x** scattered; CPU-only |
 
 Each product is self-contained in its own directory and uses the shared
 utilities in `cml/`. Start with [`products/README.md`](products/README.md).
