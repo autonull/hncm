@@ -6,6 +6,7 @@ SHA-verified, per-file random access, and exact span search with
 
 ```bash
 uv run cml repo --repo /path/to/repo.git --out repo-index --limit 80
+uv run cml repo --repo /path/to/repo.git --out repo-archive --global
 uv run cml repo --index repo-index --search "def routing"
 ```
 
@@ -38,7 +39,12 @@ per-version access. A single gzip over the whole concatenation is smaller
 still, but it has no file/version boundary, no digest, and no `path:line`
 search. The index is the access layer; global gzip is a different unit.
 
-Build and verify: 34 s on CPU for the 80-file sample.
+`--global` stores all versions in one exact chain: **390,024 B = 25.2x**,
+8.8x smaller than per-file gzip. It is the archive mode; random access is
+a prefix replay, so use the per-file mode for a live index.
+
+Build and verify: 34 s on CPU for the 80-file per-file sample; 48 s for
+the global chain.
 
 ## Use it when
 

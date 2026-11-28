@@ -75,12 +75,23 @@ class Index:
         self.root = root
         self.manifest = json.loads((root / "manifest.json").read_text())
         self.rows = {row["path"]: row for row in self.manifest["files"]}
+        self._shared = None
 
     def versions(self, path: str) -> tuple[dict, list[bytes]]:
         row = self.rows.get(path)
         if row is None:
             raise KeyError(path)
-        return memory.load_chain(self.root / row["file"])
+        if not self.manifest["stats"].get("global"):
+            return memory.load_chain(self.root / row["file"])
+        if self._shared is None:
+            self._shared = memory.load_chain(self.root / "repo.cmlh")
+        header, versions = self._shared
+        head = dict(header)
+        head["path"] = path
+        head["shas"] = header["shas"][row["start"] : row["end"]]
+        head["sizes"] = header["sizes"][row["start"] : row["end"]]
+        head["commits"] = header["commits"][row["start"] : row["end"]]
+        return head, versions[row["start"] : row["end"]]
 
     def latest(self, path: str) -> bytes:
         return self.versions(path)[1][-1]

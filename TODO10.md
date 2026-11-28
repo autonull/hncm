@@ -1,0 +1,145 @@
+# TODO10 — exact memory products + ByteCopy LM
+
+Status: 2026-11-28. Continuation of `TODO9.md`. `TODO9` is the research
+record; this file is the working plan. Keep it short and update it at each
+commit.
+
+## 1. Shipped — do not regress
+
+| product | command | measured | tests |
+|---|---|---|---|
+| repo-memory | `cml repo` | 80 files, 9.84 MB → 476,080 B = **20.7x**; 7.2x per-file gzip; 34 s | `test_repo_memory.py` |
+| memory-mcp | `cml mcp --index` | 5 exact tools: files, search, read, versions, diff | `test_mcp.py` |
+| patch-guard | `cml patch` | exact apply or hard error | `test_tools.py` |
+| repo-delta | `cml repo-delta` | 22,830 → 266 B = **85.8x**, verified | manual |
+| log-delta | `cml logdelta` | 5 logs, 504,465 → 18,445 B = **27.3x**, 1.8x gzip | `test_tools.py` |
+| pack-doctor | `cml pack fit` | 1,024 → 498 paying spans, mean 12.9 B | manual |
+| ByteCopy LM | `cml copy-lm` | 403k head, exact copies; 51% precision at gate 0.9, 0.96x | `test_copylm.py` |
+| repo global mode | `cml repo --global` | 80 files → 390,024 B = **25.2x**, 8.8x per-file gzip | manual |
+
+`61 passed`. The bytes for the repo index are stored gzip-wrapped when
+smaller; `memory.load_chain` reads both.
+
+## 2. The model invention: ByteCopy LM
+
+**Design.** A byte-level trunk has three heads: a byte head for novel
+bytes, a **copy head** (pointer over the context), and a **run head**
+(span length). A gate picks copy or compute. Training is self-supervised:
+the label is the longest prior match in the context (min 8 B, cap 64 B).
+A copied span is exact; the digest is the guard, not the model. At
+inference a copy updates the cache in one chunked forward, so the small
+model spends capacity on novel bytes. No tokenizer, no flat span id, no
+pack charge.
+
+**Why a smaller model can win.** Code repeats long exact spans. A 20M
+model that delegates them to a pointer keeps capacity for novel bytes,
+gets exact recall for free, and avoids a tokenizer mismatch.
+
+**Current bottleneck.** The head is trained on frozen last states. At gate
+0.9 it reaches 51% copy precision and 0.96x bytes/step; the gate is not
+calibrated. The exact copy path itself works.
+
+**Next experiment B1 (≤1 GPU-h, one job).**
+- Trunk `codec-byte-model-code-756752-d448-l8-q2048`.
+- Unfreeze the last block + copy head; keep the rest frozen.
+- Add the relative-position bias (already in `copylm.CopyHead`) and a
+  top-2 pointer-margin feature to the gate.
+- Train 2,000 steps on 2 MB code, batch 4 windows, lr 1e-4.
+- Gate: **>90% copy precision at ≥5% coverage**, and **>1.2x bytes/step**
+  with all copied bytes exact. Cost: 1 GPU-h.
+- If B1 fails: stop the head-only formulation. Do not scale the head.
+- If B1 passes: B2 appends 4k exact spans from `repo-memory` to the
+  context, points into both, and measures exact recall and speed at 2K
+  context. Cost: 1 GPU-h.
+
+**Kill rules.** No >1.1x at ≥5% coverage after B1 and B2 → the copy-head
+path is not a win; keep the retrieval-context path (`memory-mcp`) and stop
+model work. One GPU job at a time; no new base.
+
+## 3. Product improvements (each ≤1 day, in order)
+
+1. **repo-memory incremental (`--update`).** Read the manifest HEAD,
+   fetch new commits, append versions without rebuilding. Temp-repo test:
+   exact, same bytes, no full rebuild. This is the difference between a
+   demo and a usable index.
+2. **MCP resources and prompts.** Expose each file as an MCP resource
+   (`repo://path@version`), add `repo_delta` as a tool, and test with a
+   real client. Keep the 5 tools; add resources without changing them.
+3. **repo-memory context search.** `--context N` lines, `--json` hits,
+   multi-hit ordering. Test: exact path/line on a temp repo.
+4. **repo global checkpoints.** `--global --checkpoint K` (K=16/32),
+   trade size for random access. Measured: K=16 → 10.8x, K=32 → 16.6x;
+   target ≥20x with a checkpoint policy or a shared dictionary.
+5. **log-delta on real logs.** Mine or generate pytest CI logs; gate
+   ≥10x on near-identical and ≥2x on changed logs. Synthetic sample is
+   27.3x; this is the real test.
+6. **pack-doctor end-to-end.** Fit the pack, then run
+   `cml memory-probe --oracle` and the count-prior priced oracle on the
+   held-out test. Gate: positive net on the test.
+7. **repo-delta multi-file.** `cml repo-delta --before a --after b`
+   walks the tree, emits one exact patch set and a manifest. Gate: apply
+  + verify on 100 random commit pairs.
+8. **patch-guard breadth.** `git apply` mode, binary patches, 100 random
+   diffs. Gate: exact or a clear refusal, never a silent wrong byte.
+
+## 4. Small experiment queue
+
+Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
+
+| id | hypothesis | command | pass signal | cost |
+|---|---|---|---|---|
+| **B1** | joint last block + margin gate calibrates copy | `cml copy-lm --joint` | >90% precision at ≥5%, >1.2x | 1 GPU-h |
+| **B2** | pointer into a retrieved exact pack | `cml copy-lm --pack <repo-index>` | exact recall + >1.2x | 1 GPU-h |
+| **R1** | incremental index | `cml repo --update` | exact, no rebuild | 1 day |
+| **R2** | global checkpoints | `cml repo --global --checkpoint 32` | ≥20x, access ≤K | 1 day |
+| **M1** | MCP resources | `cml mcp --index` | client lists/reads resources | 1 day |
+| **L1** | real CI logs | `cml logdelta --dir <logs>` | ≥10x near-identical | 1 day |
+| **P1** | fitted pack pays | `cml pack fit` + `memory-probe` | priced total < stream | 3 h |
+
+## 5. What not to do
+
+- No more flat span-id bpb probes. A0.2 killed that interface; keep the
+  result in `TODO9`.
+- No 3-5 day run before a ≤1 h control passes.
+- No new base training; use the `-q2048` trunk.
+- No claim without a digest or an exact round-trip.
+- No product headline that loses to the fair baseline; name the unit
+  (per-file vs global) when comparing to gzip.
+
+## 6. Definition of done for the next session
+
+One of:
+1. **B1/B2**: a 20M ByteCopy model with >1.2x bytes/step at ≥5% coverage,
+   ≥90% copy precision, exact copied bytes; or a recorded stop.
+2. **R1/M1**: incremental repo index + MCP resources, shipped with tests
+   and a working OpenCode config.
+3. **L1**: real-log gate pass (≥10x near-identical, ≥2x changed).
+
+Then: commit, update this file's status, and move the result into
+`TODO9.md` if it is a research finding.
+
+## 7. Commands
+
+```bash
+cd cml
+uv run pytest tests
+uv run cml repo --repo ~/.cache/hncm/edit/repos/tiangolo__fastapi.git \
+  --out /tmp/fastapi-index --limit 80
+uv run cml repo --index /tmp/fastapi-index --search "FastAPI"
+uv run cml repo --repo ... --out /tmp/g --global --limit 80
+uv run cml mcp --index /tmp/fastapi-index
+uv run cml copy-lm --steps 5000 --train-bytes 2000000 \
+  --eval-bytes 100000 --windows 200
+uv run cml pack fit runs/a02-1024/artifacts/pack.bin \
+  --bpb 0.974 --id-bits 9 --units 1024 --min-len 8
+uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh
+```
+
+## References
+
+- `TODO9.md`: research record; A0.0/A0.1/A0.2, the id-price defect.
+- `products/README.md`: the product map.
+- `products/copy-lm/README.md`: ByteCopy LM design and prototype.
+- `cml/reports/COPY-LM.md`, `cml/reports/MEMORY-GATE.md`.
+- `cml/reports/REPO-INDEX.md`, `cml/reports/REPO-GLOBAL.md`,
+  `cml/reports/LOG-DELTA.md`, `cml/reports/PACK-FIT.md`.

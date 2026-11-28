@@ -7,6 +7,10 @@ are applications of the memory, not the claim.
 
 ## Status 2026-11-27: Track A paused on bits; exact codecs shipped
 
+> Continuation and the working plan: `TODO10.md` (2026-11-28). This file
+> is the research record; TODO10 has the current shippable products, the
+> ByteCopy LM experiment, and the next queues.
+
 | work | state | artifact |
 |---|---|---|
 | **Track A better-LM** | **active** | A0.0+A0.1 pass; **A0.2 bits fail**; A1 blocked |

@@ -63,3 +63,25 @@ def test_repo_index_roundtrip_and_search(tmp_path: Path, capsys) -> None:
     )
     text = capsys.readouterr().out
     assert "x.py:2" in text and "needle" in text
+
+    out2 = tmp_path / "gidx"
+    memory.run_repo(
+        repo,
+        out2,
+        tmp_path / "g.md",
+        tmp_path / "g.json",
+        "",
+        None,
+        "",
+        0,
+        65536,
+        1 << 20,
+        8,
+        256,
+        16,
+        True,
+    )
+    gman = json.loads((out2 / "manifest.json").read_text())
+    assert gman["stats"]["global"]
+    _, gversions = memory.load_chain(out2 / "repo.cmlh")
+    assert gversions[-1] == path.read_bytes()

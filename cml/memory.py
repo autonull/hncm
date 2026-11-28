@@ -331,6 +331,7 @@ def run_repo(
     min_match: int,
     cap: int,
     depth: int,
+    global_mode: bool = False,
 ) -> int:
     """Repo-wide exact memory: chain every text file's history, or search it."""
     cfg = ChainConfig(window, min_match, cap, depth)
@@ -342,9 +343,14 @@ def run_repo(
         manifest = json.loads(manifest_path.read_text())
         needle = search.encode()
         hits = 0
+        shared = None
+        if manifest["stats"].get("global"):
+            shared = load_chain(root / "repo.cmlh")[1]
         for row in manifest["files"]:
-            header, versions = load_chain(root / row["file"])
-            last = versions[-1]
+            if shared is not None:
+                last = shared[row["end"] - 1]
+            else:
+                last = load_chain(root / row["file"])[1][-1]
             at = last.find(needle)
             while at >= 0 and hits < 50:
                 line = last.count(b"\n", 0, at) + 1
@@ -365,43 +371,85 @@ def run_repo(
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     t0 = time.perf_counter()
+    collected = []
     for path, _ in cand:
         try:
             commits, shas, versions = git_versions(repo, path)
         except RuntimeError, SystemExit:
             continue
-        blob = encode_chain(versions, path, commits, cfg)
-        header, back = decode_chain(blob)
-        if back != versions:
-            raise SystemExit(f"repo: round-trip failed for {path}")
-        raw = sum(len(v) for v in versions)
-        gz = sum(len(gzip.compress(v, 9)) for v in versions)
-        name = _safe_name(path)
-        stored = gzip.compress(blob, 9)
-        compressed = len(stored) < len(blob)
-        data = stored if compressed else blob
-        write_chain(out / name, data)
-        row = {
-            "path": path,
-            "file": name,
-            "versions": len(versions),
-            "raw_bytes": raw,
-            "chain_bytes": len(data),
-            "compressed": compressed,
-            "gzip_bytes": gz,
-            "ratio": raw / max(len(data), 1),
-            "gzip_ratio": raw / max(gz, 1),
-            "head": shas[-1],
-        }
-        rows.append(row)
+        collected.append((path, commits, shas, versions))
         print(
-            f"  {path}: {len(versions)} v, {raw:,} B -> "
-            f"{len(data):,} B ({row['ratio']:.1f}x)",
+            f"  {path}: {len(versions)} v, {sum(len(v) for v in versions):,} B",
             flush=True,
         )
+    if global_mode:
+        flat: list[bytes] = []
+        flat_commits: list[str] = []
+        for path, commits, shas, versions in collected:
+            start = len(flat)
+            flat.extend(versions)
+            flat_commits.extend(commits)
+            rows.append(
+                {
+                    "path": path,
+                    "file": "repo.cmlh",
+                    "start": start,
+                    "end": len(flat),
+                    "versions": len(versions),
+                    "raw_bytes": sum(len(v) for v in versions),
+                    "gzip_bytes": sum(len(gzip.compress(v, 9)) for v in versions),
+                    "head": shas[-1],
+                }
+            )
+        blob = encode_chain(flat, "repo", [], cfg)
+        header, back = decode_chain(blob)
+        if back != flat:
+            raise SystemExit("repo: global round-trip failed")
+        stored = gzip.compress(blob, 9)
+        data = stored if len(stored) < len(blob) else blob
+        write_chain(out / "repo.cmlh", data)
+        for row in rows:
+            row["chain_bytes"] = len(data)
+            row["ratio"] = row["raw_bytes"] / max(len(data), 1)
+            row["gzip_ratio"] = row["raw_bytes"] / max(row["gzip_bytes"], 1)
+    else:
+        for path, commits, shas, versions in collected:
+            blob = encode_chain(versions, path, commits, cfg)
+            header, back = decode_chain(blob)
+            if back != versions:
+                raise SystemExit(f"repo: round-trip failed for {path}")
+            raw = sum(len(v) for v in versions)
+            gz = sum(len(gzip.compress(v, 9)) for v in versions)
+            name = _safe_name(path)
+            stored = gzip.compress(blob, 9)
+            compressed = len(stored) < len(blob)
+            data = stored if compressed else blob
+            write_chain(out / name, data)
+            row = {
+                "path": path,
+                "file": name,
+                "versions": len(versions),
+                "raw_bytes": raw,
+                "chain_bytes": len(data),
+                "compressed": compressed,
+                "gzip_bytes": gz,
+                "ratio": raw / max(len(data), 1),
+                "gzip_ratio": raw / max(gz, 1),
+                "head": shas[-1],
+            }
+            rows.append(row)
+            print(
+                f"  {path}: {len(versions)} v, {raw:,} B -> "
+                f"{len(data):,} B ({row['ratio']:.1f}x)",
+                flush=True,
+            )
     secs = time.perf_counter() - t0
     raw = sum(r["raw_bytes"] for r in rows)
-    chain = sum(r["chain_bytes"] for r in rows)
+    chain = (
+        sum(r["chain_bytes"] for r in rows)
+        if not global_mode
+        else rows[0]["chain_bytes"]
+    )
     gz = sum(r["gzip_bytes"] for r in rows)
     ratio = raw / max(chain, 1)
     gzip_ratio = raw / max(gz, 1)
@@ -409,6 +457,7 @@ def run_repo(
     stats = {
         "repo": str(repo),
         "files": len(rows),
+        "global": global_mode,
         "raw_bytes": raw,
         "chain_bytes": chain,
         "gzip_bytes": gz,
@@ -425,21 +474,29 @@ def run_repo(
     lines = [
         "# Repo memory: exact history index",
         "",
-        f"- repo `{repo}`; {len(rows)} files, {raw:,} B raw",
+        f"- repo `{repo}`; {len(rows)} files, {raw:,} B raw; "
+        f"{'one global chain' if global_mode else 'one chain per file'}",
         f"- chain **{chain:,} B = {ratio:.1f}x**; gzip {gz:,} B "
         f"({gzip_ratio:.1f}x); the chain is **{vs_gzip:.1f}x better than gzip**",
         f"- every file decoded and every SHA-256 checked; {secs:.1f} s on CPU",
         "",
         "## Largest files",
         "",
-        "| path | versions | raw B | chain B | ratio |",
-        "|---|---:|---:|---:|---:|",
     ]
-    for r in top:
-        lines.append(
-            f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} | "
-            f"{r['chain_bytes']:,} | {r['ratio']:.1f}x |"
-        )
+    if global_mode:
+        lines += ["| path | versions | raw B |", "|---|---:|---:|"]
+        for r in top:
+            lines.append(f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} |")
+    else:
+        lines += [
+            "| path | versions | raw B | chain B | ratio |",
+            "|---|---:|---:|---:|---:|",
+        ]
+        for r in top:
+            lines.append(
+                f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} | "
+                f"{r['chain_bytes']:,} | {r['ratio']:.1f}x |"
+            )
     lines += [
         "",
         "## Use",
