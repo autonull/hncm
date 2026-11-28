@@ -263,3 +263,192 @@ def run_unchain(blob_path: Path, out_dir: Path, index: int) -> int:
         f"{len(versions[index]):,} B, digest ok"
     )
     return 0
+
+
+TEXT_SUFFIXES = (
+    ".py",
+    ".md",
+    ".txt",
+    ".json",
+    ".toml",
+    ".cfg",
+    ".ini",
+    ".yml",
+    ".yaml",
+    ".rst",
+    ".sh",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".css",
+    ".html",
+)
+
+
+def head_paths(repo: Path, max_file: int) -> list[tuple[str, int]]:
+    """All text files at HEAD, with sizes, path-sorted."""
+    raw = _git(repo, ["ls-tree", "-r", "-l", "HEAD"])
+    rows = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        meta, _, path = line.partition("\t")
+        parts = meta.split()
+        if len(parts) < 4:
+            continue
+        size = int(parts[3])
+        if size > max_file or not path.endswith(TEXT_SUFFIXES):
+            continue
+        rows.append((path, size))
+    return rows
+
+
+def _safe_name(path: str) -> str:
+    return path.replace("..", "_").replace("/", "__") + ".cmlh"
+
+
+def run_repo(
+    repo: Path | None,
+    out: Path,
+    report: Path,
+    data_out: Path,
+    search: str,
+    index: Path | None,
+    paths: str,
+    limit: int,
+    max_file: int,
+    window: int,
+    min_match: int,
+    cap: int,
+    depth: int,
+) -> int:
+    """Repo-wide exact memory: chain every text file's history, or search it."""
+    cfg = ChainConfig(window, min_match, cap, depth)
+    root = index or out
+    if search:
+        manifest_path = root / "manifest.json"
+        if not manifest_path.exists():
+            raise SystemExit(f"repo search: missing {manifest_path}")
+        manifest = json.loads(manifest_path.read_text())
+        needle = search.encode()
+        hits = 0
+        for row in manifest["files"]:
+            blob = (root / row["file"]).read_bytes()
+            header, versions = decode_chain(blob)
+            last = versions[-1]
+            at = last.find(needle)
+            while at >= 0 and hits < 50:
+                line = last.count(b"\n", 0, at) + 1
+                start = last.rfind(b"\n", 0, at) + 1
+                end = last.find(b"\n", at)
+                text = last[start : end if end >= 0 else len(last)]
+                print(f"{row['path']}:{line}: {text.decode('utf-8', 'replace')[:120]}")
+                hits += 1
+                at = last.find(needle, at + 1)
+        print(f"repo search: {hits} exact hit(s) for {search!r}")
+        return 0
+    if repo is None:
+        raise SystemExit("repo: pass --repo to build or --search to query")
+    wanted = [p for p in paths.split(",") if p]
+    cand = [(p, 0) for p in wanted] if wanted else head_paths(repo, max_file)
+    if limit:
+        cand = cand[:limit]
+    out.mkdir(parents=True, exist_ok=True)
+    rows = []
+    t0 = time.perf_counter()
+    for path, _ in cand:
+        try:
+            commits, shas, versions = git_versions(repo, path)
+        except RuntimeError, SystemExit:
+            continue
+        blob = encode_chain(versions, path, commits, cfg)
+        header, back = decode_chain(blob)
+        if back != versions:
+            raise SystemExit(f"repo: round-trip failed for {path}")
+        raw = sum(len(v) for v in versions)
+        gz = sum(len(gzip.compress(v, 9)) for v in versions)
+        name = _safe_name(path)
+        write_chain(out / name, blob)
+        row = {
+            "path": path,
+            "file": name,
+            "versions": len(versions),
+            "raw_bytes": raw,
+            "chain_bytes": len(blob),
+            "gzip_bytes": gz,
+            "ratio": raw / max(len(blob), 1),
+            "gzip_ratio": raw / max(gz, 1),
+            "head": shas[-1],
+        }
+        rows.append(row)
+        print(
+            f"  {path}: {len(versions)} v, {raw:,} B -> "
+            f"{len(blob):,} B ({row['ratio']:.1f}x)",
+            flush=True,
+        )
+    secs = time.perf_counter() - t0
+    raw = sum(r["raw_bytes"] for r in rows)
+    chain = sum(r["chain_bytes"] for r in rows)
+    gz = sum(r["gzip_bytes"] for r in rows)
+    ratio = raw / max(chain, 1)
+    gzip_ratio = raw / max(gz, 1)
+    vs_gzip = gz / max(chain, 1)
+    stats = {
+        "repo": str(repo),
+        "files": len(rows),
+        "raw_bytes": raw,
+        "chain_bytes": chain,
+        "gzip_bytes": gz,
+        "ratio": ratio,
+        "gzip_ratio": gzip_ratio,
+        "vs_gzip": vs_gzip,
+        "exact": True,
+        "seconds": round(secs, 1),
+        "config": asdict(cfg),
+    }
+    _write_json(out / "manifest.json", {"stats": stats, "files": rows})
+    _write_json(data_out, {"stats": stats, "files": rows})
+    top = sorted(rows, key=lambda r: -r["raw_bytes"])[:20]
+    lines = [
+        "# Repo memory: exact history index",
+        "",
+        f"- repo `{repo}`; {len(rows)} files, {raw:,} B raw",
+        f"- chain **{chain:,} B = {ratio:.1f}x**; gzip {gz:,} B "
+        f"({gzip_ratio:.1f}x); the chain is **{vs_gzip:.1f}x better than gzip**",
+        f"- every file decoded and every SHA-256 checked; {secs:.1f} s on CPU",
+        "",
+        "## Largest files",
+        "",
+        "| path | versions | raw B | chain B | ratio |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for r in top:
+        lines.append(
+            f"| `{r['path']}` | {r['versions']} | {r['raw_bytes']:,} | "
+            f"{r['chain_bytes']:,} | {r['ratio']:.1f}x |"
+        )
+    lines += [
+        "",
+        "## Use",
+        "",
+        "```bash",
+        "uv run cml repo --repo /path/to/repo.git --out repo-index --limit 50",
+        "uv run cml repo --index repo-index --search 'def routing'",
+        "```",
+        "",
+        "The index is exact: each `.cmlh` replays to the same bytes and the",
+        "manifest carries the HEAD blob SHA. Search decodes the last version",
+        "and reports path, line, and the exact matching text.",
+    ]
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text("\n".join(lines) + "\n")
+    print(
+        f"repo: {len(rows)} files, {raw:,} B -> {chain:,} B "
+        f"({ratio:.1f}x, {vs_gzip:.1f}x better than gzip), "
+        f"{secs:.1f} s, exact"
+    )
+    print(f"repo: {out}")
+    print(f"repo: {report}")
+    return 0

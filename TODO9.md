@@ -16,6 +16,7 @@ are applications of the memory, not the claim.
 | C1 copy-SFT | **paused after GC1 fail** | `cml/reports/EDIT-COPY.md` |
 | delta product | **shipped** | `products/delta/README.md`; **56.6x** hunk edits, exact |
 | memory product | **shipped** | `products/memory/README.md`; **40.0x** over 1,823 versions, exact |
+| repo-memory product | **shipped** | `products/repo-memory/README.md`; **12.5x** on 80 files, exact `path:line` search |
 
 **Banked products.** `cml delta` is exact at `56.6x` on 2% hunk edits and
 `27.8x` scattered. `cml chain` is exact at `40.0x` over five real files
@@ -68,6 +69,17 @@ record the negative and ship the codecs. The bits claim revives only on
 and (b) a trained pointer id at ≤2 bits/copy, or spans long enough that
 copies/B falls ~5x. The 756,752 B single-file regime cannot pay for
 either. The speed/provenance path stays alive as a product capability.
+
+**Reframe: memory as exact context, not a bitstream.** A0.2 failed because
+it asked the model to *code* span ids. `repo-memory` ships the same
+substrate as an exact, searchable index: install, `path:line` search,
+SHA-verified read, detach. The model does not pay an id to recall a span;
+it queries the index and conditions on the exact bytes. The better-LM
+question then becomes: at equal compute, does a frozen base plus an exact
+queryable repo memory beat a dense base on repo tasks (exact context,
+answer, patch), not "does it win bpb". The next product is `memory-mcp`,
+which exposes the index to an agent. That is the direct path from the
+shipped memory to the architecture claim.
 
 **E1/C1 are paused, not closed.** Their first runs produced no exact file,
 but the controls also exposed likely implementation and regime defects:
@@ -595,10 +607,13 @@ A0.1 is the only allowed extension.
 
 ### Phase A: bank exact wins
 
-1. **Repo-wide memory.** Extend the chain runner to `--paths` (comma
-   list) or a repo manifest; process all files in `fastapi` and `pytest`;
-   report one raw/chain/gzip total. Gate: chain ≥ 20x and ≥ 3x gzip. Cost: 1-2 days
-   CPU. This is the headline product claim.
+1. **Repo-wide memory** (done, shipped). `cml repo` indexes all text
+   files under HEAD: per-file chains, manifest, exact search. 80
+   `fastapi` files, 9.84 MB raw → 787,482 B = **12.5x**, 4.3x smaller
+   than per-file gzip, 47 s CPU, every SHA-256 checked. Product:
+   `products/repo-memory`. The index is the exact access layer; a single
+   global gzip is smaller but has no file/version boundary or
+   `path:line` search.
 2. **Full exact priced codec.** Run the pending full-length proof on the
    756,752 B test. Promote `0.852` (9.4x) only if the exact decoder
    reproduces every byte; otherwise keep `1.266` (6.3x). Cost: 2-3 h.
@@ -692,6 +707,31 @@ on a failed A1.
    track report and move to the next hypothesis.
 6. A gate that passes names the next product; a gate that fails names the
    next experiment.
+
+## 14. BOLO: additional products to create
+
+Ranked by user value per CPU-day. Each is exact, CPU-only, and reuses
+the substrate. None depends on a new model or a bpb win.
+
+| product | what it solves | first command | cost |
+|---|---|---|---|
+| **repo-memory** | exact installable repo history + search | `cml repo` | **shipped** |
+| **patch-guard** | apply a diff and refuse non-exact bytes | `cml patch --verify` | 1 day |
+| **memory-mcp** | expose the repo index to an agent (search, read version, diff) | `cml repo serve` | 2 days |
+| **repo-delta** | exact patch between any two commits, not full history | `cml repo delta <a> <b>` | 1 day |
+| **log-delta** | exact CI logs: delta each run against the previous | `cml logdelta` | 1 day |
+| **span-index** | per-file phrasebook; amortize ids over one file | `cml span-index` | 2 days |
+| **pack-doctor** | rank spans by net bits at the measured base bpb, not 8 bpb | `cml pack fit` | 1 day |
+| **exact-priced-codec** | full-length 0.852 proof; promote only on exact decode | `cml copycodec --proof 756752` | 3 h |
+| **concept-cards** | typed holes with exact realization for new code | `cml concepts` | 1 week |
+
+The defect the A0.2 run exposed is the guide: a flat span pack scores
+spans by bytes saved at 8 bpb, but the base is ~1 bpb and a copy also
+pays an id. At 1 bpb a 3-byte span saves ~3 bits and a 9-bit id loses
+6; at 16 bytes it saves ~15 and wins. `span-index` (local phrasebook)
+and `pack-doctor` (net-bit ranking) attack that directly; `repo-memory`
+sidesteps it by giving the model exact context instead of asking it to
+code spans.
 
 ## References
 

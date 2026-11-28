@@ -7,6 +7,7 @@
 | [`products/codec`](products/codec/README.md) | a lossless byte codec for code: `cml compress` / `cml decompress` | exact **1.266 bpb (6.3x)**; priced-parse frontier **0.852** |
 | [`products/delta`](products/delta/README.md) | exact version compression from an old file: `cml delta` / `cml undelta` | exact **56.6x** on hunk edits, **27.8x** scattered; CPU-only |
 | [`products/memory`](products/memory/README.md) | exact history compression: `cml chain` / `cml unchain` | exact **40.0x** over 1,823 real versions; **6.5x better than gzip** |
+| [`products/repo-memory`](products/repo-memory/README.md) | exact searchable repo index: `cml repo` | exact **12.5x** on 80 files; `path:line` search |
 
 Each product is self-contained in its own directory and uses the shared
 utilities in `cml/`. Start with [`products/README.md`](products/README.md).

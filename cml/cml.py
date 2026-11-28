@@ -8832,6 +8832,20 @@ def main(argv: list[str] | None = None) -> int:
     uch.add_argument("blob", type=Path)
     uch.add_argument("--out-dir", type=Path, required=True)
     uch.add_argument("--index", type=int, default=-1)
+    rp = sub.add_parser("repo")
+    rp.add_argument("--repo", type=Path)
+    rp.add_argument("--out", type=Path, default=Path("repo-memory"))
+    rp.add_argument("--report", type=Path, default=REPORTS / "REPO-INDEX.md")
+    rp.add_argument("--json", type=Path, default=REPORTS / "repo-index.json")
+    rp.add_argument("--paths", default="")
+    rp.add_argument("--limit", type=int, default=0)
+    rp.add_argument("--max-file", type=int, default=65536)
+    rp.add_argument("--search", default="")
+    rp.add_argument("--index", type=Path)
+    rp.add_argument("--window", type=int, default=1 << 20)
+    rp.add_argument("--min-match", type=int, default=8)
+    rp.add_argument("--cap", type=int, default=256)
+    rp.add_argument("--depth", type=int, default=16)
     pf = sub.add_parser("perfile-model")
     pf.add_argument("--run", required=True)
     pf.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
@@ -9125,6 +9139,22 @@ def main(argv: list[str] | None = None) -> int:
         )
     if a.cmd == "unchain":
         return memory.run_unchain(a.blob, a.out_dir, a.index)
+    if a.cmd == "repo":
+        return memory.run_repo(
+            a.repo,
+            a.out,
+            a.report,
+            a.json,
+            a.search,
+            a.index,
+            a.paths,
+            a.limit,
+            a.max_file,
+            a.window,
+            a.min_match,
+            a.cap,
+            a.depth,
+        )
     if a.cmd == "perfile-model":
         return run_perfile_model(a.run, a.corpus, a.bytes, a.sizes, a.proof)
     if a.cmd == "copycodec":
