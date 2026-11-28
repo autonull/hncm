@@ -5,11 +5,11 @@ compute**: a frozen base plus an exact, MDL-priced, installable span
 memory. The delta codec and the Exact Edit Bench are the substrate. E1/C1
 are applications of the memory, not the claim.
 
-## Status 2026-11-27: better-LM program; Track A active
+## Status 2026-11-27: Track A paused on bits; exact codecs shipped
 
 | work | state | artifact |
 |---|---|---|
-| **Track A better-LM** | **active** | **A0.0+A0.1 pass**; A0.2 gate next |
+| **Track A better-LM** | **active** | A0.0+A0.1 pass; **A0.2 bits fail**; A1 blocked |
 | data + benchmark | **done** | `cml/editdata.py`; 5 repos, 12,811 edits, repo split |
 | retrieval G0 | **done** | `cml/reports/EDIT-LM.md`; exact `0.000` on 1,648 test commits |
 | E1 locator | **paused after GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
@@ -49,17 +49,25 @@ the 1,024 point on total bits, not on coverage. The run exposed and fixed
 a real bug: `StaticByteCodec._feed` built an autograd graph, so the KV
 cache leaked at long context. Next is A0.2.
 
-**A0.2 work order (the next session).** Use the `-q2048` base, not a new
-trunk. (1) Induce 1,024/4,096-unit packs from the 48M train; the lexicon
-and literal-bits caches make this CPU-cheap. (2) Embed each unit from the
-trunk's causal last-state readout of its preceding context, not mean
-pooling. (3) Score each candidate with a three-parameter gate
-(cosine, log count, length) and fit copy/compute on held-out spans.
-(4) Price the chosen unit id (no longer free) and report
-payload+pack+id bits against the 0.974 stream, the 0.643 free-id oracle,
-and `0.852` LZ. Gate: ≥0.1 bpb win at ≥1.5x fewer calls. (5) Run A0b by
-permuting unit ids; a cost below 0.2 bpb narrows the claim to patches.
-Do not start A1 before A0.2 and A0b are recorded.
+**A0.2 recorded 2026-11-27: bits fail; speed/provenance pass.** On the
+`-q2048` base, a 1,024-unit pack from the 48M train (15,429 B, 0.163 bpb
+charge) with the fitted 3-parameter gate and a priced id cannot beat the
+stream. Free-id gate: **0.912** bpb (only +0.058 over the 0.970 stream,
+below the 0.1 gate); count prior **2.768**; fixed index **2.895**; tied
+softmax **2.906**. The gate costs ~0.1 bpb and the id ~9-10 bits/copy; the
+pack's chosen-unit counts are nearly flat, and the tied softmax is uniform
+(+0.004 vs counts): the last-state content embedding does not name the
+unit. A0b: count-id shuffle **+0.414** bpb (identity is load-bearing); the
+softmax shuffle is +0.030 (that code ignores ids). Speed **1.84x** at 100%
+provenance. Artifact `cml/reports/MEMORY-GATE.md`.
+
+**A0.2 decision and revival condition.** The blocker is the id price plus
+the per-file pack charge, not the copy decision. Do not start A1 for bits;
+record the negative and ship the codecs. The bits claim revives only on
+(a) a stream large enough to amortize the pack (≥10 MB with a ≤64 KB pack)
+and (b) a trained pointer id at ≤2 bits/copy, or spans long enough that
+copies/B falls ~5x. The 756,752 B single-file regime cannot pay for
+either. The speed/provenance path stays alive as a product capability.
 
 **E1/C1 are paused, not closed.** Their first runs produced no exact file,
 but the controls also exposed likely implementation and regime defects:
@@ -138,10 +146,10 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 
 | id | experiment | cost | gate |
 |---|---|---|---|
-| **A0** | on the 2K base: induce a 4k-64k exact-span pack; tied embeddings from the last-state readout; fit a 3-parameter gate; provenance tags (256 B oracle is A0.0) | **next** (A0.2); A0.0/A0.1 passed | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win; structured ≥ 1.5x decode at exact quality; pack ≤ 1 MB; provenance round-trip 100% |
-| **A0b** | shuffle control: permute concept ids, keep embeddings | hours | must cost ≥ 0.2 bpb, or identity is decorative and the claim narrows to patches |
-| **A1** | equal-charged-bytes: pack vs kNN vs LoRA at 64k/256k/1MB | 1 week | pack wins ≥ 2 of 3 structured domains; prose may go to LoRA |
-| **A2** | train the head: mixture NLL + charge on DP parses | 1-2 weeks | tied embeddings beat counts on held-out spans; ≥ 20% acceptance per pack byte |
+| **A0** | on the 2K base: induce a 4k-64k exact-span pack; tied embeddings from the last-state readout; fit a 3-parameter gate; provenance tags (256 B oracle is A0.0) | **minimal A0.2 failed on bits**; speed 1.84x | text ≤ 0.01 bpb loss; code/JSON ≥ 0.1 bpb win (**fail**); structured ≥ 1.5x decode at exact quality (**pass**); pack ≤ 1 MB (**pass**); provenance round-trip 100% (**pass**); A0b shuffle ≥ 0.2 (**pass**) |
+| **A0b** | shuffle control: permute concept ids, keep embeddings | hours | **done, pass**: count-id shuffle costs +0.414 bpb; identity is load-bearing |
+| **A1** | equal-charged-bytes: pack vs kNN vs LoRA at 64k/256k/1MB | 1 week | **blocked**: A0.2 bits fail; do not start |
+| **A2** | train the head: mixture NLL + charge on DP parses | 1-2 weeks | **gated on a ≥10 MB stream or long spans**; tied head must reach ≤2 bits/copy |
 | **A3** | two-clock / CoLib: concept tokens, holes, planning | 1 GPU-month | G0 parity, G2 shuffle, G4 composition ≥ +10 points |
 
 ### Efficiency audit: three fixes
@@ -149,8 +157,8 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 1. **Base context.** The frozen 20M trunk had `seq = 256` (run
    `codec-byte-model-code-756752-d448-l8`); it could not condition on a
    4k-64k pack. A0.0 measured the 256-byte oracle (pass) and A0.1 trained
-   the `seq=2048` 20M trunk (0.974 bpb, −23%). Use the `-q2048` run for
-   A0.2; do not train another base here.
+   the `seq=2048` 20M trunk (0.974 bpb, −23%). A0.2 used `-q2048`; the
+   remaining blocker is the id price and pack charge, not the base.
 2. **Metric.** bpb alone duplicates the LZ copy arm (`0.852`) and the 40x
    chain. The unique claim is install, exact delete, and provenance at equal
    quality. Gate on bits-to-adapt and exact deletion first; bpb is a safety
@@ -407,9 +415,12 @@ Track A leads. The edit applications come after the memory has a signal.
    Pass at 1,024 units: **0.804** vs **0.852** bpb.
 4. **A0.1 2K base** (done): extend the byte trunk to `seq=2048` on
    code; **0.974** bpb vs **1.265** at seq 256 (−23%), proof OK.
-5. **A0.2 gate** (next): tied span embeddings + a three-parameter
-   copy/compute gate on the 2K base; first real better-LM test.
-6. **A1 equal bytes**: pack vs kNN vs LoRA at 64k/256k/1MB.
+5. **A0.2 gate** (done, bits fail): tied span embeddings + a
+   three-parameter copy/compute gate on the 2K base. Free-id gate 0.912
+   bpb; count-prior ids 2.768; speed 1.84x; A0b +0.414. The id price and
+   pack charge are the blocker.
+6. **A1 equal bytes** (blocked): do not start on an A0.2 bits fail; a
+   large-stream or long-span revival must come first.
 7. **A0-P pack ops**: attach/detach/diff/rm and exact delete on the
    chain; repo-wide memory. Supporting product, CPU only.
 8. **E1/C1 controls**: oracle-message, matched priors, anchored subset,
@@ -435,6 +446,8 @@ uv run cml memory-probe --oracle --tag 2k \
   --run codec-byte-model-code-756752-d448-l8-q2048
 uv run cml codec --arm byte-model --seq 2048 --steps 8000 --d 448 --layers 8 \
   --scale-cap 48000000 --bytes 756752
+uv run cml memory-gate --run codec-byte-model-code-756752-d448-l8-q2048 \
+  --units 1024 --min-count 16
 
 # applications, only after Track A has a signal
 uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
@@ -456,8 +469,8 @@ A0 and A1 pass.
 |---|---:|---|
 | **A0.0 oracle copy** | 2 h CPU | **done, pass**; 0.804 vs 0.852 bpb at 1,024 units |
 | **A0.1 2K base** | 1-2 GPU-h | **done, pass**: 0.974 bpb at seq 2048 vs 1.265 |
-| **A0.2 tied embeddings + gate** | 1 day | first real better-LM test |
-| **A1 equal-charged-bytes** | 1 week | pack vs kNN vs LoRA |
+| **A0.2 tied embeddings + gate** | 1 day | **done, bits fail**: 0.912 free-id, 2.768 priced; speed 1.84x |
+| **A1 equal-charged-bytes** | 1 week | **blocked** until A0.2 bits revives |
 | **A0-P pack ops + repo memory** | 2-3 CPU-days | supporting product; never first in a report |
 | exact priced codec proof | 2-3 h | supporting product |
 | E1 controls | 45 min GPU | applications of memory |
@@ -494,7 +507,7 @@ substitute for the architecture claim.
 | horizon | win | metric | state |
 |---|---|---|---|
 | now | **better-LM oracle** | A0.0 0.804 vs 0.852 bpb, 3.19x calls | **pass** |
-| next | **A0.2 gate** | tied embeddings + gate on the 2K base; ≥0.1 bpb win | A0.1 pass (−0.291) |
+| now | **A0.2 gate** | fitted gate + priced ids ≥0.1 bpb win | **bits fail**: id cost 1.9 bpb; speed 1.84x, A0b pass |
 | next | **equal-byte adapter** | pack beats kNN/LoRA on ≥ 2/3 domains | A1 |
 | research | **composition** | G4 +10 points on held-out slots | A3 |
 | supporting | delta / memory | 56.6x / 40.0x exact | shipped |
@@ -543,10 +556,13 @@ are never allowed to displace the architecture gates.
    4,096 ties; the next pack point is A0.1.
 2. **A0.1 2K base** (done, pass): 0.974 bpb at `seq=2048`, −0.291
    against the 256-byte trunk. The base can now read a longer pack.
-3. **A0.2 gate + tied embeddings** (next, 1 day): the first real
-   better-LM test; no signal over counts → stop.
-4. **A1 equal-charged-bytes** (1 week): pack vs kNN vs LoRA at 64k/256k/
-   1MB. This is the adaptation claim.
+3. **A0.2 gate + tied embeddings** (done, bits fail): free-id gate
+   0.912, count-prior ids 2.768, speed 1.84x, A0b +0.414. The id price
+   and per-file pack charge dominate; tied softmax does not beat counts.
+   Revival needs a ≥10 MB stream (≤64 KB pack) and ≤2 bits/copy, or
+   long spans that cut copies/B ~5x.
+4. **A1 equal-charged-bytes** (blocked): do not run on a failed A0.2
+   bits gate; the adaptation claim waits for a revived pack.
 5. **A0-P pack ops + repo-wide memory** (CPU, parallel): exact delete,
    provenance, repo-level memory ratio. Supporting wins, not the claim.
 6. B controls E1-R0, E1-R1, C1-R0: 45 minutes; E1/C1 are applications

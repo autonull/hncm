@@ -3658,6 +3658,241 @@ def run_memory_probe(
     return 0
 
 
+def run_memory_gate(
+    run: str,
+    corpus_name: str,
+    nbytes: int,
+    units: int,
+    min_count: int,
+    scale_cap: int,
+    fit_bytes: int,
+    samples: int,
+    seed: int,
+) -> int:
+    """A0.2: fit the 3-parameter copy gate and price the unit id.
+
+    The pack comes from the 48M train; the unit embedding is the trunk's
+    last-state readout of the unit's own bytes; the query is the current
+    context state. The gate is logistic on (tied score, length, log count).
+    The copy must also name the unit: charge the count prior or a fixed
+    index. The A0b control permutes the id -> (embedding, count) map.
+    """
+    import bytecodec
+
+    t0 = time.perf_counter()
+    corpus = (
+        code_scale_corpus(scale_cap)
+        if corpus_name == "code"
+        else text_corpus(corpus_name)
+    )
+    model = bytecodec.load_model(RUNS / run / "model.pt")
+    cfg = Config(
+        corpus=corpus_name,
+        stream_bytes=len(corpus.raw),
+        val_bytes=len(corpus.test),
+        dict_size=units,
+        min_count=min_count,
+        seed=seed,
+    )
+    pack, _, total = load_pack(cfg, corpus.train, RUNS / f"a02-{units}")
+    entries = pack.entries
+    pack_size = 12 + sum(len(e.data) + 6 for e in entries)
+    trie = make_trie(entries)
+    e_c = span_embeddings(model, entries)
+    fit = corpus.train[:fit_bytes]
+    fit_ids = torch.frombuffer(bytearray(fit), dtype=torch.uint8).long()
+    train_nll, train_hs, train_n = stream_nll(model, fit_ids)
+    tied = fit_gate(
+        model,
+        entries,
+        trie,
+        fit,
+        total,
+        e_c,
+        train_nll,
+        train_hs,
+        train_n,
+        samples=samples,
+        neural=True,
+    )
+    counts_gate = fit_gate(
+        model,
+        entries,
+        trie,
+        fit,
+        total,
+        e_c,
+        train_nll,
+        train_hs,
+        train_n,
+        samples=samples,
+        neural=False,
+    )
+    tied_scale = fit_tied_scale(train_hs, e_c, trie, fit, train_n, seed=seed)
+    del train_nll, train_hs
+    torch.cuda.empty_cache()
+    data = corpus.test[:nbytes]
+    test_ids = torch.frombuffer(bytearray(data), dtype=torch.uint8).long()
+    test_nll, test_hs, test_n = stream_nll(model, test_ids)
+    perm = torch.randperm(len(entries), generator=torch.Generator().manual_seed(seed))
+    arms = [
+        ("tied-oracle", tied, "", None, 1.0),
+        ("tied-count", tied, "count", None, 1.0),
+        ("tied-index", tied, "index", None, 1.0),
+        ("tied-softmax", tied, "tied", None, tied_scale),
+        ("counts-count", counts_gate, "count", None, 1.0),
+        ("tied-shuffle", tied, "count", perm, 1.0),
+        ("softmax-shuffle", tied, "tied", perm, tied_scale),
+    ]
+    rows = []
+    for name, gate, identity, p, scale in arms:
+        m = adapter_eval(
+            model,
+            entries,
+            trie,
+            total,
+            e_c,
+            gate,
+            data,
+            test_nll,
+            test_hs,
+            test_n,
+            pack_size,
+            len(data),
+            identity=identity,
+            perm=p,
+            tied_scale=scale,
+        )
+        calls = m["copies"] + m["fallbacks"]
+        m |= {
+            "arm": name,
+            "identity": identity,
+            "total_bpb": m["adapter_bpb"] + m["charge"],
+            "calls": calls,
+            "calls_per_byte": calls / max(test_n - 1, 1),
+            "speedup": (test_n - 1) / max(calls, 1),
+            "lz_delta": m["adapter_bpb"] + m["charge"] - LZ_BPB,
+        }
+        rows.append(m)
+        print(
+            f"{name}: {m['total_bpb']:.3f} bpb "
+            f"({m['adapter_bpb']:.3f} + {m['charge']:.3f}), "
+            f"accept {m['accept']:.3f}, cov {m['coverage']:.3f}, "
+            f"{m['speedup']:.2f}x",
+            flush=True,
+        )
+    secs = time.perf_counter() - t0
+    base = rows[0]["base_bpb"]
+    by = {r["arm"]: r for r in rows}
+    decodable = min(
+        (by[a] for a in ("tied-count", "tied-index", "tied-softmax")),
+        key=lambda r: r["total_bpb"],
+    )
+    best = min(rows, key=lambda r: r["total_bpb"])
+    win = base - decodable["total_bpb"]
+    count_shuffle = by["tied-shuffle"]["total_bpb"] - by["tied-count"]["total_bpb"]
+    softmax_shuffle = (
+        by["softmax-shuffle"]["total_bpb"] - by["tied-softmax"]["total_bpb"]
+    )
+    shuffle_cost = (
+        softmax_shuffle if decodable["arm"] == "tied-softmax" else count_shuffle
+    )
+    passed = win >= 0.1 and decodable["total_bpb"] < LZ_BPB
+    lines = [
+        "# A0.2: fitted gate with priced unit ids",
+        "",
+        f"- run `{run}` on `{corpus_name}` sha `{corpus.sha[:12]}`, "
+        f"held-out {len(data):,} B",
+        f"- base {base:.3f} bpb; LZ copy arm `{LZ_BPB:.3f}`",
+        f"- pack {len(entries):,} units, {pack_size:,} B "
+        f"(content + 6 B/unit for count and length); charge "
+        f"{by['tied-count']['charge']:.3f} bpb",
+        "- gate features: tied cosine + 0.5 log count, length/16, log count",
+        f"- softmax temperature {tied_scale:.0f}; fit on {len(fit):,} B train, "
+        f"{samples:,} sampled candidates",
+        "",
+        "| arm | id | accept | coverage | payload bpb | charge | total | "
+        "vs stream | vs LZ | calls/B | speedup | held bpb |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for r in rows:
+        lines.append(
+            f"| {r['arm']} | {r['identity'] or 'oracle'} | "
+            f"{r['accept']:.3f} | {r['coverage']:.3f} | "
+            f"{r['adapter_bpb']:.3f} | {r['charge']:.3f} | "
+            f"{r['total_bpb']:.3f} | {base - r['total_bpb']:+.3f} | "
+            f"{r['lz_delta']:+.3f} | {r['calls_per_byte']:.3f} | "
+            f"{r['speedup']:.2f}x | {r['held_bpb']:.3f} |"
+        )
+    lines += [
+        "",
+        "## Read",
+        "",
+        f"- best arm **{best['arm']}** at {best['total_bpb']:.3f} bpb; "
+        f"best decodable **{decodable['arm']}** at "
+        f"{decodable['total_bpb']:.3f}, {win:+.3f} against the stream "
+        f"and {decodable['lz_delta']:+.3f} against LZ.",
+        f"- tied embeddings vs counts: "
+        f"{by['counts-count']['total_bpb'] - by['tied-count']['total_bpb']:+.3f} "
+        f"bpb in favour of "
+        f"{'tied' if by['tied-count']['total_bpb'] < by['counts-count']['total_bpb'] else 'counts'}.",
+        f"- A0b shuffle costs: count **{count_shuffle:+.3f}**, "
+        f"softmax **{softmax_shuffle:+.3f}**; chosen "
+        f"**{shuffle_cost:+.3f}** "
+        f"({'pass' if shuffle_cost >= 0.2 else 'fail'}: ids are "
+        f"{'load-bearing' if shuffle_cost >= 0.2 else 'decorative'}).",
+        "",
+    ]
+    if passed:
+        lines += [
+            f"**A0.2 pass.** The fitted gate with the **{decodable['arm']}** "
+            f"id code keeps a ≥0.1 bpb win over the stream and beats the LZ "
+            f"copy arm. This is the first non-oracle better-LM signal; A1 is "
+            f"the next gate.",
+        ]
+    else:
+        lines += [
+            "**A0.2 bits fail.** No decodable id code keeps a ≥0.1 bpb win "
+            "over the stream. The gate still gives "
+            f"{decodable['speedup']:.2f}x decode at 100% provenance and the "
+            f"chosen shuffle costs {shuffle_cost:+.3f} bpb, so identity is "
+            "load-bearing; the blocker is the id price plus the pack charge, "
+            "not the copy decision. Record the negative; do not start A1 for "
+            "bits. The next experiment is a large-stream amortization test "
+            "(or a trained pointer head), not another 756 KB run.",
+        ]
+    lines += ["", f"Took {secs:.0f} s on one GPU.", ""]
+    write_json(
+        REPORTS / "memory-gate.json",
+        {
+            "run": run,
+            "corpus": corpus_name,
+            "corpus_sha": corpus.sha,
+            "train_sha": corpus.train_sha,
+            "n": len(data),
+            "units": len(entries),
+            "pack_bytes": pack_size,
+            "base_bpb": base,
+            "lz_bpb": LZ_BPB,
+            "rows": rows,
+            "tied": tied,
+            "counts_gate": counts_gate,
+            "tied_scale": tied_scale,
+            "decodable": decodable["arm"],
+            "win": win,
+            "count_shuffle": count_shuffle,
+            "softmax_shuffle": softmax_shuffle,
+            "shuffle_cost": shuffle_cost,
+            "passed": passed,
+            "seconds": round(secs, 1),
+            "git": git_sha(),
+        },
+    )
+    write_text(REPORTS / "MEMORY-GATE.md", "\n".join(lines))
+    print("\n".join(lines))
+    return 0
+
+
 def _median(values: list[float]) -> float | None:
     return float(np.median(values)) if values else None
 
@@ -4413,6 +4648,7 @@ CACHE = Path(os.environ.get("HNCM_CACHE", str(Path.home() / ".cache/hncm")))
 PACK_MAGIC = b"CMLP"
 CAP = 16
 HOLDOUT = 10
+LZ_BPB = 0.852
 
 
 def corpus_bytes(name: str) -> bytes:
@@ -5170,6 +5406,39 @@ def fit_gate(
     }
 
 
+def fit_tied_scale(
+    hs: torch.Tensor,
+    e_c: torch.Tensor,
+    trie: dict,
+    train: bytes,
+    n_eval: int,
+    samples: int = 20_000,
+    seed: int = 0,
+) -> float:
+    """The softmax temperature that maximizes the true unit's likelihood."""
+    rng = np.random.default_rng(seed)
+    picks = rng.choice(n_eval - 1, size=min(n_eval - 1, samples), replace=False) + 1
+    ts, idxs = [], []
+    for t in sorted(picks.tolist()):
+        length, idx = longest_match(trie, train, t)
+        if length >= 2 and t + length <= n_eval:
+            ts.append(t)
+            idxs.append(idx)
+    if not ts:
+        return 16.0
+    z = hs[torch.tensor(ts)].float()
+    z = z / z.norm(dim=1, keepdim=True).clamp_min(1e-9)
+    z = z @ e_c.float().T
+    true = z[torch.arange(len(ts)), torch.tensor(idxs)]
+    best = (16.0, -math.inf)
+    for scale in (2, 4, 8, 12, 16, 24, 32, 48, 64, 96):
+        lp = scale * true - torch.logsumexp(scale * z, 1)
+        score = float(lp.mean())
+        if score > best[1]:
+            best = (float(scale), score)
+    return best[0]
+
+
 def adapter_eval(
     model: Trunk,
     entries: tuple[Entry, ...],
@@ -5186,14 +5455,33 @@ def adapter_eval(
     neural: bool = True,
     threshold: float = 0.5,
     identity: str = "",
+    perm: torch.Tensor | None = None,
+    tied_scale: float = 16.0,
 ) -> dict:
-    """`identity` charges the span's name: "" (oracle), "count" or "index".
+    """`identity` charges the span's name: "" (oracle), "count", "index" or "tied".
 
     A copy must tell the decoder *which* entry; the oracle rate omits it. The
-    count prior is the cheapest decodable code, the fixed index the priciest.
+    count prior is a decodable code, the fixed index the priciest, and `tied`
+    the softmax over the content-addressed embeddings (one fitted temperature).
+    `perm` scrambles the id -> (embedding, count) map for the A0b control.
     """
     count = torch.tensor([e.count for e in entries])
+    if perm is not None:
+        count = count[perm]
+        e_c = e_c[perm]
     fixed = math.log2(max(len(entries), 1))
+    pack_total = max(float(count.sum()), 1.0)
+    tied_norm = None
+    if identity == "tied":
+        ec = e_c.float()
+        ec_gpu = ec.cuda()
+        tied_norm = torch.empty(n_eval)
+        for a in range(0, n_eval, 8192):
+            end = min(a + 8192, n_eval)
+            h = hs[a:end].float()
+            h = h / h.norm(dim=1, keepdim=True).clamp_min(1e-9)
+            z = tied_scale * (h.cuda() @ ec_gpu.T)
+            tied_norm[a:end] = torch.logsumexp(z, 1).cpu()
     tau = float(gate["tau"])
     alpha = float(gate["alpha"])
     bits = 0.0
@@ -5221,9 +5509,14 @@ def adapter_eval(
             if pi >= threshold and passes:
                 span_bits = entropy(pi)
                 if identity == "count":
-                    span_bits += math.log2(total / max(int(count[idx]), 1))
+                    span_bits += math.log2(pack_total / max(int(count[idx]), 1))
                 elif identity == "index":
                     span_bits += fixed
+                elif identity == "tied":
+                    h = hs[t].float()
+                    h = h / h.norm().clamp_min(1e-9)
+                    z = tied_scale * float(h @ ec[idx])
+                    span_bits += (float(tied_norm[t]) - z) / math.log(2)
                 bits += span_bits
                 copies += 1
                 copy_bytes += length
@@ -8434,6 +8727,16 @@ def main(argv: list[str] | None = None) -> int:
     mp.add_argument("--scale-cap", type=int, default=48_000_000)
     mp.add_argument("--copy-bpb", type=float, default=0.852)
     mp.add_argument("--tag", default="")
+    mg = sub.add_parser("memory-gate")
+    mg.add_argument("--run", default="codec-byte-model-code-756752-d448-l8-q2048")
+    mg.add_argument("--corpus", choices=("code", "shakespeare"), default="code")
+    mg.add_argument("--bytes", type=int, default=756_752)
+    mg.add_argument("--units", type=int, default=1024)
+    mg.add_argument("--min-count", type=int, default=16)
+    mg.add_argument("--scale-cap", type=int, default=48_000_000)
+    mg.add_argument("--fit-bytes", type=int, default=1_000_000)
+    mg.add_argument("--samples", type=int, default=250_000)
+    mg.add_argument("--seed", type=int, default=0)
     pf = sub.add_parser("portfolio")
     pf.add_argument("--round", type=int, default=1)
     pf.add_argument("--families", default="all")
@@ -8728,6 +9031,18 @@ def main(argv: list[str] | None = None) -> int:
             a.scale_cap,
             a.copy_bpb,
             a.tag,
+        )
+    if a.cmd == "memory-gate":
+        return run_memory_gate(
+            a.run,
+            a.corpus,
+            a.bytes,
+            a.units,
+            a.min_count,
+            a.scale_cap,
+            a.fit_bytes,
+            a.samples,
+            a.seed,
         )
     if a.cmd == "portfolio":
         return run_portfolio(a.round, a.families, a.task, a.budget)
