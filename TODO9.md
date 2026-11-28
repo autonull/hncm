@@ -1,14 +1,15 @@
-# TODO9 — the exact-edit capability program: two tracks, one benchmark
+# TODO9 — the better-LM program: exact memory, one benchmark
 
-Status: 2026-11-27. `TODO8.md` shipped the delta codec. This plan changes
-the objective from bits per byte to **exact edit capability**. It keeps
-the original copy-edit LM and adds a cheaper edit-compiler track. Both are
-funded; the benchmark decides which one wins.
+Status: 2026-11-27. The goal is a **better language model at equal
+compute**: a frozen base plus an exact, MDL-priced, installable span
+memory. The delta codec and the Exact Edit Bench are the substrate. E1/C1
+are applications of the memory, not the claim.
 
-## Status 2026-11-27: wins banked; E1/C1 paused, not abandoned
+## Status 2026-11-27: better-LM program; Track A active
 
 | work | state | artifact |
 |---|---|---|
+| **Track A better-LM** | **active** | **A0.0 oracle next**; then A0.1/A0.2/A1 |
 | data + benchmark | **done** | `cml/editdata.py`; 5 repos, 12,811 edits, repo split |
 | retrieval G0 | **done** | `cml/reports/EDIT-LM.md`; exact `0.000` on 1,648 test commits |
 | E1 locator | **paused after GE1 fail** | `cml/reports/EDIT-LOCATOR.md` |
@@ -16,10 +17,10 @@ funded; the benchmark decides which one wins.
 | delta product | **shipped** | `products/delta/README.md`; **56.6x** hunk edits, exact |
 | memory product | **shipped** | `products/memory/README.md`; **40.0x** over 1,823 versions, exact |
 
-**Banked wins.** `cml delta` is exact at `56.6x` on 2% hunk edits and
+**Banked products.** `cml delta` is exact at `56.6x` on 2% hunk edits and
 `27.8x` scattered. `cml chain` is exact at `40.0x` over five real files
-(90.1 MB → 2.26 MB), `6.5x` better than gzip. Both are CPU-only. Tests:
-`55 passed`.
+(90.1 MB → 2.26 MB), `6.5x` better than gzip. These are evidence and
+fallback for the architecture, not the goal. Tests: `55 passed`.
 
 **G0 recorded: pass.** Retrieval on 1,648 held-out `tiangolo/fastapi`
 commits: exact `0.000`, valid `0.027`, output `0.991x`. Train `5,672`
@@ -44,6 +45,24 @@ a cheap correctness control, a measurable signal, and a kill rule. A
 negative result that passes its control is evidence; one that fails its
 control is a bug.
 
+## The claim: a better language model
+
+At equal parameters, FLOPs, and charged bytes, the memory-augmented LM is a
+**better LM** than:
+
+- a byte/patch transformer at equal FLOPs: lower bits/byte on code,
+  JSON, and logs;
+- the same model without memory: same or better quality, faster structured
+  decode;
+- LoRA and kNN at equal charged bytes: better adaptation per byte;
+- a dense model on knowledge operations: exact provenance, exact deletion,
+  install/detach/diff, and typed-hole composition.
+
+This is not a chat-SOTA claim. It is a better-LM-at-equal-compute claim,
+measured in bits, tokens per second, adaptation bytes, and exact
+capabilities. Products are the memory substrate and the fallback, not the
+main line.
+
 ## Ambition: the memory-augmented LM
 
 `hncm.r1-r7.md` converge on one thesis, stated seven ways:
@@ -52,9 +71,9 @@ control is a bug.
 > editable memory of spans, with a copy-or-compute gate. Knowledge is data;
 > compute routes around known spans; every emitted span is verifiable.
 
-That is an architecture claim, not a codec claim. It is bigger than exact
-edit prediction: the memory is the adapter, the tokenizer, the drafter, and
-the audit trail at once.
+That is a better-LM claim, not a codec claim. It is bigger than exact edit
+prediction: the memory is the adapter, the tokenizer, the drafter, and the
+audit trail at once. Products are evidence; the architecture is the goal.
 
 | plan | name | core claim | decisive test |
 |---|---|---|---|
@@ -111,15 +130,16 @@ corpus. A0.1 trains a 2K-context base only if A0.0 passes.
 |---|---|---|---|
 | **A0-P** | pack ops on the exact chain: attach/detach/rm/diff plus provenance; exact delete | 1-2 CPU-days | cannot delete exactly → no product |
 | **A0.0** | oracle copy inside 256 B: free pack IDs, charged pack bytes; compare to the LZ copy arm | 2 h CPU | oracle ≥ copy arm → defer the LM claim |
+| **A0.0b** | if bits fail: speed/provenance upper bound on the same 256 B probe | 2 h CPU | ≥ 1.5x or 100% provenance keeps the claim alive |
 | **A0.1** | 2K-context 20M trunk on code, only if A0.0 passes | 1-2 GPU-h | quality/context fails → stop |
 | **A0.2** | tied span embeddings + 3-parameter gate on the 2K base | 1 day | no signal over counts → stop |
 | **A0.3** | provenance, copy acceptance, structured decode on the 2K base | 1 day | gates in the A0 table |
 
-A0-P is the efficient first win: it needs no base and no training.
-Concretely: `cml chain attach/detach/diff/rm --index`, rebuild the chain
-after a delete, verify every remaining version, and record the new ratio
-and the removed provenance. A0.0 decides whether the LM integration is
-worth a base. Do not train A0.1 until A0.0 passes.
+A0-P is a supporting product, not the main gate: it needs no base and
+no training. Concretely: `cml chain attach/detach/diff/rm --index`, rebuild
+the chain after a delete, verify every remaining version, and record the
+new ratio and removed provenance. A0.0 decides whether the LM integration
+is worth a base. Do not train A0.1 until A0.0 passes.
 
 **Decision rule.** If A0 or A0b fails, record the negative, ship the codecs,
 and do not claim an architecture. If A0 passes, A1 decides whether the
@@ -131,41 +151,53 @@ extension. A1 is one week.
 A2/A3 need a separate 1 GPU-month; the current 8 GPU-hour budget does not
 cover them. Do not start A2 before A0 and A1 pass.
 
-## 0. One claim, two formulations
+## 0. One claim, three formulations
 
-**Track E (edit compiler).** A small model that predicts *where* a file
-changed and *what* replaces it beats a larger full-file byte LM on real
-commits, at a small fraction of the output bytes.
+**Track A (main).** At equal parameters, FLOPs, and charged bytes, a frozen
+base plus an exact span memory is a better LM: lower bits on code/JSON/logs,
+faster structured decode, better adaptation per byte than LoRA/kNN, and
+exact provenance/deletion.
 
-**Track C (original copy-edit LM).** A small LM that emits an exact delta
-program beats a larger full-file byte LM on real commits, at 5-50x fewer
-output tokens.
+**Track E (edit compiler, application).** A small model that predicts
+*where* a file changed and *what* replaces it beats a larger full-file byte
+LM on real commits, at a small fraction of the output bytes.
 
-Both are verified by exact decode, exact match, or test pass. Neither is a
-bpb claim.
+**Track C (copy-edit LM, application).** A small LM that emits an exact
+delta program beats a larger full-file byte LM on real commits, at 5-50x
+fewer output tokens.
+
+All are verified by exact decode, exact match, or test pass. Track A is the
+better-LM claim; E and C are applications of the same memory.
 
 ## 1. Why this is the better bet
 
-- The delta arm is exact and measured: **56.6x** on 2% edits in 20 hunks,
-  **27.8x** on scattered 2% edits (`cml/reports/DELTA.md`).
-- The exact decoder is a free verifier. The reward is binary.
-- A full-file LM pays for every byte; both edit tracks pay only for
-  changes.
-- The synthetic delta benchmark is replaced by real old/new commit pairs.
-- Track E is cheaper to train; Track C is more general and is the original
-  bet. Run both.
+- **The memory is exact and cheap.** Delta is 56.6x and chains 40x on real
+  code, byte-exact. Exact spans are a safe substrate: a wrong copy is
+  caught by a digest, not averaged away.
+- **The base is amortized.** Intelligence lives in frozen weights; the
+  per-domain pack is kilobytes. Adaptation is install, not training.
+- **Copy/compute routes around known spans.** Known bytes cost a copy
+  decision, not per-byte FLOPs; novel bytes get the neural path. That is
+  where better bits and speed at equal compute come from.
+- **The claim is falsifiable at equal compute.** Byte/BPE/patch baselines
+  and LoRA/kNN at equal charged bytes are the controls. No vague "feels
+  better" claim.
+- **E1/C1 are applications.** Predict-where-it-changed and emit-a-delta
+  are ways to use the memory, not the memory thesis.
 
-## 2. The shared task and benchmark
+## 2. Benchmarks: better-LM and edit application
 
-Given:
+**Track A (better LM).** At equal parameters, FLOPs, and charged bytes:
 
-- `old`: the parent file bytes;
-- `message`: the commit message (and optional failing test name);
-- `new`: the target file bytes.
+- bits/byte on code, JSON, and logs;
+- structured tokens/s at equal quality;
+- adaptation per charged byte vs LoRA and kNN;
+- provenance round-trip and exact deletion.
 
-The benchmark is **Exact Edit Bench**: real commits, split by repository,
-with exact-match and test-pass labels. It is shared by both tracks and is
-itself a product.
+**Edit application.** Given `old`, the commit message, and `new`, predict
+`new` exactly. This is the **Exact Edit Bench**: real commits, split by
+repository, exact-match and test-pass labels. Track E/C use it; it is not
+the Track A claim.
 
 ## 3. Data
 
@@ -247,27 +279,47 @@ exact delta decoder and compare to `new`.
 This track is not a fallback. It is the original idea: a single
 autoregressive policy over edits, with SFT, DPO/RLFP, and typed holes.
 
-## 6. Arms: a variety of solutions
+## 6. Arms
+
+### Track A: the better-LM claim
+
+| arm | what it does | role | cost |
+|---|---|---|---|
+| **A0.0** oracle | free pack IDs inside 256 B; charged pack bytes | decides the LM path | 2 h CPU |
+| **A0.1** base | 2K-context 20M byte trunk | minimum base for a pack | 1-2 GPU-h |
+| **A0.2** gate | tied span embeddings + copy/compute gate | first real better-LM test | 1 day |
+| **A1** equal bytes | pack vs kNN vs LoRA at equal charged bytes | adaptation claim | 1 week |
+| **A3** two-clock | concept tokens, holes, planning | capability claim | GPU-month |
+
+### Edit applications (Track E/C)
 
 | arm | what it does | role | cost |
 |---|---|---|---:|
 | **R** retrieval | nearest old/new pair or patch by message; apply exactly | cheap baseline; kills a fake win | 30 min CPU |
 | **F** full-file | same trunk generates the whole new file | compute-matched baseline | 1-2 GPU-h |
-| **E1** locator | old + message -> changed spans | fast Track E gate | 1 GPU-h |
-| **E2** locator + writer | spans + replacement bytes -> exact assembler | Track E product | 1-2 GPU-h |
-| **C1** copy-SFT | SFT on serialized delta actions | original Track C arm | 1-2 GPU-h |
-| **D** copy-DPO | SFT + DPO on exact-decode preferences | RLFP-style preference step | 1 GPU-h |
-| **G** copy-RLFP | GRPO/REINFORCE if DPO plateaus | verifiable-reward fallback | 1 GPU-h |
-| **H** holes-SFT | copy + typed holes for new code | compositional capability | 1 GPU-h |
+| **E1** locator | old + message -> changed spans | application gate | 1 GPU-h |
+| **E2** locator + writer | spans + replacement bytes -> exact assembler | application product | 1-2 GPU-h |
+| **C1** copy-SFT | SFT on serialized delta actions | application arm | 1-2 GPU-h |
+| **D** copy-DPO | SFT + DPO on exact-decode preferences | preference step | 1 GPU-h |
+| **G** copy-RLFP | GRPO/REINFORCE if DPO plateaus | fallback | 1 GPU-h |
+| **H** holes-SFT | copy + typed holes for new code | compositional application | 1 GPU-h |
 | **V** verifier rerank | sample K, decode each, keep exact/test-pass | test-time compute | 2-4x inference |
 
-Order: R -> F -> E1 -> E2 -> C1 -> D -> G -> H -> V. Do not train D before
-C1 has a recorded baseline. Do not drop C because E is cheaper: C is the
-general arm and the original bet.
+Track A order: A0.0 -> A0.1 -> A0.2 -> A1 -> A3. Do not start A0.1 until
+A0.0 passes. Edit order: R -> F -> E1 -> E2 -> C1 -> D -> G -> H -> V; run
+it only after Track A has a signal or as a cheap application.
 
 ## 7. Metrics and pre-registered gates
 
-Primary:
+**Track A primary (the better-LM claim):**
+
+- **bits/byte at equal parameters and FLOPs** vs byte/BPE/patch baselines;
+- **structured tokens/s at equal quality**;
+- **adaptation per charged byte** vs LoRA and kNN;
+- **provenance round-trip**, **exact deletion**, and **shuffle cost**
+  (A0b must cost ≥0.2 bpb).
+
+**Edit application metrics:**
 
 - **exact match**: assembled file equals `new` byte-for-byte;
 - **test pass** on the subset with runnable tests;
@@ -309,112 +361,112 @@ impossible; see `cml/reports/EDIT-COPY.md`. Do not start DPO or holes from
 this arm until C1-R0..R2 pass.
 
 A failed first run with failed controls is a bug. A failed first run with
-passed controls is evidence. Neither stops the product track; both choose
+passed controls is evidence. Neither stops the architecture track; both choose
 the next experiment.
 
 ## 8. Implementation order
 
-Delivered: data, benchmark, retrieval, delta product, memory product.
-Paused: E1/C1. The revival controls and models are ordered in §12-13,
-not repeated here.
+Track A leads. The edit applications come after the memory has a signal.
 
-1. `cml/editdata.py`: mining, filters, repo split, manifest, blob cache.
-   Tests: deterministic split, no repo leakage, diff-size filter.
-2. `cml/editlm.py`: action grammar for both tracks, target builders,
-   exact assembler, metrics.
-3. `cml editdata --repos ... --out ...`: build manifest and split.
-4. `cml editlm --arm retrieval`: G0 baseline; `reports/EDIT-LM.md`.
-5. `cml editlm --arm locator`: E1; **paused after GE1 fail**; run the
-   E1-R0..R2 controls first (`reports/EDIT-LOCATOR.md`).
-6. `cml editlm --arm compiler`: E2; wait for a locator that passes GE1b.
-7. `cml editlm --arm copy --sft`: C1; **paused after GC1 fail**; run the
-   C1-R0..R2 controls first (`reports/EDIT-COPY.md`).
-8. `cml editlm --arm copy --dpo`: D; only after C1b has exact@K > 0.
-9. `cml editlm --arm copy --rlfp`: G only if D plateaus.
-10. `cml editlm --arm holes --sft`: H; after the preceding gate.
-11. `cml editlm --arm compiler --rerank`: V; after E2; rerank only.
-12. Reports and tests: `reports/EDIT-LM.md`, `tests/test_editlm.py`.
+1. **Data + benchmark** (done): `cml/editdata.py`, repo split, manifest.
+2. **Exact memory substrate** (done): delta, chain, 20M byte trunk.
+3. **A0.0 oracle** (next): new `cml memory-probe --oracle` on the 256 B
+   trunk; free pack IDs, charged pack bytes, compare to the LZ copy arm.
+4. **A0.1 2K base**: extend the byte trunk to `seq=1024/2048` on code,
+   only if A0.0 passes. This is the minimum base that can read a pack.
+5. **A0.2 gate**: tied span embeddings + a three-parameter copy/compute
+   gate; first real better-LM test.
+6. **A1 equal bytes**: pack vs kNN vs LoRA at 64k/256k/1MB.
+7. **A0-P pack ops**: attach/detach/diff/rm and exact delete on the
+   chain; repo-wide memory. Supporting product, CPU only.
+8. **E1/C1 controls**: oracle-message, matched priors, anchored subset,
+   one-window overfit, text/pointer grammar, beam verifier.
+9. **E1b/E1c and C1b/C1c**: only after the controls pass; applications
+   of the memory.
+10. **E2/D/H/V**: only after a capability gate passes.
+11. Reports and tests: `reports/REPO-MEMORY.md`,
+    `reports/EDIT-LM.md`, `tests/test_editlm.py`, `tests/test_memory.py`.
 
-Commands. Run from `cml/`; `runs/` is ignored.
+Commands. Run from `cml/`; new Track A commands are marked *to add*.
 
 ```bash
-# delivered
+# delivered substrate
 uv run cml editdata --repos requests,flask,pytest,httpx,fastapi \
   --cache ~/.cache/hncm/edit --out runs/edit-manifest.json
-uv run cml editlm --arm retrieval --manifest runs/edit-manifest.json \
-  --split test
 uv run cml chain --repo ~/.cache/hncm/edit/repos/psf__requests.git \
   --path requests/models.py --out runs/models.cmlh
-# paused: controls first (§12), then one model job per hypothesis
+
+# Track A, next (to add)
+uv run cml memory-probe --oracle --run codec-byte-model-code-756752-d448-l8
+uv run cml codec --arm byte-model --seq 2048 --steps 8000   # A0.1
+
+# applications, only after Track A has a signal
 uv run cml editlm --arm locator --manifest runs/edit-manifest.json \
   --split val --limit 50 --steps 500
 uv run cml editlm --arm copy --sft --manifest runs/edit-manifest.json \
   --split val --limit 50 --steps 500 --samples 8
-# E2/D/H/V commands stay out until their gate passes
+
 uv run pytest tests
 ```
 
 ## 9. Budget
 
-Total for products and controls: **8 GPU-hours** and **4 CPU-days**. One
-GPU job at a time. Track A A2/A3 needs a separate **1 GPU-month** and is
-not covered here; start it only after A0 and A1 pass.
+The main GPU budget goes to Track A. Products are CPU-only and must not
+displace the architecture gates. Current pool: **8 GPU-hours** and
+**4 CPU-days**; A2/A3 need a separate **1 GPU-month** and only start after
+A0 and A1 pass.
 
 | bucket | budget | rule |
 |---|---:|---|
-| product track (delta, memory, logs, verifier) | 4 CPU-days | bank first; no GPU |
-| **A0-P pack ops** | 1-2 CPU-days | exact delete/provenance; no base |
-| **A0.0 oracle copy** | 2 h CPU | free IDs inside 256 B; compare to LZ |
+| **A0.0 oracle copy** | 2 h CPU | first; free IDs inside 256 B, compare to LZ |
 | **A0.1 2K base** | 1-2 GPU-h | only if A0.0 passes |
-| **A0.2/A0.3 gate + provenance** | 2 days | only on the 2K base |
+| **A0.2 tied embeddings + gate** | 1 day | first real better-LM test |
 | **A1 equal-charged-bytes** | 1 week | pack vs kNN vs LoRA |
-| exact priced codec proof | 2-3 h | one batch; promote only if exact |
-| E1 controls | 45 min GPU | ≤ 15 min each |
-| C1 controls | 45 min GPU | ≤ 15 min each |
-| E1b/E1c models | 2 GPU-h | ≤ 1 GPU-h each |
-| C1b/C1c models | 2 GPU-h | ≤ 1 GPU-h each |
-| D/H/V | 1 GPU-h | only after a gate passes |
+| **A0-P pack ops + repo memory** | 2-3 CPU-days | supporting product; never first in a report |
+| exact priced codec proof | 2-3 h | supporting product |
+| E1 controls | 45 min GPU | applications of memory |
+| C1 controls | 45 min GPU | applications of memory |
+| E1b/E1c models | 2 GPU-h | only after controls pass |
+| C1b/C1c models | 2 GPU-h | only after controls pass |
+| D/H/V | 1 GPU-h | only after a capability gate passes |
 | **A2/A3** | 1 GPU-month | only after A0/A1 pass; separate budget |
 
 Use a 5M-20M trunk and 2-4K context. Do not sweep seeds before a control
-passes. Do not run 40M. If a hypothesis has no signal on 50 files, stop it
-and preserve the budget for the next hypothesis. Track A uses the 20M trunk
-for A0-P/A0.0; A0.1 is the only base extension.
+passes. Do not run 40M. Track A uses the 20M trunk for A0.0; A0.1 is the
+only base extension. If a hypothesis has no signal on 50 files, stop it and
+preserve the budget for the next hypothesis.
 
-## 10. Product track: bank exact wins first
+## 10. The main line and the fallback
 
-The capability tracks are research; the codec products are exact and
-measured. Bank them while the revival controls run.
+The **better-LM claim is the main line**: Track A. The exact codecs are the
+memory substrate, the fallback, and evidence that exact spans are cheap.
+They are not the architecture claim.
 
-| product | state | next action | value |
-|---|---|---|---|
-| **`cml delta`** | shipped; **56.6x** hunk, **27.8x** scattered, exact | keep; add CI log packaging | immediate |
-| **`cml chain`** (repo memory) | shipped; **40.0x** over 1,823 versions, exact, 6.5x gzip | repo-wide batch: all files, one ratio | high; 1-2 days |
-| **exact priced codec** | 32 KB prefix exact **1.074**; full proof pending | run full-length exact proof; promote **9.4x** only if exact | high; 2-3 h |
-| **CI log codec** | idea | delta repeated test logs; exact round-trip | medium; 1 day |
-| **patch verifier** | idea | apply a proposed diff, reject non-exact; no training | medium; 1 day |
-| **locator API** | paused | anchored/recall@k after E1b; not exact@1 | medium |
-| **edit compiler** | paused | only after GE1b and GC1b | the capability win |
+| line | what | role |
+|---|---|---|
+| **Track A** | frozen base + exact pack + copy/compute gate | **main claim** |
+| delta / chain | exact version and history memory | substrate and fallback |
+| exact priced codec | 9.4x exact | supporting product |
+| CI logs / verifier | exact structured memory | supporting product |
+| locator / edit compiler | applications of the memory | after Track A |
 
-**Portfolio rule.** Every job must either ship a measured exact artifact or
-move a pre-registered gate. A job that does neither is recorded and
-stopped. Product work is CPU-only; one GPU job at a time.
-
-**Win scorecard.** A headline win is exact and ≥ 5x on a real corpus, or a
-capability gate passing on held-out data. Anything else is a diagnostic.
+**Win scorecard.** A better-LM win is lower bits at equal FLOPs, faster
+decode at equal quality, better adaptation per charged byte, or a
+capability dense models lack. A product ratio is a supporting win, not a
+substitute for the architecture claim.
 
 | horizon | win | metric | state |
 |---|---|---|---|
-| now | delta product | 56.6x exact | shipped |
-| now | repo memory (5 files) | 40.0x exact, 6.5x gzip | shipped |
-| next | repo-wide memory | ≥ 20x exact, ≥ 3x gzip | planned |
-| next | exact priced codec | 9.4x exact | proof pending |
-| next | CI log codec | ≥ 10x near-identical | planned |
-| next | **A0-P exact pack ops** | attach/detach/rm + exact delete | 1-2 CPU-days |
-| research | **A0.0 oracle pack** | ≥ LZ copy arm at 256 B | 2 h |
-| research | **A0 concept pack** | code/JSON ≥ 0.1 bpb, ≥ 1.5x | after 2K base |
-| research | E1b locator | byte F1 ≥ 0.20 | control first |
-| research | C1b copy-LM | exact ≥ 0.05 on 50 | control first |
+| now | **better-LM oracle** | A0.0 ≥ LZ copy arm, or A0.0b speed/provenance | 2 h + 2 h |
+| next | **2K base + gate** | code/JSON ≥ 0.1 bpb; ≥ 1.5x structured | A0.1/A0.2 |
+| next | **equal-byte adapter** | pack beats kNN/LoRA on ≥ 2/3 domains | A1 |
+| research | **composition** | G4 +10 points on held-out slots | A3 |
+| supporting | delta / memory | 56.6x / 40.0x exact | shipped |
+| fallback | exact priced codec | 9.4x exact | proof pending |
+
+**Portfolio rule.** Every job must either move a better-LM gate or ship an
+exact capability no baseline has. Do not headline a codec ratio as an
+architecture result.
 
 ## 11. Risks and counters
 
@@ -441,32 +493,31 @@ capability gate passing on held-out data. Anything else is a diagnostic.
 - **Bug vs evidence.** A failed control means a bug, not a verdict. A
   failed gate with passed controls is evidence; record it and move on.
 
-## 12. Forward plan: bank, probe, control, then revive
+## 12. Forward plan: better LM first
 
-Phase A banks exact products. Phase A0 is the architecture probe from the
-r-series: no new base training, frozen 20M trunk, exact concept pack.
-Phase B is cheap diagnostics. Phase C is one GPU job per hypothesis.
-Phase D stays gated.
+The main line is Track A. A0.0 is first because two hours decide whether
+the LM integration is worth a base. Products run in parallel CPU time and
+are never allowed to displace the architecture gates.
 
 **Execution order by expected value.**
 
-1. A1 repo-wide memory: the 40x win becomes a repo-level product claim.
-2. **A0-P pack ops** (1-2 CPU-days): attach/detach/rm/diff plus exact
-   deletion on the chain. No base, no training, a unique memory product.
-3. **A0.0 oracle copy** (2 h CPU): free pack IDs inside 256 B, charged
-   pack bytes, compared to the LZ copy arm. This is the cheapest test of
-   whether the LM integration is worth a base.
-4. **A0.1 2K base** (1-2 GPU-h): only if A0.0 passes. The current trunk
+1. **A0.0 oracle copy** (2 h CPU): free pack IDs inside 256 B, charged
+   pack bytes, compared to the LZ copy arm. If bits fail, run **A0.0b**
+   (2 h) for speed and provenance before stopping; a better-LM claim can
+   be speed or a unique capability, not only bpb. Stop only if both fail.
+2. **A0.1 2K base** (1-2 GPU-h): only if A0.0 passes. The current trunk
    is `seq=256` and cannot read a 4k-64k pack.
-5. B controls E1-R0, E1-R1, C1-R0: 45 minutes, they decide whether the
-   next model run is a bug fix or a new hypothesis.
-6. A2 exact priced codec proof: promote 9.4x if exact; otherwise keep 6.3x.
-7. **A0.2/A0.3 + A1 equal-charged-bytes** (2 days + 1 week) only if
-   A0.1 passes: tied embeddings, gate, provenance, pack vs kNN vs LoRA.
-8. B controls E1-R2, C1-R1, C1-R2.
-9. C models E1b/E1c and C1b/C1c, one at a time.
-10. A3/A4 CI logs and patch verifier in leftover CPU time; A2/A3
-    (train head, two-clock) need the separate GPU-month.
+3. **A0.2 gate + tied embeddings** (1 day): the first real better-LM
+   test; no signal over counts → stop.
+4. **A1 equal-charged-bytes** (1 week): pack vs kNN vs LoRA at 64k/256k/
+   1MB. This is the adaptation claim.
+5. **A0-P pack ops + repo-wide memory** (CPU, parallel): exact delete,
+   provenance, repo-level memory ratio. Supporting wins, not the claim.
+6. B controls E1-R0, E1-R1, C1-R0: 45 minutes; E1/C1 are applications
+   of the memory, not the main line.
+7. Exact priced codec proof: supporting product only.
+8. A0.3/A2/A3 (provenance, trained head, two-clock) need the separate
+   GPU-month and only start after A0.2 and A1 pass.
 
 ### Phase A0: architecture probe (the r-series bet)
 
