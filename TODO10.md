@@ -20,6 +20,7 @@ commit.
 | MCP resources | `cml mcp --index` | 5 exact tools + `repo://path[@n]` resources and a version template | `test_mcp.py` |
 | global checkpoints | `cml repo --global --checkpoint 32` | 80 files → 482,502 B = **20.4x**; 41 snapshots, access ≤31 deltas; cold latest 0.25 s vs 20.9 s full decode | `test_repo_memory.py` |
 | context search | `cml repo --search q --context 2 --hits-json` | ordered `path:line` hits, exact context lines, deduped per line | `test_repo_memory.py` |
+| log-delta real logs | `cml logdelta --dir <logs>` | near 32,190 → 1,773 B = **18.2x**, changed 8,548 → 3,268 B = **2.6x**; gzip is 2.6x/3.1x smaller, so no compression claim | `LOG-DELTA-REAL.md` |
 
 `68 passed`. The bytes for the repo index are stored gzip-wrapped when
 smaller; `memory.load_chain` reads both.
@@ -81,9 +82,11 @@ model work. One GPU job at a time; no new base.
    snapshot. At K=32 the 80-file sample is 20.4x with 41 snapshots and
    access ≤31 deltas. Rebuilding an index with `--update --checkpoint K`
    adds snapshots without re-encoding the chain.
-5. **log-delta on real logs.** Mine or generate pytest CI logs; gate
-   ≥10x on near-identical and ≥2x on changed logs. Synthetic sample is
-   27.3x; this is the real test.
+5. ~~**log-delta on real logs.**~~ **Recorded stop.** Real pytest logs:
+   near-identical 32,190 → 1,773 B = 18.2x, changed 8,548 → 3,268 B =
+   2.6x. Both raw-ratio gates pass, but gzip over the concatenation is
+   2.6x/3.1x smaller. Keep the chain for exact version replay only; do not
+   claim compression. Details: `cml/reports/LOG-DELTA-REAL.md`.
 6. **pack-doctor end-to-end.** Fit the pack, then run
    `cml memory-probe --oracle` and the count-prior priced oracle on the
    held-out test. Gate: positive net on the test.
@@ -104,7 +107,7 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 | ~~**R1**~~ | incremental index — **shipped** | `cml repo --update` | exact, no rebuild | 1 day |
 | ~~**R2**~~ | global checkpoints — **shipped** | `cml repo --global --checkpoint 32` | 20.4x, access ≤31 | 1 day |
 | ~~**M1**~~ | MCP resources — **shipped** | `cml mcp --index` | client lists/reads resources | 1 day |
-| **L1** | real CI logs | `cml logdelta --dir <logs>` | ≥10x near-identical | 1 day |
+| ~~**L1**~~ | real CI logs — **done; gzip wins** | `cml logdelta --dir <logs>` | 18.2x near / 2.6x changed; stop compression claim | 1 day |
 | **P1** | fitted pack pays | `cml pack fit` + `memory-probe` | priced total < stream | 3 h |
 
 ## 5. What not to do
@@ -119,16 +122,16 @@ Run one row at a time, ≤1 GPU-h or ≤1 CPU-day, record a row here.
 
 ## 6. Definition of done
 
-Shipped this session: **R1/M1/R2 + context search** — incremental updates,
-MCP resources, global checkpoints (20.4x, access ≤31), and ordered exact
-search with context and JSON hits.
+Shipped this session: **R1/M1/R2 + context search + L1** — incremental
+updates, MCP resources, global checkpoints (20.4x, access ≤31), ordered
+exact search with context and JSON hits, and real-log evidence. L1 is a
+recorded stop: the ratio gate passes, but gzip wins the fair baseline.
 
 Next session, one of:
-1. **L1**: real-log gate pass (≥10x near-identical, ≥2x changed). Gather
-   pytest CI logs first; the synthetic 27.3x is not evidence.
-2. **B1/B2**: the ByteCopy gate, unchanged. B1 is the cheap control; run
+1. **B1/B2**: the ByteCopy gate, unchanged. B1 is the cheap control; run
    it before any head scaling.
-3. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
+2. **pack-doctor end-to-end** (P1): fit, then price the held-out test.
+3. **repo-delta multi-file**: exact patch sets on 100 commit pairs.
 
 Then: commit, update this file's status, and move the result into
 `TODO9.md` if it is a research finding.
@@ -162,6 +165,6 @@ uv run cml logdelta --dir /tmp/logs-demo --out /tmp/logs.cmlh
 - `products/copy-lm/README.md`: ByteCopy LM design and prototype.
 - `cml/reports/COPY-LM.md`, `cml/reports/MEMORY-GATE.md`.
 - `cml/reports/REPO-INDEX.md`, `cml/reports/REPO-GLOBAL.md`,
-  `cml/reports/REPO-CHECKPOINT.md`, `cml/reports/LOG-DELTA.md`,
+  `cml/reports/REPO-CHECKPOINT.md`, `cml/reports/LOG-DELTA-REAL.md`,
   `cml/reports/PACK-FIT.md`.
 - `cml/reports/MCP.md`: tools, resources, OpenCode config, and limits.

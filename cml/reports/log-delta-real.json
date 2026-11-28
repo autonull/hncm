@@ -1,0 +1,91 @@
+{
+ "gate": "L1",
+ "date": "2026-11-28",
+ "near": {
+  "stats": {
+   "logs": [
+    "run01.log",
+    "run02.log",
+    "run03.log",
+    "run04.log",
+    "run05.log",
+    "run06.log",
+    "run07.log",
+    "run08.log",
+    "run09.log",
+    "run10.log",
+    "run11.log",
+    "run12.log",
+    "run13.log",
+    "run14.log",
+    "run15.log",
+    "run16.log",
+    "run17.log",
+    "run18.log",
+    "run19.log",
+    "run20.log",
+    "run21.log",
+    "run22.log",
+    "run23.log",
+    "run24.log",
+    "run25.log",
+    "run26.log",
+    "run27.log",
+    "run28.log",
+    "run29.log",
+    "run30.log"
+   ],
+   "versions": 30,
+   "raw_bytes": 32190,
+   "chain_bytes": 1773,
+   "compressed": true,
+   "gzip_bytes": 691,
+   "ratio": 18.155668358714045,
+   "gzip_ratio": 46.58465991316932,
+   "vs_gzip": 0.38973491257755216,
+   "exact": true,
+   "seconds": 0.0
+  },
+  "verdict": "raw-ratio pass; gzip 2.6x smaller"
+ },
+ "changed": {
+  "stats": {
+   "logs": [
+    "run01.log",
+    "run02.log",
+    "run03.log",
+    "run04.log",
+    "run05.log",
+    "run06.log",
+    "run07.log",
+    "run08.log",
+    "run09.log",
+    "run10.log",
+    "run11.log",
+    "run12.log",
+    "run13.log",
+    "run14.log",
+    "run15.log",
+    "run16.log"
+   ],
+   "versions": 16,
+   "raw_bytes": 8548,
+   "chain_bytes": 3268,
+   "compressed": true,
+   "gzip_bytes": 1053,
+   "ratio": 2.6156670746634028,
+   "gzip_ratio": 8.117758784425451,
+   "vs_gzip": 0.3222154222766218,
+   "exact": true,
+   "seconds": 0.3
+  },
+  "verdict": "raw-ratio pass; gzip 3.1x smaller"
+ },
+ "commands": [
+  "uv run pytest -v -p no:cacheprovider tests/test_mcp.py tests/test_repo_memory.py # x30",
+  "uv run pytest -v|-q -p no:cacheprovider <file-set> # 8 sets x2",
+  "uv run cml logdelta --dir logs-near --out logs-near.cmlh",
+  "uv run cml logdelta --dir logs-changed --out logs-changed.cmlh"
+ ],
+ "conclusion": "Stop the compression claim; keep exact replay only."
+}

@@ -1,7 +1,9 @@
 # `log-delta` — exact CI log history
 
-Store a sequence of log runs at **27.3x** on a 5-run sample, byte-exact,
-1.8x better than a single gzip over the same bytes. CPU-only.
+Store a sequence of log runs byte-exact with version boundaries and SHA-256.
+The synthetic 5-run sample reached **27.3x** and beat gzip, but real pytest
+logs do not: gzip over the concatenation is 2.6x–3.1x smaller. Use this
+only when exact per-run replay matters, not as a compression product.
 
 ```bash
 uv run cml logdelta --dir runs/logs --out logs.cmlh
@@ -24,13 +26,24 @@ Synthetic near-identical pytest-style logs, 5 runs, 504,465 B:
 | one gzip | 32,827 | 15.4x |
 | **log chain** | **18,445** | **27.3x** |
 
-The chain is 1.8x smaller than gzip and keeps run granularity. Encode,
-decode, and digest check: 0.7 s CPU.
+The synthetic chain is 1.8x smaller than gzip. Real pytest logs reverse
+that result:
+
+| real set | raw B | chain B | chain / raw | gzip / raw | gzip / chain |
+|---|---:|---:|---:|---:|---:|
+| near-identical, 30 runs | 32,190 | 1,773 | 18.2x | 46.6x | 0.39 |
+| changed, 16 runs | 8,548 | 3,268 | 2.6x | 8.1x | 0.32 |
+
+The ratio gates pass, but one gzip over the concatenated logs is 2.6x and
+3.1x smaller. The first run is raw and every version pays a payload
+header; gzip shares one stream. See `cml/reports/LOG-DELTA-REAL.md`.
 
 ## Use it when
 
-- CI keeps every run but only a few lines change;
 - you need the exact run that failed, not a summary;
-- storage or transfer of logs matters.
+- you need per-run SHA-256 and random access;
+- the logs are long and change slowly enough that the synthetic shape
+  holds; check the gzip baseline on your own logs first.
 
-Do not use it on unrelated logs; the delta arm needs a shared history.
+Do not use it on unrelated logs, and do not claim compression over gzip
+without measuring the concatenation.
